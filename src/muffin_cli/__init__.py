@@ -1,0 +1,1 @@
+"""Muffin CLI package."""

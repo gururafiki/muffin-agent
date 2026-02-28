@@ -25,12 +25,13 @@ dependencies = [
     "jinja2",
     # CLI
     "typer",
+    "rich",
     # Observability
     "langfuse",
 ]
 
 [project.scripts]
-muffin-reasoning = "muffin_cli.reasoning:main"
+muffin = "muffin_cli.main:main"
 
 
 [project.optional-dependencies]

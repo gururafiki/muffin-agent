@@ -1,0 +1,49 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Fundamentals Data Collection Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "fundamentals",
+                "AAPL",
+                "--query",
+                "Get income statement and ratios."
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Fundamentals Data Collection Agent: Custom Ticker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "fundamentals",
+                "${input:ticker}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        }
+    ],
+    "inputs": [
+        {
+            "id": "ticker",
+            "type": "promptString",
+            "description": "Stock ticker symbol",
+            "default": "MSFT"
+        },
+        {
+            "id": "query",
+            "type": "promptString",
+            "description": "Query to an agent",
+            "default": "Get income statement and ratios."
+        }
+    ]
+}
