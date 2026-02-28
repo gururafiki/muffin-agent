@@ -51,6 +51,31 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 7. **Minimize custom code**: Use libraries if exists. e.g. use `backoff` for retry with backoff instead of writing your own. Use `TA-Lib` for technical indicators, etc
 
 
+## 🖥️ CLI
+
+Muffin ships a `muffin` CLI with subcommands for each agent. Output is streamed in real-time with Rich formatting.
+
+```bash
+# Install (registers the `muffin` entry point)
+pip install -e .
+
+# Retrieve fundamental data for a ticker
+muffin fundamentals AAPL
+
+# Custom query
+muffin fundamentals MSFT -q "Get income statement and ratios"
+
+# Help
+muffin --help
+muffin fundamentals --help
+```
+
+**Output features:**
+- Real-time token streaming (`stream_mode="messages"`)
+- Tool calls shown with yellow labels
+- Tool results in Rich panels with syntax-highlighted JSON
+- Errors shown in red panels — agent continues gracefully via middleware
+
 ## 🛠️ Development
 
 
