@@ -1,0 +1,76 @@
+[project]
+name = "muffin"
+version = "0.0.1"
+description = "MufFin agent for investment opportunities analysis"
+authors = [
+    { name = "Alex March", email = "broaden.your@outlook.com" },
+]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "langgraph",
+    "langchain",
+    "langchain-openai",
+    "langchain-anthropic",
+    "python-dotenv",
+    "langgraph-sdk",
+    "langchain-mcp-adapters",
+    "langgraph-cli",
+    "langgraph-api",
+    "pydantic",
+    # Technical analysis indicators
+    "TA-Lib",
+    # Prompt templating
+    "jinja2",
+    # CLI
+    "typer",
+    # Observability
+    "langfuse",
+]
+
+[project.scripts]
+muffin-reasoning = "muffin_cli.reasoning:main"
+
+
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pytest-asyncio",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[build-system]
+requires = ["setuptools>=73.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+lint.select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "D",    # pydocstyle
+    "D401", # First line should be in imperative mood
+    "T201",
+    "UP"
+]
+lint.ignore = []
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D", "UP"]
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[dependency-groups]
+dev = [
+    "langgraph-cli[inmem]",
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+]
