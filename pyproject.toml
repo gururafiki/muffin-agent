@@ -53,6 +53,7 @@ requires = ["setuptools>=73.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.ruff]
+extend-exclude = ["*.jinja"]
 lint.select = [
     "E",    # pycodestyle
     "F",    # pyflakes

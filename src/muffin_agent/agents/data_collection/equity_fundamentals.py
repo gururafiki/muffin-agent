@@ -5,12 +5,10 @@ ratios, metrics, etc.) via OpenBB MCP tools.
 """
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_tool_call
-from langchain_core.messages import ToolMessage
-from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from muffin_agent.config import Configuration
-from muffin_agent.prompts import render_template
+from ...config import Configuration
+from ...prompts import render_template
+from .utils import get_tools, handle_tool_errors
 
 MCP_TOOLS = [
     "equity_fundamental_balance",
@@ -41,30 +39,9 @@ MCP_TOOLS = [
 ]
 
 
-async def get_tools(config: Configuration) -> list:
-    """Load MCP tools filtered to fundamentals, plus any custom tools."""
-    client = MultiServerMCPClient(config.get_mcp_connections())
-    all_tools = await client.get_tools()
-    mcp_tools = [t for t in all_tools if t.name in MCP_TOOLS]
-    custom_tools: list = []
-    return mcp_tools + custom_tools
-
-
-@wrap_tool_call
-async def handle_tool_errors(request, handler):
-    """Catch tool exceptions and return error messages to the agent."""
-    try:
-        return await handler(request)
-    except Exception as e:
-        return ToolMessage(
-            content=f"Error: {e!s}",
-            tool_call_id=request.tool_call["id"],
-        )
-
-
 async def build_graph(config: Configuration):
     """Build the equity fundamentals ReAct agent."""
-    tools = await get_tools(config)
+    tools = await get_tools(config, MCP_TOOLS)
     prompt = render_template("equity_fundamentals.jinja")
     llm = config.get_llm()
     return create_agent(

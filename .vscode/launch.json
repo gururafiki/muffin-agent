@@ -17,6 +17,21 @@
             "justMyCode": false
         },
         {
+            "name": "Price Data Collection Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "price",
+                "AAPL",
+                "--query",
+                "Get current quote and historical prices."
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
             "name": "Fundamentals Data Collection Agent: Custom Ticker",
             "type": "debugpy",
             "request": "launch",

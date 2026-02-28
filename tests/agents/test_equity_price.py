@@ -1,24 +1,25 @@
-"""Tests for the equity fundamentals data collection agent."""
+"""Tests for the equity price data collection agent."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from muffin_agent.agents.data_collection.equity_fundamentals import MCP_TOOLS
+from muffin_agent.agents.data_collection.equity_price import MCP_TOOLS
 from muffin_agent.agents.data_collection.utils import get_tools
 from muffin_agent.prompts import render_template
 
 
 @pytest.mark.unit
 class TestMCPTools:
-    """Test MCP tool allowlist and filtering."""
+    """Test MCP tool allowlist."""
 
-    def test_mcp_tools_list_not_empty(self):
-        assert len(MCP_TOOLS) == 25
+    def test_mcp_tools_count(self):
+        assert len(MCP_TOOLS) == 5
 
-    def test_mcp_tools_all_start_with_equity_fundamental(self):
+    def test_mcp_tools_have_expected_prefixes(self):
+        valid_prefixes = ("equity_price_", "equity_historical_")
         for tool_name in MCP_TOOLS:
-            assert tool_name.startswith("equity_fundamental_"), (
+            assert any(tool_name.startswith(p) for p in valid_prefixes), (
                 f"Unexpected tool: {tool_name}"
             )
 
@@ -33,10 +34,10 @@ class TestGetTools:
     @pytest.mark.asyncio
     async def test_filters_to_allowed_tools(self):
         mock_tool_allowed = MagicMock()
-        mock_tool_allowed.name = "equity_fundamental_income"
+        mock_tool_allowed.name = "equity_price_quote"
 
         mock_tool_other = MagicMock()
-        mock_tool_other.name = "equity_price_historical"
+        mock_tool_other.name = "equity_fundamental_income"
 
         mock_client = AsyncMock()
         mock_client.get_tools = AsyncMock(
@@ -60,7 +61,7 @@ class TestGetTools:
             tools = await get_tools(config, MCP_TOOLS)
 
         assert len(tools) == 1
-        assert tools[0].name == "equity_fundamental_income"
+        assert tools[0].name == "equity_price_quote"
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_matching_tools(self):
@@ -88,7 +89,7 @@ class TestGetTools:
 class TestPromptTemplate:
     """Test prompt template rendering."""
 
-    def test_equity_fundamentals_template_renders(self):
-        result = render_template("equity_fundamentals.jinja")
-        assert "equity fundamentals" in result.lower()
+    def test_equity_price_template_renders(self):
+        result = render_template("equity_price.jinja")
+        assert "equity price" in result.lower()
         assert len(result) > 100

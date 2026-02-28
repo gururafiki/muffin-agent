@@ -36,14 +36,15 @@ The source lives in `src/muffin_agent/` and is organized as:
 
 - **`utils/observability.py`** — Optional LangFuse tracing via `setup_tracing()`. Returns callback handlers for `RunnableConfig["callbacks"]`. Gracefully degrades if LangFuse is unavailable.
 
-- **`agents/data_collection/`** — Data collection agents using MCP tools with the ReAct pattern. Each agent is a sub-package with a single `__init__.py` containing:
+- **`agents/data_collection/`** — Data collection agents using MCP tools with the ReAct pattern. Each agent is a single `.py` file containing:
   - `MCP_TOOLS` — list of allowed MCP tool name strings
-  - `get_tools(config)` — async; loads filtered MCP tools via `MultiServerMCPClient`, returns them combined with any custom `@tool`-decorated functions
-  - `build_graph(config)` — async; calls `get_tools()`, renders the Jinja2 prompt, builds the agent via `create_agent()` from `langchain.agents`
+  - `build_graph(config)` — async; calls shared `get_tools()`, renders the Jinja2 prompt, builds the agent via `create_agent()` from `langchain.agents`
 
-  Only create files that are needed — no empty stubs. Additional files (state.py, schemas.py, etc.) are added only when the agent requires them.
+  Shared utilities live in `utils.py`:
+  - `get_tools(config, allowed_tools, custom_tools=None)` — loads filtered MCP tools via `MultiServerMCPClient`
+  - `handle_tool_errors` — `@wrap_tool_call` middleware that catches tool exceptions
 
-  Currently implemented: `equity_fundamentals/` (25 tools for financial statements, ratios, metrics, etc.)
+  Currently implemented: `equity_fundamentals.py` (25 tools), `equity_price.py` (5 tools)
 
 - **`agents/criterion_evaluation/`** — Scaffolded but not yet implemented.
 

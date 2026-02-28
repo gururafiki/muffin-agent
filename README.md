@@ -31,6 +31,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | Agent | Tools | Description |
 |-------|-------|-------------|
 | `equity_fundamentals` | 25 | Financial statements, ratios, metrics, EPS, dividends, revenue segments, management, ESG, transcripts, filings |
+| `equity_price` | 5 | Current quotes, historical OHLCV, NBBO spreads, price performance, market cap history |
 
 ### Design Principles
 
@@ -62,12 +63,17 @@ pip install -e .
 # Retrieve fundamental data for a ticker
 muffin fundamentals AAPL
 
+# Retrieve price data for a ticker
+muffin price AAPL
+
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"
+muffin price MSFT -q "Get current quote and 1-year historical prices"
 
 # Help
 muffin --help
 muffin fundamentals --help
+muffin price --help
 ```
 
 **Output features:**
