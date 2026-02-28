@@ -23,6 +23,15 @@ Muffin Agent is a production-ready, multi-agent stock analysis system that funct
 - **🔄 Graceful Degradation**: Continues with partial agent failures
 - **🔌 Multi-LLM Support**: OpenAI, Anthropic, OpenRouter
 - **🆓 Free Data Sources**: OpenBB (free tier), yfinance, SEC Edgar
+- **🔧 MCP Integration**: Data collection agents use OpenBB MCP tools with configurable tool subsets per agent
+
+### Data Collection Agents
+
+ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filtered subset of tools and can be extended with custom `@tool` functions.
+
+| Agent | Tools | Description |
+|-------|-------|-------------|
+| `equity_fundamentals` | 25 | Financial statements, ratios, metrics, EPS, dividends, revenue segments, management, ESG, transcripts, filings |
 
 ---
 
