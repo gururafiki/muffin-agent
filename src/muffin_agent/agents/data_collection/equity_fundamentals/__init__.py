@@ -55,7 +55,8 @@ async def handle_tool_errors(request, handler):
     """Catch tool exceptions and return error messages to the agent."""
     try:
         return await handler(request)
-    except Exception as e:        return ToolMessage(
+    except Exception as e:
+        return ToolMessage(
             content=f"Error: {e!s}",
             tool_call_id=request.tool_call["id"],
         )
