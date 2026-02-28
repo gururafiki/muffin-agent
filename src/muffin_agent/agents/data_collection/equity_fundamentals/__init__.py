@@ -5,6 +5,8 @@ ratios, metrics, etc.) via OpenBB MCP tools.
 """
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
+from langchain_core.messages import ToolMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from muffin_agent.config import Configuration
@@ -41,11 +43,22 @@ MCP_TOOLS = [
 
 async def get_tools(config: Configuration) -> list:
     """Load MCP tools filtered to fundamentals, plus any custom tools."""
-    async with MultiServerMCPClient(config.get_mcp_connections()) as client:
-        all_tools = await client.get_tools()
+    client = MultiServerMCPClient(config.get_mcp_connections())
+    all_tools = await client.get_tools()
     mcp_tools = [t for t in all_tools if t.name in MCP_TOOLS]
     custom_tools: list = []
     return mcp_tools + custom_tools
+
+
+@wrap_tool_call
+async def handle_tool_errors(request, handler):
+    """Catch tool exceptions and return error messages to the agent."""
+    try:
+        return await handler(request)
+    except Exception as e:        return ToolMessage(
+            content=f"Error: {e!s}",
+            tool_call_id=request.tool_call["id"],
+        )
 
 
 async def build_graph(config: Configuration):
@@ -53,4 +66,9 @@ async def build_graph(config: Configuration):
     tools = await get_tools(config)
     prompt = render_template("equity_fundamentals.jinja")
     llm = config.get_llm()
-    return create_agent(model=llm, tools=tools, system_prompt=prompt)
+    return create_agent(
+        model=llm,
+        tools=tools,
+        system_prompt=prompt,
+        middleware=[handle_tool_errors],
+    )

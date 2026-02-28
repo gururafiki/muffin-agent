@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
+from langchain_mcp_adapters.sessions import Connection
 from pydantic import BaseModel, Field
 
 load_dotenv()
@@ -73,7 +74,7 @@ class Configuration(BaseModel):
 
     # ==================== MCP Servers ====================
 
-    def get_mcp_connections(self) -> dict[str, dict]:
+    def get_mcp_connections(self) -> dict[str, Connection]:
         """Get MCP server connections for MultiServerMCPClient."""
         return {
             "openbb": {
