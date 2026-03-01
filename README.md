@@ -34,10 +34,11 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `equity_price` | 5 | Current quotes, historical OHLCV, NBBO spreads, price performance, market cap history |
 | `equity_estimates` | 8 | Analyst consensus estimates, price targets, forward EPS/EBITDA/PE/sales, analyst rating breakdowns |
 | `equity_ownership` | 9 | Major holders, institutional ownership, insider trading, share statistics, 13F filings, government trades, short interest/volume/FTDs |
+| `news` | 2 | Company news with sentiment signals, global/macro news headlines |
 
 ### Stock Evaluation Agent
 
-A deep agent (powered by `deepagents`) that orchestrates data collection subagents (equity-fundamentals, equity-price, equity-estimates, equity-ownership) to produce scored stock assessments. It follows a 5-step workflow:
+A deep agent (powered by `deepagents`) that orchestrates data collection subagents (equity-fundamentals, equity-price, equity-estimates, equity-ownership, news) to produce scored stock assessments. It follows a 5-step workflow:
 
 1. **Plan** — Determine what data is needed based on ticker and query
 2. **Collect** — Delegate to data collection subagents via `task()` tool
@@ -191,6 +192,7 @@ muffin fundamentals MSFT -q "Get income statement and ratios"
 muffin price MSFT -q "Get current quote and 1-year historical prices"
 muffin estimates MSFT -q "Get analyst price targets and forward PE"
 muffin ownership MSFT -q "Get institutional holders and short interest"
+muffin news MSFT -q "Get recent news and sentiment"
 
 # Help
 muffin --help
@@ -198,6 +200,7 @@ muffin fundamentals --help
 muffin price --help
 muffin estimates --help
 muffin ownership --help
+muffin news --help
 ```
 
 **Output features:**
