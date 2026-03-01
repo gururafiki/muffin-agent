@@ -13,6 +13,7 @@ from .data_collection import (
     create_equity_fundamentals_data_collection_agent,
     create_equity_ownership_data_collection_agent,
     create_equity_price_data_collection_agent,
+    create_news_data_collection_agent,
 )
 
 
@@ -26,6 +27,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     price_agent = await create_equity_price_data_collection_agent(config)
     estimates_agent = await create_equity_estimates_data_collection_agent(config)
     ownership_agent = await create_equity_ownership_data_collection_agent(config)
+    news_agent = await create_news_data_collection_agent(config)
 
     subagents = [
         CompiledSubAgent(
@@ -67,6 +69,15 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "fails-to-deliver. Use for conviction signals and short squeeze risk."
             ),
             runnable=ownership_agent,
+        ),
+        CompiledSubAgent(
+            name="news",
+            description=(
+                "Retrieves news and sentiment data: recent company news articles "
+                "with sentiment signals, and global/macro news headlines. Use for "
+                "catalyst identification, sentiment analysis, and event-driven context."
+            ),
+            runnable=news_agent,
         ),
     ]
 
