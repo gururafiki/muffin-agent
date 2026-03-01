@@ -63,6 +63,107 @@ A deep agent (powered by `deepagents`) that orchestrates data collection subagen
 7. **Minimize custom code**: Use libraries if exists. e.g. use `backoff` for retry with backoff instead of writing your own. Use `TA-Lib` for technical indicators, etc
 
 
+## 🛠️ Setup
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js (optional, for [MCP inspector](https://github.com/modelcontextprotocol/inspector))
+
+### Step 1: Install Muffin Agent
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+pip install -e .
+```
+
+### Step 2: Set Up OpenBB MCP Server
+
+Muffin Agent uses [OpenBB](https://openbb.co/) as its data backbone via the Model Context Protocol (MCP). The OpenBB MCP server runs separately and must be available at `http://127.0.0.1:8001/mcp`.
+
+> OpenBB has heavy dependencies — we recommend setting it up in a **separate virtual environment** under `extras/openbb/`. See [extras/openbb/README.md](extras/openbb/) for detailed instructions on installation, provider API keys, and startup.
+
+Quick version:
+
+```bash
+cd extras/openbb
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+openbb-mcp --port 8001
+```
+
+For full OpenBB MCP documentation, see the [official docs](https://docs.openbb.co/odp/python/extensions/interface/openbb-mcp).
+
+### Step 3: Configure Environment Variables
+
+Copy the example and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Required | Description | Where to get it |
+|----------|----------|-------------|-----------------|
+| `OPENAI_API_KEY` | Yes (OpenAI or OpenRouter) | LLM API key | [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys) |
+| `OPENAI_SITE_URL` | Only for OpenRouter | Base URL override | Set to `https://openrouter.ai/api/v1` |
+| `ANTHROPIC_API_KEY` | Yes (if using Anthropic) | Anthropic API key | [Anthropic Console](https://console.anthropic.com/settings/keys) |
+| `MODEL` | No | Model in `provider/model` format | Default: `openai/gpt-oss-120b:free`. Browse [OpenRouter models](https://openrouter.ai/models) |
+| `LLM_PROVIDER` | No | `openai` or `anthropic` | Default: `openai` (also used for OpenRouter) |
+| `TEMPERATURE` | No | LLM temperature (0.0–2.0) | Default: `0.1` |
+| `MAX_CRITERIA` | No | Max evaluation criteria per agent (1–20) | Default: `7` |
+| `LANGFUSE_SECRET_KEY` | No | LLM tracing (optional) | [Langfuse Cloud](https://cloud.langfuse.com) → Settings → API Keys |
+| `LANGFUSE_PUBLIC_KEY` | No | LLM tracing (optional) | Same as above |
+| `LANGFUSE_BASE_URL` | No | Langfuse host URL | Default: `https://cloud.langfuse.com` |
+
+### Step 4: Verify
+
+```bash
+# Check CLI is installed
+muffin --help
+
+# Make sure OpenBB MCP server is running (Step 2), then:
+muffin price AAPL
+```
+
+### Running Tests
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run all tests
+pytest
+
+# Run unit tests only
+pytest -m unit
+
+# Run with coverage
+pytest --cov=muffin_agent tests/
+
+# Run specific test file
+pytest tests/test_config.py
+
+# Run integration tests calling APIs
+pytest -m live
+```
+
+### Code Quality
+
+```bash
+# Format code
+ruff format src/ tests/
+
+# Lint code
+ruff check src/ tests/
+
+# Type check
+mypy src/
+```
+
+---
+
 ## 🖥️ CLI
 
 Muffin ships a `muffin` CLI with subcommands for each agent. Output is streamed in real-time with Rich formatting.
@@ -102,55 +203,6 @@ muffin estimates --help
 - Tool results in Rich panels with syntax-highlighted JSON
 - Errors shown in red panels — agent continues gracefully via middleware
 
-## 🛠️ Development
-
-
-### Installation
-
-```bash
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -e .
-```
-
-
-### Running Tests
-
-```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run all tests
-pytest
-
-# Run unit tests only
-pytest -m unit
-
-# Run with coverage
-pytest --cov=muffin_agent tests/
-
-# Run specific test file
-pytest tests/test_config.py
-
-# Run integration tests calling APIs
-pytest -m live
-```
-
-### Code Quality
-
-```bash
-# Format code
-ruff format src/ tests/
-
-# Lint code
-ruff check src/ tests/
-
-# Type check
-mypy src/
-```
 
 
 ## 📄 License

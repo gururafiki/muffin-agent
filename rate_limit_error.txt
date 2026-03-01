@@ -1,0 +1,522 @@
+╭─────────────────────────────── Traceback (most recent call last) ───────────────────────────────╮
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/src/muffin_cli/main.py:13 │
+│ 9 in evaluate                                                                                   │
+│                                                                                                 │
+│   136 │   ] = None,                                                                             │
+│   137 ) -> None:                                                                                │
+│   138 │   """Evaluate a stock with scored assessment using data collection subagents."""        │
+│ ❱ 139 │   asyncio.run(_stream_evaluate(ticker, query))                                          │
+│   140                                                                                           │
+│   141                                                                                           │
+│   142 def main() -> None:                                                                       │
+│                                                                                                 │
+│ /opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.1 │
+│ 3/asyncio/runners.py:194 in run                                                                 │
+│                                                                                                 │
+│   191 │   │   │   "asyncio.run() cannot be called from a running event loop")                   │
+│   192 │                                                                                         │
+│   193 │   with Runner(debug=debug, loop_factory=loop_factory) as runner:                        │
+│ ❱ 194 │   │   return runner.run(main)                                                           │
+│   195                                                                                           │
+│   196                                                                                           │
+│   197 def _cancel_all_tasks(loop):                                                              │
+│                                                                                                 │
+│ /opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.1 │
+│ 3/asyncio/runners.py:118 in run                                                                 │
+│                                                                                                 │
+│   115 │   │                                                                                     │
+│   116 │   │   self._interrupt_count = 0                                                         │
+│   117 │   │   try:                                                                              │
+│ ❱ 118 │   │   │   return self._loop.run_until_complete(task)                                    │
+│   119 │   │   except exceptions.CancelledError:                                                 │
+│   120 │   │   │   if self._interrupt_count > 0:                                                 │
+│   121 │   │   │   │   uncancel = getattr(task, "uncancel", None)                                │
+│                                                                                                 │
+│ /opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.1 │
+│ 3/asyncio/base_events.py:720 in run_until_complete                                              │
+│                                                                                                 │
+│    717 │   │   if not future.done():                                                            │
+│    718 │   │   │   raise RuntimeError('Event loop stopped before Future completed.')            │
+│    719 │   │                                                                                    │
+│ ❱  720 │   │   return future.result()                                                           │
+│    721 │                                                                                        │
+│    722 │   def stop(self):                                                                      │
+│    723 │   │   """Stop running the event loop.                                                  │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/src/muffin_cli/main.py:12 │
+│ 1 in _stream_evaluate                                                                           │
+│                                                                                                 │
+│   118 │   )                                                                                     │
+│   119 │                                                                                         │
+│   120 │   printer = StreamPrinter()                                                             │
+│ ❱ 121 │   async for chunk, _metadata in agent.astream(                                          │
+│   122 │   │   {"messages": [HumanMessage(prompt)]},                                             │
+│   123 │   │   config=RunnableConfig(callbacks=callbacks),                                       │
+│   124 │   │   stream_mode="messages",                                                           │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/pregel/main.py:2997 in astream                                              │
+│                                                                                                 │
+│   2994 │   │   │   │   │   while loop.tick():                                                   │
+│   2995 │   │   │   │   │   │   for task in await loop.amatch_cached_writes():                   │
+│   2996 │   │   │   │   │   │   │   loop.output_writes(task.id, task.writes, cached=True)        │
+│ ❱ 2997 │   │   │   │   │   │   async for _ in runner.atick(                                     │
+│   2998 │   │   │   │   │   │   │   [t for t in loop.tasks.values() if not t.writes],            │
+│   2999 │   │   │   │   │   │   │   timeout=self.step_timeout,                                   │
+│   3000 │   │   │   │   │   │   │   get_waiter=get_waiter,                                       │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/pregel/_runner.py:410 in atick                                              │
+│                                                                                                 │
+│   407 │   │   │   fut.cancel()                                                                  │
+│   408 │   │   # panic on failure or timeout                                                     │
+│   409 │   │   try:                                                                              │
+│ ❱ 410 │   │   │   _panic_or_proceed(                                                            │
+│   411 │   │   │   │   futures.done.union(f for f, t in futures.items() if t is not None),       │
+│   412 │   │   │   │   timeout_exc_cls=asyncio.TimeoutError,                                     │
+│   413 │   │   │   │   panic=reraise,                                                            │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/pregel/_runner.py:520 in _panic_or_proceed                                  │
+│                                                                                                 │
+│   517 │   │   │   │   │   # collect interrupts                                                  │
+│   518 │   │   │   │   │   interrupts.append(exc)                                                │
+│   519 │   │   │   │   elif fut not in SKIP_RERAISE_SET:                                         │
+│ ❱ 520 │   │   │   │   │   raise exc                                                             │
+│   521 │   # raise combined interrupts                                                           │
+│   522 │   if interrupts:                                                                        │
+│   523 │   │   raise GraphInterrupt(tuple(i for exc in interrupts for i in exc.args[0]))         │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/pregel/_retry.py:163 in arun_with_retry                                     │
+│                                                                                                 │
+│   160 │   │   │   │   # if successful, end                                                      │
+│   161 │   │   │   │   break                                                                     │
+│   162 │   │   │   else:                                                                         │
+│ ❱ 163 │   │   │   │   return await task.proc.ainvoke(task.input, config)                        │
+│   164 │   │   except ParentCommand as exc:                                                      │
+│   165 │   │   │   ns: str = config[CONF][CONFIG_KEY_CHECKPOINT_NS]                              │
+│   166 │   │   │   cmd = exc.args[0]                                                             │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/_internal/_runnable.py:705 in ainvoke                                       │
+│                                                                                                 │
+│   702 │   │   │   │   │   │   │   run = None                                                    │
+│   703 │   │   │   │   │   │   # run in context                                                  │
+│   704 │   │   │   │   │   │   with set_config_context(config, run) as context:                  │
+│ ❱ 705 │   │   │   │   │   │   │   input = await asyncio.create_task(                            │
+│   706 │   │   │   │   │   │   │   │   step.ainvoke(input, config, **kwargs), context=context    │
+│   707 │   │   │   │   │   │   │   )                                                             │
+│   708 │   │   │   │   │   else:                                                                 │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/_internal/_runnable.py:473 in ainvoke                                       │
+│                                                                                                 │
+│   470 │   │   │   else:                                                                         │
+│   471 │   │   │   │   await run_manager.on_chain_end(ret)                                       │
+│   472 │   │   else:                                                                             │
+│ ❱ 473 │   │   │   ret = await self.afunc(*args, **kwargs)                                       │
+│   474 │   │   if self.recurse and isinstance(ret, Runnable):                                    │
+│   475 │   │   │   return await ret.ainvoke(input, config)                                       │
+│   476 │   │   return ret                                                                        │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:846 in _afunc                                         │
+│                                                                                                 │
+│    843 │   │   coros = []                                                                       │
+│    844 │   │   for call, tool_runtime in zip(tool_calls, tool_runtimes, strict=False):          │
+│    845 │   │   │   coros.append(self._arun_one(call, input_type, tool_runtime))  # type: ignore │
+│ ❱  846 │   │   outputs = await asyncio.gather(*coros)                                           │
+│    847 │   │                                                                                    │
+│    848 │   │   return self._combine_tool_outputs(outputs, input_type)                           │
+│    849                                                                                          │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:1200 in _arun_one                                     │
+│                                                                                                 │
+│   1197 │   │   │   if not self._handle_tool_errors:                                             │
+│   1198 │   │   │   │   raise                                                                    │
+│   1199 │   │   │   # Convert to error message                                                   │
+│ ❱ 1200 │   │   │   content = _handle_tool_error(e, flag=self._handle_tool_errors)               │
+│   1201 │   │   │   return ToolMessage(                                                          │
+│   1202 │   │   │   │   content=content,                                                         │
+│   1203 │   │   │   │   name=tool_request.tool_call["name"],                                     │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:430 in _handle_tool_error                             │
+│                                                                                                 │
+│    427 │   elif isinstance(flag, str):                                                          │
+│    428 │   │   content = flag                                                                   │
+│    429 │   elif callable(flag):                                                                 │
+│ ❱  430 │   │   content = flag(e)  # type: ignore [assignment, call-arg]                         │
+│    431 │   else:                                                                                │
+│    432 │   │   msg = (                                                                          │
+│    433 │   │   │   f"Got unexpected type of `handle_tool_error`. Expected bool, str "           │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:387 in _default_handle_tool_errors                    │
+│                                                                                                 │
+│    384 │   """                                                                                  │
+│    385 │   if isinstance(e, ToolInvocationError):                                               │
+│    386 │   │   return e.message                                                                 │
+│ ❱  387 │   raise e                                                                              │
+│    388                                                                                          │
+│    389                                                                                          │
+│    390 def _handle_tool_error(                                                                  │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:1191 in _arun_one                                     │
+│                                                                                                 │
+│   1188 │   │   # Call wrapper with request and execute callable                                 │
+│   1189 │   │   try:                                                                             │
+│   1190 │   │   │   if self._awrap_tool_call is not None:                                        │
+│ ❱ 1191 │   │   │   │   return await self._awrap_tool_call(tool_request, execute)                │
+│   1192 │   │   │   # None check was performed above already                                     │
+│   1193 │   │   │   self._wrap_tool_call = cast("ToolCallWrapper", self._wrap_tool_call)         │
+│   1194 │   │   │   return self._wrap_tool_call(tool_request, _sync_execute)                     │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/deepagents/middleware/filesystem.py:1365 in awrap_tool_call                           │
+│                                                                                                 │
+│   1362 │   │   if self._tool_token_limit_before_evict is None or request.tool_call["name"] in T │
+│   1363 │   │   │   return await handler(request)                                                │
+│   1364 │   │                                                                                    │
+│ ❱ 1365 │   │   tool_result = await handler(request)                                             │
+│   1366 │   │   return await self._aintercept_large_tool_result(tool_result, request.runtime)    │
+│   1367                                                                                          │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:1182 in execute                                       │
+│                                                                                                 │
+│   1179 │   │   # Define async execute callable that can be called multiple times                │
+│   1180 │   │   async def execute(req: ToolCallRequest) -> ToolMessage | Command:                │
+│   1181 │   │   │   """Execute tool with given request. Can be called multiple times."""         │
+│ ❱ 1182 │   │   │   return await self._execute_tool_async(req, input_type, config)               │
+│   1183 │   │                                                                                    │
+│   1184 │   │   def _sync_execute(req: ToolCallRequest) -> ToolMessage | Command:                │
+│   1185 │   │   │   """Sync execute fallback for sync wrapper."""                                │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:1126 in _execute_tool_async                           │
+│                                                                                                 │
+│   1123 │   │   │   │   raise                                                                    │
+│   1124 │   │   │                                                                                │
+│   1125 │   │   │   # Error is handled - create error ToolMessage                                │
+│ ❱ 1126 │   │   │   content = _handle_tool_error(e, flag=self._handle_tool_errors)               │
+│   1127 │   │   │   return ToolMessage(                                                          │
+│   1128 │   │   │   │   content=content,                                                         │
+│   1129 │   │   │   │   name=call["name"],                                                       │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:430 in _handle_tool_error                             │
+│                                                                                                 │
+│    427 │   elif isinstance(flag, str):                                                          │
+│    428 │   │   content = flag                                                                   │
+│    429 │   elif callable(flag):                                                                 │
+│ ❱  430 │   │   content = flag(e)  # type: ignore [assignment, call-arg]                         │
+│    431 │   else:                                                                                │
+│    432 │   │   msg = (                                                                          │
+│    433 │   │   │   f"Got unexpected type of `handle_tool_error`. Expected bool, str "           │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:387 in _default_handle_tool_errors                    │
+│                                                                                                 │
+│    384 │   """                                                                                  │
+│    385 │   if isinstance(e, ToolInvocationError):                                               │
+│    386 │   │   return e.message                                                                 │
+│ ❱  387 │   raise e                                                                              │
+│    388                                                                                          │
+│    389                                                                                          │
+│    390 def _handle_tool_error(                                                                  │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/prebuilt/tool_node.py:1083 in _execute_tool_async                           │
+│                                                                                                 │
+│   1080 │   │                                                                                    │
+│   1081 │   │   try:                                                                             │
+│   1082 │   │   │   try:                                                                         │
+│ ❱ 1083 │   │   │   │   response = await tool.ainvoke(call_args, config)                         │
+│   1084 │   │   │   except ValidationError as exc:                                               │
+│   1085 │   │   │   │   # Filter out errors for injected arguments                               │
+│   1086 │   │   │   │   injected = self._injected_args.get(call["name"])                         │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/tools/structured.py:70 in ainvoke                                      │
+│                                                                                                 │
+│    67 │   │   │   # If the tool does not implement async, fall back to default implementation   │
+│    68 │   │   │   return await run_in_executor(config, self.invoke, input, config, **kwargs)    │
+│    69 │   │                                                                                     │
+│ ❱  70 │   │   return await super().ainvoke(input, config, **kwargs)                             │
+│    71 │                                                                                         │
+│    72 │   # --- Tool ---                                                                        │
+│    73                                                                                           │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/tools/base.py:652 in ainvoke                                           │
+│                                                                                                 │
+│    649 │   │   **kwargs: Any,                                                                   │
+│    650 │   ) -> Any:                                                                            │
+│    651 │   │   tool_input, kwargs = _prep_run_args(input, config, **kwargs)                     │
+│ ❱  652 │   │   return await self.arun(tool_input, **kwargs)                                     │
+│    653 │                                                                                        │
+│    654 │   # --- Tool ---                                                                       │
+│    655                                                                                          │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/tools/base.py:1131 in arun                                             │
+│                                                                                                 │
+│   1128 │   │                                                                                    │
+│   1129 │   │   if error_to_raise:                                                               │
+│   1130 │   │   │   await run_manager.on_tool_error(error_to_raise, tool_call_id=tool_call_id)   │
+│ ❱ 1131 │   │   │   raise error_to_raise                                                         │
+│   1132 │   │                                                                                    │
+│   1133 │   │   output = _format_output(content, artifact, tool_call_id, self.name, status)      │
+│   1134 │   │   await run_manager.on_tool_end(output, color=color, name=self.name, **kwargs)     │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/tools/base.py:1097 in arun                                             │
+│                                                                                                 │
+│   1094 │   │   │   │   │   tool_kwargs[config_param] = config                                   │
+│   1095 │   │   │   │                                                                            │
+│   1096 │   │   │   │   coro = self._arun(*tool_args, **tool_kwargs)                             │
+│ ❱ 1097 │   │   │   │   response = await coro_with_context(coro, context)                        │
+│   1098 │   │   │   if self.response_format == "content_and_artifact":                           │
+│   1099 │   │   │   │   msg = (                                                                  │
+│   1100 │   │   │   │   │   "Since response_format='content_and_artifact' "                      │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/tools/structured.py:124 in _arun                                       │
+│                                                                                                 │
+│   121 │   │   │   │   kwargs["callbacks"] = run_manager.get_child()                             │
+│   122 │   │   │   if config_param := _get_runnable_config_param(self.coroutine):                │
+│   123 │   │   │   │   kwargs[config_param] = config                                             │
+│ ❱ 124 │   │   │   return await self.coroutine(*args, **kwargs)                                  │
+│   125 │   │                                                                                     │
+│   126 │   │   # If self.coroutine is None, then this will delegate to the default               │
+│   127 │   │   # implementation which is expected to delegate to _run on a separate thread.      │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/deepagents/middleware/subagents.py:463 in atask                                       │
+│                                                                                                 │
+│   460 │   │   │   value_error_msg = "Tool call ID is required for subagent invocation"          │
+│   461 │   │   │   raise ValueError(value_error_msg)                                             │
+│   462 │   │   subagent, subagent_state = _validate_and_prepare_state(subagent_type, descriptio  │
+│ ❱ 463 │   │   result = await subagent.ainvoke(subagent_state)                                   │
+│   464 │   │   return _return_command_with_state_update(result, runtime.tool_call_id)            │
+│   465 │                                                                                         │
+│   466 │   return StructuredTool.from_function(                                                  │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/pregel/main.py:3184 in ainvoke                                              │
+│                                                                                                 │
+│   3181 │   │   chunks: list[dict[str, Any] | Any] = []                                          │
+│   3182 │   │   interrupts: list[Interrupt] = []                                                 │
+│   3183 │   │                                                                                    │
+│ ❱ 3184 │   │   async for chunk in self.astream(                                                 │
+│   3185 │   │   │   input,                                                                       │
+│   3186 │   │   │   config,                                                                      │
+│   3187 │   │   │   context=context,                                                             │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/pregel/main.py:2997 in astream                                              │
+│                                                                                                 │
+│   2994 │   │   │   │   │   while loop.tick():                                                   │
+│   2995 │   │   │   │   │   │   for task in await loop.amatch_cached_writes():                   │
+│   2996 │   │   │   │   │   │   │   loop.output_writes(task.id, task.writes, cached=True)        │
+│ ❱ 2997 │   │   │   │   │   │   async for _ in runner.atick(                                     │
+│   2998 │   │   │   │   │   │   │   [t for t in loop.tasks.values() if not t.writes],            │
+│   2999 │   │   │   │   │   │   │   timeout=self.step_timeout,                                   │
+│   3000 │   │   │   │   │   │   │   get_waiter=get_waiter,                                       │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/pregel/_runner.py:304 in atick                                              │
+│                                                                                                 │
+│   301 │   │   elif len(tasks) == 1 and get_waiter is None and timeout is None:                  │
+│   302 │   │   │   t = tasks[0]                                                                  │
+│   303 │   │   │   try:                                                                          │
+│ ❱ 304 │   │   │   │   await arun_with_retry(                                                    │
+│   305 │   │   │   │   │   t,                                                                    │
+│   306 │   │   │   │   │   retry_policy,                                                         │
+│   307 │   │   │   │   │   stream=self.use_astream,                                              │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/pregel/_retry.py:163 in arun_with_retry                                     │
+│                                                                                                 │
+│   160 │   │   │   │   # if successful, end                                                      │
+│   161 │   │   │   │   break                                                                     │
+│   162 │   │   │   else:                                                                         │
+│ ❱ 163 │   │   │   │   return await task.proc.ainvoke(task.input, config)                        │
+│   164 │   │   except ParentCommand as exc:                                                      │
+│   165 │   │   │   ns: str = config[CONF][CONFIG_KEY_CHECKPOINT_NS]                              │
+│   166 │   │   │   cmd = exc.args[0]                                                             │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/_internal/_runnable.py:705 in ainvoke                                       │
+│                                                                                                 │
+│   702 │   │   │   │   │   │   │   run = None                                                    │
+│   703 │   │   │   │   │   │   # run in context                                                  │
+│   704 │   │   │   │   │   │   with set_config_context(config, run) as context:                  │
+│ ❱ 705 │   │   │   │   │   │   │   input = await asyncio.create_task(                            │
+│   706 │   │   │   │   │   │   │   │   step.ainvoke(input, config, **kwargs), context=context    │
+│   707 │   │   │   │   │   │   │   )                                                             │
+│   708 │   │   │   │   │   else:                                                                 │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langgraph/_internal/_runnable.py:473 in ainvoke                                       │
+│                                                                                                 │
+│   470 │   │   │   else:                                                                         │
+│   471 │   │   │   │   await run_manager.on_chain_end(ret)                                       │
+│   472 │   │   else:                                                                             │
+│ ❱ 473 │   │   │   ret = await self.afunc(*args, **kwargs)                                       │
+│   474 │   │   if self.recurse and isinstance(ret, Runnable):                                    │
+│   475 │   │   │   return await ret.ainvoke(input, config)                                       │
+│   476 │   │   return ret                                                                        │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain/agents/factory.py:1309 in amodel_node                                       │
+│                                                                                                 │
+│   1306 │   │   )                                                                                │
+│   1307 │   │                                                                                    │
+│   1308 │   │   if awrap_model_call_handler is None:                                             │
+│ ❱ 1309 │   │   │   model_response = await _execute_model_async(request)                         │
+│   1310 │   │   │   return _build_commands(model_response)                                       │
+│   1311 │   │                                                                                    │
+│   1312 │   │   result = await awrap_model_call_handler(request, _execute_model_async)           │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain/agents/factory.py:1281 in _execute_model_async                              │
+│                                                                                                 │
+│   1278 │   │   if request.system_message:                                                       │
+│   1279 │   │   │   messages = [request.system_message, *messages]                               │
+│   1280 │   │                                                                                    │
+│ ❱ 1281 │   │   output = await model_.ainvoke(messages)                                          │
+│   1282 │   │   if name:                                                                         │
+│   1283 │   │   │   output.name = name                                                           │
+│   1284                                                                                          │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/runnables/base.py:5708 in ainvoke                                      │
+│                                                                                                 │
+│   5705 │   │   config: RunnableConfig | None = None,                                            │
+│   5706 │   │   **kwargs: Any | None,                                                            │
+│   5707 │   ) -> Output:                                                                         │
+│ ❱ 5708 │   │   return await self.bound.ainvoke(                                                 │
+│   5709 │   │   │   input,                                                                       │
+│   5710 │   │   │   self._merge_configs(config),                                                 │
+│   5711 │   │   │   **{**self.kwargs, **kwargs},                                                 │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/language_models/chat_models.py:425 in ainvoke                          │
+│                                                                                                 │
+│    422 │   │   **kwargs: Any,                                                                   │
+│    423 │   ) -> AIMessage:                                                                      │
+│    424 │   │   config = ensure_config(config)                                                   │
+│ ❱  425 │   │   llm_result = await self.agenerate_prompt(                                        │
+│    426 │   │   │   [self._convert_input(input)],                                                │
+│    427 │   │   │   stop=stop,                                                                   │
+│    428 │   │   │   callbacks=config.get("callbacks"),                                           │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/language_models/chat_models.py:1134 in agenerate_prompt                │
+│                                                                                                 │
+│   1131 │   │   **kwargs: Any,                                                                   │
+│   1132 │   ) -> LLMResult:                                                                      │
+│   1133 │   │   prompt_messages = [p.to_messages() for p in prompts]                             │
+│ ❱ 1134 │   │   return await self.agenerate(                                                     │
+│   1135 │   │   │   prompt_messages, stop=stop, callbacks=callbacks, **kwargs                    │
+│   1136 │   │   )                                                                                │
+│   1137                                                                                          │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/language_models/chat_models.py:1092 in agenerate                       │
+│                                                                                                 │
+│   1089 │   │   │   │   │   │   if not isinstance(res, Exception)                                │
+│   1090 │   │   │   │   │   ]                                                                    │
+│   1091 │   │   │   │   )                                                                        │
+│ ❱ 1092 │   │   │   raise exceptions[0]                                                          │
+│   1093 │   │   flattened_outputs = [                                                            │
+│   1094 │   │   │   LLMResult(generations=[res.generations], llm_output=res.llm_output)  # type: │
+│   1095 │   │   │   for res in results                                                           │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_core/language_models/chat_models.py:1318 in _agenerate_with_cache           │
+│                                                                                                 │
+│   1315 │   │   │   yielded = False                                                              │
+│   1316 │   │   │   index = -1                                                                   │
+│   1317 │   │   │   index_type = ""                                                              │
+│ ❱ 1318 │   │   │   async for chunk in self._astream(messages, stop=stop, **kwargs):             │
+│   1319 │   │   │   │   chunk.message.response_metadata = _gen_info_and_msg_metadata(chunk)      │
+│   1320 │   │   │   │   if self.output_version == "v1":                                          │
+│   1321 │   │   │   │   │   # Overwrite .content with .content_blocks                            │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_openai/chat_models/base.py:3161 in _astream                                 │
+│                                                                                                 │
+│   3158 │   │   │   async for chunk in super()._astream_responses(*args, **kwargs):              │
+│   3159 │   │   │   │   yield chunk                                                              │
+│   3160 │   │   else:                                                                            │
+│ ❱ 3161 │   │   │   async for chunk in super()._astream(*args, **kwargs):                        │
+│   3162 │   │   │   │   yield chunk                                                              │
+│   3163 │                                                                                        │
+│   3164 │   def with_structured_output(                                                          │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_openai/chat_models/base.py:1673 in _astream                                 │
+│                                                                                                 │
+│   1670 │   │   except openai.BadRequestError as e:                                              │
+│   1671 │   │   │   _handle_openai_bad_request(e)                                                │
+│   1672 │   │   except openai.APIError as e:                                                     │
+│ ❱ 1673 │   │   │   _handle_openai_api_error(e)                                                  │
+│   1674 │   │   if hasattr(response, "get_final_completion") and "response_format" in payload:   │
+│   1675 │   │   │   final_completion = await response.get_final_completion()                     │
+│   1676 │   │   │   generation_chunk = self._get_generation_chunk_from_completion(               │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/langchain_openai/chat_models/base.py:1646 in _astream                                 │
+│                                                                                                 │
+│   1643 │   │   │   │   │   response = raw_response.parse()                                      │
+│   1644 │   │   │   │   │   base_generation_info = {"headers": dict(raw_response.headers)}       │
+│   1645 │   │   │   │   else:                                                                    │
+│ ❱ 1646 │   │   │   │   │   response = await self.async_client.create(**payload)                 │
+│   1647 │   │   │   │   context_manager = response                                               │
+│   1648 │   │   │   async with context_manager as response:                                      │
+│   1649 │   │   │   │   is_first_chunk = True                                                    │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/openai/resources/chat/completions/completions.py:2700 in create                       │
+│                                                                                                 │
+│   2697 │   │   timeout: float | httpx.Timeout | None | NotGiven = not_given,                    │
+│   2698 │   ) -> ChatCompletion | AsyncStream[ChatCompletionChunk]:                              │
+│   2699 │   │   validate_response_format(response_format)                                        │
+│ ❱ 2700 │   │   return await self._post(                                                         │
+│   2701 │   │   │   "/chat/completions",                                                         │
+│   2702 │   │   │   body=await async_maybe_transform(                                            │
+│   2703 │   │   │   │   {                                                                        │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/openai/_base_client.py:1884 in post                                                   │
+│                                                                                                 │
+│   1881 │   │   opts = FinalRequestOptions.construct(                                            │
+│   1882 │   │   │   method="post", url=path, json_data=body, content=content, files=await async_ │
+│   1883 │   │   )                                                                                │
+│ ❱ 1884 │   │   return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)   │
+│   1885 │                                                                                        │
+│   1886 │   async def patch(                                                                     │
+│   1887 │   │   self,                                                                            │
+│                                                                                                 │
+│ /Users/gururafiki/Projects/Python/Muffin/muffin-agent-v2/muffin-agent/.venv/lib/python3.13/site │
+│ -packages/openai/_base_client.py:1669 in request                                                │
+│                                                                                                 │
+│   1666 │   │   │   │   │   await err.response.aread()                                           │
+│   1667 │   │   │   │                                                                            │
+│   1668 │   │   │   │   log.debug("Re-raising status error")                                     │
+│ ❱ 1669 │   │   │   │   raise self._make_status_error_from_response(err.response) from None      │
+│   1670 │   │   │                                                                                │
+│   1671 │   │   │   break                                                                        │
+│   1672                                                                                          │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────╯
+RateLimitError: Error code: 429 - {'error': {'message': 'Provider returned error', 'code': 429, 
+'metadata': {'raw': 'openai/gpt-oss-120b:free is temporarily rate-limited upstream. Please retry 
+shortly, or add your own key to accumulate your rate limits: 
+https://openrouter.ai/settings/integrations', 'provider_name': 'OpenInference', 'is_byok': False}},
+'user_id': 'user_2yXNIITTlpdEuVDdifc3e8hBYhA'}
