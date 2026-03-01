@@ -11,6 +11,7 @@ from ..prompts import render_template
 from .data_collection import (
     create_equity_estimates_data_collection_agent,
     create_equity_fundamentals_data_collection_agent,
+    create_equity_ownership_data_collection_agent,
     create_equity_price_data_collection_agent,
 )
 
@@ -24,6 +25,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     fundamentals_agent = await create_equity_fundamentals_data_collection_agent(config)
     price_agent = await create_equity_price_data_collection_agent(config)
     estimates_agent = await create_equity_estimates_data_collection_agent(config)
+    ownership_agent = await create_equity_ownership_data_collection_agent(config)
 
     subagents = [
         CompiledSubAgent(
@@ -55,6 +57,16 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "valuation and analyst sentiment data."
             ),
             runnable=estimates_agent,
+        ),
+        CompiledSubAgent(
+            name="equity-ownership",
+            description=(
+                "Retrieves ownership and short interest data: major holders, "
+                "institutional ownership, insider trades, share statistics, "
+                "13F filings, government trades, short interest, short volume, "
+                "fails-to-deliver. Use for conviction signals and short squeeze risk."
+            ),
+            runnable=ownership_agent,
         ),
     ]
 
