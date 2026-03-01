@@ -96,6 +96,48 @@ def price(
     asyncio.run(_stream_price(ticker, query))
 
 
+async def _stream_estimates(ticker: str, query: str | None) -> None:
+    """Build the equity estimates agent and stream output."""
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.agents.data_collection import (
+        create_equity_estimates_data_collection_agent,
+    )
+    from muffin_agent.config import Configuration
+    from muffin_agent.utils.observability import setup_tracing
+
+    config = Configuration.from_runnable_config(RunnableConfig(configurable={}))
+    callbacks = setup_tracing(session_id=ticker)
+    agent = await create_equity_estimates_data_collection_agent(config)
+
+    prompt = (
+        f"Ticker: {ticker}. {query}"
+        if query
+        else f"Get comprehensive analyst estimates data for {ticker}"
+    )
+
+    printer = StreamPrinter()
+    async for chunk, _metadata in agent.astream(
+        {"messages": [HumanMessage(prompt)]},
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
+        stream_mode="messages",
+    ):
+        printer.print_chunk(chunk)
+    printer.finish()
+
+
+@app.command()
+def estimates(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Custom query (overrides default)"),
+    ] = None,
+) -> None:
+    """Retrieve analyst estimates data for a given ticker."""
+    asyncio.run(_stream_estimates(ticker, query))
+
+
 async def _stream_evaluate(ticker: str, query: str | None) -> None:
     """Build the stock evaluation agent and stream output."""
     from langchain_core.runnables import RunnableConfig
