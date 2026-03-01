@@ -8,7 +8,7 @@ from langchain.agents import create_agent
 
 from ...config import Configuration
 from ...prompts import render_template
-from .utils import get_tools, handle_tool_errors
+from .utils import ToolErrorHandler, get_tools
 
 MCP_TOOLS = [
     "equity_fundamental_balance",
@@ -39,7 +39,7 @@ MCP_TOOLS = [
 ]
 
 
-async def build_graph(config: Configuration):
+async def create_equity_fundamentals_data_collection_agent(config: Configuration):
     """Build the equity fundamentals ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
     prompt = render_template("equity_fundamentals.jinja")
@@ -48,5 +48,5 @@ async def build_graph(config: Configuration):
         model=llm,
         tools=tools,
         system_prompt=prompt,
-        middleware=[handle_tool_errors],
+        middleware=[ToolErrorHandler()],
     )

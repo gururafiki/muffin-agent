@@ -20,13 +20,13 @@ async def _stream_fundamentals(ticker: str, query: str | None) -> None:
     """Build the equity fundamentals agent and stream output."""
     from langchain_core.runnables import RunnableConfig
 
-    from muffin_agent.agents.data_collection.equity_fundamentals import build_graph
+    from muffin_agent.agents.data_collection import create_equity_fundamentals_agent
     from muffin_agent.config import Configuration
     from muffin_agent.utils.observability import setup_tracing
 
     config = Configuration.from_runnable_config(RunnableConfig(configurable={}))
     callbacks = setup_tracing(session_id=ticker)
-    agent = await build_graph(config)
+    agent = await create_equity_fundamentals_agent(config)
 
     prompt = (
         f"Ticker: {ticker}. {query}"
@@ -37,7 +37,7 @@ async def _stream_fundamentals(ticker: str, query: str | None) -> None:
     printer = StreamPrinter()
     async for chunk, _metadata in agent.astream(
         {"messages": [HumanMessage(prompt)]},
-        config=RunnableConfig(callbacks=callbacks),
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
         stream_mode="messages",
     ):
         printer.print_chunk(chunk)
@@ -60,13 +60,13 @@ async def _stream_price(ticker: str, query: str | None) -> None:
     """Build the equity price agent and stream output."""
     from langchain_core.runnables import RunnableConfig
 
-    from muffin_agent.agents.data_collection.equity_price import build_graph
+    from muffin_agent.agents.data_collection import create_equity_price_agent
     from muffin_agent.config import Configuration
     from muffin_agent.utils.observability import setup_tracing
 
     config = Configuration.from_runnable_config(RunnableConfig(configurable={}))
     callbacks = setup_tracing(session_id=ticker)
-    agent = await build_graph(config)
+    agent = await create_equity_price_agent(config)
 
     prompt = (
         f"Ticker: {ticker}. {query}"
@@ -77,7 +77,7 @@ async def _stream_price(ticker: str, query: str | None) -> None:
     printer = StreamPrinter()
     async for chunk, _metadata in agent.astream(
         {"messages": [HumanMessage(prompt)]},
-        config=RunnableConfig(callbacks=callbacks),
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
         stream_mode="messages",
     ):
         printer.print_chunk(chunk)
@@ -94,6 +94,49 @@ def price(
 ) -> None:
     """Retrieve equity price data for a given ticker."""
     asyncio.run(_stream_price(ticker, query))
+
+
+async def _stream_evaluate(ticker: str, query: str | None) -> None:
+    """Build the stock evaluation agent and stream output."""
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.agents import create_stock_evaluation_agent
+    from muffin_agent.config import Configuration
+    from muffin_agent.utils.observability import setup_tracing
+
+    config = Configuration.from_runnable_config(RunnableConfig(configurable={}))
+    callbacks = setup_tracing(session_id=ticker)
+    agent = await create_stock_evaluation_agent(config)
+
+    prompt = (
+        f"Ticker: {ticker}. {query}"
+        if query
+        else (
+            f"Evaluate {ticker} stock — analyze fundamentals"
+            " and price data to produce a scored assessment"
+        )
+    )
+
+    printer = StreamPrinter()
+    async for chunk, _metadata in agent.astream(
+        {"messages": [HumanMessage(prompt)]},
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
+        stream_mode="messages",
+    ):
+        printer.print_chunk(chunk)
+    printer.finish()
+
+
+@app.command()
+def evaluate(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Custom query (overrides default)"),
+    ] = None,
+) -> None:
+    """Evaluate a stock with scored assessment using data collection subagents."""
+    asyncio.run(_stream_evaluate(ticker, query))
 
 
 def main() -> None:

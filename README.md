@@ -33,6 +33,16 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `equity_fundamentals` | 25 | Financial statements, ratios, metrics, EPS, dividends, revenue segments, management, ESG, transcripts, filings |
 | `equity_price` | 5 | Current quotes, historical OHLCV, NBBO spreads, price performance, market cap history |
 
+### Stock Evaluation Agent
+
+A deep agent (powered by `deepagents`) that orchestrates data collection subagents to produce scored stock assessments. It follows a 5-step workflow:
+
+1. **Plan** — Determine what data is needed based on ticker and query
+2. **Collect** — Delegate to data collection subagents via `task()` tool
+3. **Validate** — Check data sufficiency, relevance, temporal correctness, completeness
+4. **Analyze** — Produce a 0.0–1.0 score with reasoning backed by specific data points
+5. **Reflect** — Verify score-data consistency, logical coherence, and confidence
+
 ### Design Principles
 
 0. **KISS. Keep it simple stupid**: Implementation has to be simple and extensible, no over-engineering.
@@ -65,6 +75,10 @@ muffin fundamentals AAPL
 
 # Retrieve price data for a ticker
 muffin price AAPL
+
+# Evaluate a stock (deep agent with subagents)
+muffin evaluate AAPL
+muffin evaluate AAPL -q "Is this stock undervalued based on fundamentals?"
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"

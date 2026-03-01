@@ -45,6 +45,34 @@
             "console": "integratedTerminal",
             "envFile": "${workspaceFolder}/.env",
             "justMyCode": false
+        },
+        {
+            "name": "Stock Evaluation Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "evaluate",
+                "AAPL"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Stock Evaluation Agent: Custom Ticker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "evaluate",
+                "${input:ticker}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
         }
     ],
     "inputs": [

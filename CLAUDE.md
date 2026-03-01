@@ -38,7 +38,7 @@ The source lives in `src/muffin_agent/` and is organized as:
 
 - **`agents/data_collection/`** — Data collection agents using MCP tools with the ReAct pattern. Each agent is a single `.py` file containing:
   - `MCP_TOOLS` — list of allowed MCP tool name strings
-  - `build_graph(config)` — async; calls shared `get_tools()`, renders the Jinja2 prompt, builds the agent via `create_agent()` from `langchain.agents`
+  - `create_*_agent(config)` — async; calls shared `get_tools()`, renders the Jinja2 prompt, builds the agent via `create_agent()` from `langchain.agents`
 
   Shared utilities live in `utils.py`:
   - `get_tools(config, allowed_tools, custom_tools=None)` — loads filtered MCP tools via `MultiServerMCPClient`

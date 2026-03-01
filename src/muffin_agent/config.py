@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-DEFAULT_MODEL = "upstage/solar-pro-3:free"
+DEFAULT_MODEL = "openai/gpt-oss-120b:free"
 
 
 class Configuration(BaseModel):

@@ -28,6 +28,7 @@ dependencies = [
     "rich",
     # Observability
     "langfuse",
+    "deepagents"
 ]
 
 [project.scripts]
