@@ -51,6 +51,7 @@ class TestCreateStockEvaluationAgent:
         mock_estimates_agent = MagicMock()
         mock_ownership_agent = MagicMock()
         mock_news_agent = MagicMock()
+        mock_options_agent = MagicMock()
 
         config = MagicMock()
         config.get_llm.return_value = MagicMock()
@@ -87,6 +88,12 @@ class TestCreateStockEvaluationAgent:
                 return_value=mock_news_agent,
             ),
             patch(
+                "muffin_agent.agents.stock_evaluation"
+                ".create_options_data_collection_agent",
+                new_callable=AsyncMock,
+                return_value=mock_options_agent,
+            ),
+            patch(
                 "muffin_agent.agents.stock_evaluation.create_deep_agent"
             ) as mock_create,
         ):
@@ -102,7 +109,7 @@ class TestCreateStockEvaluationAgent:
             call_kwargs = mock_create.call_args
             assert call_kwargs.kwargs["model"] == config.get_llm.return_value
             subagents = call_kwargs.kwargs["subagents"]
-            assert len(subagents) == 5
+            assert len(subagents) == 6
             assert subagents[0]["name"] == "equity-fundamentals"
             assert subagents[0]["runnable"] is mock_fundamentals_agent
             assert subagents[1]["name"] == "equity-price"
@@ -113,4 +120,6 @@ class TestCreateStockEvaluationAgent:
             assert subagents[3]["runnable"] is mock_ownership_agent
             assert subagents[4]["name"] == "news"
             assert subagents[4]["runnable"] is mock_news_agent
+            assert subagents[5]["name"] == "options"
+            assert subagents[5]["runnable"] is mock_options_agent
             assert agent is mock_create.return_value

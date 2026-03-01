@@ -137,6 +137,36 @@
             "justMyCode": false
         },
         {
+            "name": "Options Data Collection Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "options",
+                "AAPL",
+                "--query",
+                "Get options chain and implied volatility surface."
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Options Data Collection Agent: Custom Ticker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "options",
+                "${input:ticker}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
             "name": "Stock Evaluation Agent: AAPL",
             "type": "debugpy",
             "request": "launch",

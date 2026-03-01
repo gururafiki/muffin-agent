@@ -14,6 +14,7 @@ from .data_collection import (
     create_equity_ownership_data_collection_agent,
     create_equity_price_data_collection_agent,
     create_news_data_collection_agent,
+    create_options_data_collection_agent,
 )
 
 
@@ -28,6 +29,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     estimates_agent = await create_equity_estimates_data_collection_agent(config)
     ownership_agent = await create_equity_ownership_data_collection_agent(config)
     news_agent = await create_news_data_collection_agent(config)
+    options_agent = await create_options_data_collection_agent(config)
 
     subagents = [
         CompiledSubAgent(
@@ -78,6 +80,16 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "catalyst identification, sentiment analysis, and event-driven context."
             ),
             runnable=news_agent,
+        ),
+        CompiledSubAgent(
+            name="options",
+            description=(
+                "Retrieves options data: full options chains with Greeks "
+                "(delta, gamma, theta, vega, IV) and implied volatility surface. "
+                "Use for options flow analysis, implied volatility assessment, "
+                "and put/call ratio signals."
+            ),
+            runnable=options_agent,
         ),
     ]
 

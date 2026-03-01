@@ -35,6 +35,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `equity_estimates` | 8 | Analyst consensus estimates, price targets, forward EPS/EBITDA/PE/sales, analyst rating breakdowns |
 | `equity_ownership` | 9 | Major holders, institutional ownership, insider trading, share statistics, 13F filings, government trades, short interest/volume/FTDs |
 | `news` | 2 | Company news with sentiment signals, global/macro news headlines |
+| `options` | 2 | Options chains with Greeks (delta, gamma, theta, vega, IV), implied volatility surface |
 
 ### Stock Evaluation Agent
 
@@ -183,6 +184,9 @@ muffin price AAPL
 # Retrieve analyst estimates for a ticker
 muffin estimates AAPL
 
+# Retrieve options chain for a ticker
+muffin options AAPL
+
 # Evaluate a stock (deep agent with subagents)
 muffin evaluate AAPL
 muffin evaluate AAPL -q "Is this stock undervalued based on fundamentals?"
@@ -193,6 +197,7 @@ muffin price MSFT -q "Get current quote and 1-year historical prices"
 muffin estimates MSFT -q "Get analyst price targets and forward PE"
 muffin ownership MSFT -q "Get institutional holders and short interest"
 muffin news MSFT -q "Get recent news and sentiment"
+muffin options MSFT -q "Get options chain and implied volatility surface"
 
 # Help
 muffin --help
@@ -201,6 +206,7 @@ muffin price --help
 muffin estimates --help
 muffin ownership --help
 muffin news --help
+muffin options --help
 ```
 
 **Output features:**
