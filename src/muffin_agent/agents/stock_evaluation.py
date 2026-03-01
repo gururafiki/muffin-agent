@@ -5,11 +5,11 @@ data, and produces a scored stock assessment with reasoning.
 """
 
 from deepagents import CompiledSubAgent, create_deep_agent
-from deepagents.backends import FilesystemBackend
 
 from ..config import Configuration
 from ..prompts import render_template
 from .data_collection import (
+    create_equity_estimates_data_collection_agent,
     create_equity_fundamentals_data_collection_agent,
     create_equity_price_data_collection_agent,
 )
@@ -23,6 +23,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     """
     fundamentals_agent = await create_equity_fundamentals_data_collection_agent(config)
     price_agent = await create_equity_price_data_collection_agent(config)
+    estimates_agent = await create_equity_estimates_data_collection_agent(config)
 
     subagents = [
         CompiledSubAgent(
@@ -44,6 +45,16 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "bid/ask spreads. Use for any price or market data needs."
             ),
             runnable=price_agent,
+        ),
+        CompiledSubAgent(
+            name="equity-estimates",
+            description=(
+                "Retrieves analyst estimates data: consensus estimates, price "
+                "targets, forward EPS, forward EBITDA, forward PE, forward "
+                "sales, analyst rating breakdowns. Use for forward-looking "
+                "valuation and analyst sentiment data."
+            ),
+            runnable=estimates_agent,
         ),
     ]
 
