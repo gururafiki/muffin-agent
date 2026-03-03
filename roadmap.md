@@ -54,6 +54,7 @@
 - [ ] Add support of defining point of time at which data has to be fetched
 
 #### Data collection
+- [ ] Iterate over data collection agents, improve prompts based on openbb docs. if needed split to smaller specialized agents.
 - [ ] Add fire crawl to collect data from web (consider adding as MCP)
 
 #### Specialized Agents
