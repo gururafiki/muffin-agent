@@ -36,6 +36,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `equity_ownership` | 9 | Major holders, institutional ownership, insider trading, share statistics, 13F filings, government trades, short interest/volume/FTDs |
 | `news` | 2 | Company news with sentiment signals, global/macro news headlines |
 | `options` | 2 | Options chains with Greeks (delta, gamma, theta, vega, IV), implied volatility surface |
+| `economy_macro` | 40 | GDP, CPI, unemployment, interest rates, FOMC documents, FRED series, surveys (UMich, SLOOS, payrolls, manufacturing), shipping volumes |
 
 ### Stock Evaluation Agent
 
