@@ -5,8 +5,8 @@
 #### Data Collection Agents
 - [+] Create example data collection agent
 - [+] Develop CLI for agents
-- [ ] Create other **High** priority data collection agents from [docs/data-collection-agents.md](docs/data-collection-agents.md)
-- [ ] Add setup guide including guide on getting API keys for OpenBB providers, setting up langfuse and getting other .env variables
+- [+] Add setup guide including guide on getting API keys for OpenBB providers, setting up langfuse and getting other .env variables
+- [ ] Create other data collection agents from [docs/data-collection-agents.md](docs/data-collection-agents.md)
 - [ ] Handle rate limiting with `openai/gpt-oss-120b:free` model
 
 
@@ -19,10 +19,6 @@
     - reflect on results
 - [+] Add logic for data validation that checks if data is sufficient, data is relevant, if point of time is provided - data is not going beyond that point of time
 
-
-#### Development
-- [ ] Add Claude Code skills for Spec driven development
-- [ ] Check Claude Code development via mobile app
 
 ### Phase 2
 
@@ -48,19 +44,20 @@
 ### Valuation agents
 - [ ] DCF valuation Agent
 - [ ] Explore other valuation methodologies
+    - Comparables
+    - Precedent txns
+    - SOTP
 
 ### Phase 3
 
 #### Agent Evaluations
 - [ ] Add support of defining point of time at which data has to be fetched
-- [ ] Setup evaluation datasets best on the past stock performances and point of time evaluation
-- [ ] Definition evaluation metrics
-- [ ] Setup LLM-as-a-judge scoring
-- [ ] Setup evaluations with Langfuse
-- [ ] Optimize prompts based on evals using langfuse
+
+#### Data collection
+- [ ] Add fire crawl to collect data from web (consider adding as MCP)
 
 #### Specialized Agents
-- [ ] Integrate tool(s) to get Technical indicators
+- [ ] Integrate tool(s) to get Technical indicators (consider TA-lib)
 - [ ] Develop Specialized Technical Analysis Agent
 - [ ] Develop Specialized Fundamental Analysis Agent
 - [ ] Develop Specialized Macro economy Analysis Agent
@@ -78,6 +75,9 @@
 - [ ] Add capability to pass pre-defined conditions
 - [ ] Think about adding HITL to handle: data fetchnig failure, adjusting instructions, validating criteria, etc
 - [ ] Setup the model to generate python code for deterministic functions instead of doing math on it's own.
+- [ ] Agent self-improvement
+- [ ] Add an agent to analyze stock price gainers and reason why they have grown to incorporate this knowledge later
+- [ ] For structure outputs explore response_format for agents
 
 #### Unbiasing agents
 - [ ] When defining data needs for criterion - agent shouldn't know about subagents available, to make sure that data needs are unbaiased
@@ -85,14 +85,30 @@
 - [ ] When reflecting on criterion evaluation - agent shouldn't know about ticker or any other information except data and criterion. It should look only on data provided and criterion evaluation results.
 - [ ] When synthesizing results from evaluated criteria - agent shouldn't know about ticker or any other information except criteria evaluation results.
 
+
 #### CI/CD and testing
 - [ ] Add full e2e integreation test mocking LLM calls
 - [ ] Add github actions to run integration tests with agents before merging pull requests
 
 ### Phase 4
+
+#### Agent Evaluations
+- [ ] Setup evaluation datasets best on the past stock performances and point of time evaluation
+- [ ] Definition evaluation metrics
+- [ ] Setup LLM-as-a-judge scoring (Explore how to callibrate it)
+- [ ] Setup evaluations with Langfuse
+- [ ] Optimize prompts based on evals using langfuse
+
+#### Deployment
 - [ ] Deployment configuration
 - [ ] Monitoring & alerting
 - [ ] Scale testing
+
+#### Interface development
 - [ ] Expose agents as API (FastAPI)
 - [ ] Expose agents as MCP servers (FastMCP)
 - [ ] Developing client app(s)
+
+#### DX
+- [ ] Add Claude Code skills for Spec driven development
+- [+] Check Claude Code development via mobile app
