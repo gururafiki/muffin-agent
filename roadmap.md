@@ -35,10 +35,18 @@
 
 
 #### Deployment
-- [ ] Deploy agent to LangGraph Cloud (under free tier).
+##### Option 1 (Separate client and agent server):
+###### For Server options:
+        - [ ] Setup self-hosted [Standalone Agent Server](https://docs.langchain.com/langsmith/deploy-standalone-server#docker-compose) accept 1M node executions limit for development purpose. Build image with [langgraph cli](https://docs.langchain.com/langsmith/cli#build)
+        - [ ] Setup [aegra](https://github.com/ibbybuilds/aegra)
+###### For client:
+        - [ ] Setup client web app. For MVP we can go with [langchain-ai/agent-chat-ui](https://docs.langchain.com/oss/python/langchain/ui)
+        - [ ] Use [LangSmith studio](https://docs.langchain.com/langsmith/studio)
+        - [ ] Use [Agent Chat UI](https://agentchat.vercel.app/)
+##### Option 2:
+    - Go with [chainlit](https://docs.chainlit.io/integrations/langchain) for both client and server
+For both options:
     - [ ] Make sure that integration with langfuse still works. Probalby requires updating graph compilation to pre-compile callback.
-- [ ] Check [Agent Chat UI](https://agentchat.vercel.app/) or [LangSmith studio](https://docs.langchain.com/langsmith/studio)
-- [ ] Add github action to deploy on merge to `main`
 
 ### Phase 2
 
@@ -125,9 +133,9 @@
     - [ ] Setup Terraform and Ansible to spin up instances with Docker swarm setup
         - [ ] Spin up independent test and prod swarms
         - [ ] Setup GitHub actions to auto deploy to test swarm on merge
-    - [ ] Setup and deploy Deploy self-hosted [Standalone Agent Server](https://docs.langchain.com/langsmith/deploy-standalone-server#docker-compose). Build image with [langgraph cli](https://docs.langchain.com/langsmith/cli#build)
     - [ ] Deploy (langfuse)[https://langfuse.com/self-hosting]
-    - [ ] Setup and deploy client web app. For MVP we can go with [langchain-ai/agent-chat-ui](https://docs.langchain.com/oss/python/langchain/ui)
+    - [ ] Deploy Agent server, build custom FastAPI/FastMCP wrapper or use paid langsmith plan
+    - [ ] Deploy client web app.
 - [ ] Monitoring & alerting
 - [ ] Scale testing
 
@@ -138,7 +146,7 @@
     - [ ] React Native cross-platform app for iOS, Android and Web.
         - Check (Vercel AI SDK)[https://ai-sdk.dev/docs/getting-started/expo]
         - Check (Gifted Chat)[https://github.com/FaridSafi/react-native-gifted-chat]
-        - If costly we can start with web-only app based on React + CopilotKit
+        - If costly we can start with web-only app based on React + CopilotKit.
     - [ ] Messengers
 
 #### DX
