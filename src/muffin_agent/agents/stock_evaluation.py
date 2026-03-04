@@ -9,6 +9,7 @@ from deepagents import CompiledSubAgent, create_deep_agent
 from ..config import Configuration
 from ..prompts import render_template
 from .data_collection import (
+    create_economy_macro_data_collection_agent,
     create_equity_estimates_data_collection_agent,
     create_equity_fundamentals_data_collection_agent,
     create_equity_ownership_data_collection_agent,
@@ -24,6 +25,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     Create a deep agent that delegates data collection to equity-fundamentals
     and equity-price subagents, then validates, analyzes, and scores the stock.
     """
+    economy_macro_agent = await create_economy_macro_data_collection_agent(config)
     fundamentals_agent = await create_equity_fundamentals_data_collection_agent(config)
     price_agent = await create_equity_price_data_collection_agent(config)
     estimates_agent = await create_equity_estimates_data_collection_agent(config)
@@ -90,6 +92,16 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "and put/call ratio signals."
             ),
             runnable=options_agent,
+        ),
+        CompiledSubAgent(
+            name="economy-macro",
+            description=(
+                "Retrieves macroeconomic data: GDP, CPI, unemployment, interest "
+                "rates, FOMC documents, FRED series, consumer/business surveys, "
+                "and shipping volumes. Use for macro environment assessment and "
+                "discount rate context."
+            ),
+            runnable=economy_macro_agent,
         ),
     ]
 
