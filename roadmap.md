@@ -7,6 +7,20 @@
 - [+] Develop CLI for agents
 - [+] Add setup guide including guide on getting API keys for OpenBB providers, setting up langfuse and getting other .env variables
 - [ ] Create other data collection agents from [docs/data-collection-agents.md](docs/data-collection-agents.md)
+    - [+] 1. Equity Fundamentals
+    - [+] 2. Equity Price
+    - [+] 3. Equity Estimates
+    - [+] 4. Equity Ownership & Short Interest
+    - [+] 5. Company News
+    - [+] 6. Options
+    - [+] 7. Economy & Macro
+    - [+] 8. Fixed Income & Rates
+    - [ ] 9. ETF & Index
+    - [ ] 10. Discovery & Screening
+    - [ ] 11. Currency & Commodities
+    - [ ] 12. Regulatory & Filings
+    - [ ] 13. Fama-French
+- [ ] Validate that all MCP tools (except Utility Tools) are assigned to agents
 - [ ] Handle rate limiting with `openai/gpt-oss-120b:free` model
 
 
@@ -19,6 +33,12 @@
     - reflect on results
 - [+] Add logic for data validation that checks if data is sufficient, data is relevant, if point of time is provided - data is not going beyond that point of time
 
+
+#### Deployment
+- [ ] Deploy agent to LangGraph Cloud (under free tier).
+    - [ ] Make sure that integration with langfuse still works. Probalby requires updating graph compilation to pre-compile callback.
+- [ ] Check [Agent Chat UI](https://agentchat.vercel.app/) or [LangSmith studio](https://docs.langchain.com/langsmith/studio)
+- [ ] Add github action to deploy on merge to `main`
 
 ### Phase 2
 
@@ -101,14 +121,25 @@
 - [ ] Optimize prompts based on evals using langfuse
 
 #### Deployment
-- [ ] Deployment configuration
+- [ ] Self-hosted infrastructure setup
+    - [ ] Setup Terraform and Ansible to spin up instances with Docker swarm setup
+        - [ ] Spin up independent test and prod swarms
+        - [ ] Setup GitHub actions to auto deploy to test swarm on merge
+    - [ ] Setup and deploy Deploy self-hosted [Standalone Agent Server](https://docs.langchain.com/langsmith/deploy-standalone-server#docker-compose). Build image with [langgraph cli](https://docs.langchain.com/langsmith/cli#build)
+    - [ ] Deploy (langfuse)[https://langfuse.com/self-hosting]
+    - [ ] Setup and deploy client web app. For MVP we can go with [langchain-ai/agent-chat-ui](https://docs.langchain.com/oss/python/langchain/ui)
 - [ ] Monitoring & alerting
 - [ ] Scale testing
 
 #### Interface development
-- [ ] Expose agents as API (FastAPI)
-- [ ] Expose agents as MCP servers (FastMCP)
-- [ ] Developing client app(s)
+- [ ] Expose agents as API (LangGraph Server default API or wrap graph invocation with FastAPI)
+- [ ] Expose agents as MCP servers (LangGraph Server default API or wrap graph invocation with FastMCP)
+- [ ] Developing client app(s):
+    - [ ] React Native cross-platform app for iOS, Android and Web.
+        - Check (Vercel AI SDK)[https://ai-sdk.dev/docs/getting-started/expo]
+        - Check (Gifted Chat)[https://github.com/FaridSafi/react-native-gifted-chat]
+        - If costly we can start with web-only app based on React + CopilotKit
+    - [ ] Messengers
 
 #### DX
 - [ ] Add Claude Code skills for Spec driven development
