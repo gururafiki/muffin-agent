@@ -17,10 +17,7 @@ dependencies = [
     "langgraph-sdk",
     "langchain-mcp-adapters",
     "langgraph-cli",
-    "langgraph-api",
     "pydantic",
-    # Technical analysis indicators
-    "TA-Lib",
     # Prompt templating
     "jinja2",
     # CLI

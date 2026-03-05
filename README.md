@@ -117,6 +117,7 @@ cp .env.example .env
 | `LLM_PROVIDER` | No | `openai` or `anthropic` | Default: `openai` (also used for OpenRouter) |
 | `TEMPERATURE` | No | LLM temperature (0.0–2.0) | Default: `0.1` |
 | `MAX_CRITERIA` | No | Max evaluation criteria per agent (1–20) | Default: `7` |
+| `OPENBB_MCP_URL` | No | OpenBB MCP server URL | Default: `http://127.0.0.1:8001/mcp` |
 | `LANGFUSE_SECRET_KEY` | No | LLM tracing (optional) | [Langfuse Cloud](https://cloud.langfuse.com) → Settings → API Keys |
 | `LANGFUSE_PUBLIC_KEY` | No | LLM tracing (optional) | Same as above |
 | `LANGFUSE_BASE_URL` | No | Langfuse host URL | Default: `https://cloud.langfuse.com` |
@@ -216,6 +217,11 @@ muffin options --help
 - Tool results in Rich panels with syntax-highlighted JSON
 - Errors shown in red panels — agent continues gracefully via middleware
 
+
+
+## 🚀 Web chat interface
+
+See [docs/deployment.md](docs/deployment.md) for deploying to a LangGraph Standalone Server (Docker + PostgreSQL + Redis).
 
 
 ## 📄 License

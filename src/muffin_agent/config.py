@@ -63,6 +63,13 @@ class Configuration(BaseModel):
         description="OpenRouter site URL (for backward compatibility)",
     )
 
+    # ==================== MCP Servers ====================
+
+    openbb_mcp_url: str = Field(
+        default="http://127.0.0.1:8001/mcp",
+        description="OpenBB MCP server URL",
+    )
+
     # ==================== Criteria Selection ====================
 
     max_criteria: int = Field(
@@ -72,13 +79,11 @@ class Configuration(BaseModel):
         description="Maximum number of evaluation criteria for the reasoning agent",
     )
 
-    # ==================== MCP Servers ====================
-
     def get_mcp_connections(self) -> dict[str, Connection]:
         """Get MCP server connections for MultiServerMCPClient."""
         return {
             "openbb": {
-                "url": "http://127.0.0.1:8001/mcp",
+                "url": self.openbb_mcp_url,
                 "transport": "streamable_http",
             }
         }
@@ -100,7 +105,6 @@ class Configuration(BaseModel):
         values = {k: v for k, v in raw_values.items() if v is not None}
 
         return cls(**values)
-
 
     def get_llm(
         self, model: str | None = None, temperature: float | None = None, **kwargs

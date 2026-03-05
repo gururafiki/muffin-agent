@@ -1,0 +1,8 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "stock_evaluation": "./src/muffin_agent/graph.py:graph"
+  },
+  "env": ".env",
+  "python_version": "3.13"
+}
