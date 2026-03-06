@@ -9,6 +9,7 @@ from deepagents import CompiledSubAgent, create_deep_agent
 from ..config import Configuration
 from ..prompts import render_template
 from .data_collection import (
+    create_currency_commodities_data_collection_agent,
     create_discovery_screening_data_collection_agent,
     create_economy_macro_data_collection_agent,
     create_equity_estimates_data_collection_agent,
@@ -28,6 +29,9 @@ async def create_stock_evaluation_agent(config: Configuration):
     Create a deep agent that delegates data collection to equity-fundamentals
     and equity-price subagents, then validates, analyzes, and scores the stock.
     """
+    currency_commodities_agent = (
+        await create_currency_commodities_data_collection_agent(config)
+    )
     discovery_screening_agent = await create_discovery_screening_data_collection_agent(
         config
     )
@@ -139,6 +143,16 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "relative market positioning."
             ),
             runnable=discovery_screening_agent,
+        ),
+        CompiledSubAgent(
+            name="currency-commodities",
+            description=(
+                "Retrieves currency, commodity, and crypto data: FX rates and "
+                "history, commodity spot prices (WTI, Brent, gold, copper), "
+                "EIA energy outlooks, and crypto price history. Use for FX "
+                "exposure, commodity input cost, and energy sector context."
+            ),
+            runnable=currency_commodities_agent,
         ),
     ]
 
