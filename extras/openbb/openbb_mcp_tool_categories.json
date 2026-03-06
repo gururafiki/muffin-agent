@@ -1,0 +1,226 @@
+{
+  "result": [
+    {
+      "name": "commodity",
+      "subcategories": [
+        {
+          "name": "general",
+          "tool_count": 2
+        },
+        {
+          "name": "price",
+          "tool_count": 1
+        }
+      ],
+      "total_tools": 3
+    },
+    {
+      "name": "crypto",
+      "subcategories": [
+        {
+          "name": "general",
+          "tool_count": 1
+        },
+        {
+          "name": "price",
+          "tool_count": 1
+        }
+      ],
+      "total_tools": 2
+    },
+    {
+      "name": "currency",
+      "subcategories": [
+        {
+          "name": "general",
+          "tool_count": 3
+        },
+        {
+          "name": "price",
+          "tool_count": 1
+        }
+      ],
+      "total_tools": 4
+    },
+    {
+      "name": "derivatives",
+      "subcategories": [
+        {
+          "name": "futures",
+          "tool_count": 4
+        },
+        {
+          "name": "options",
+          "tool_count": 4
+        }
+      ],
+      "total_tools": 8
+    },
+    {
+      "name": "economy",
+      "subcategories": [
+        {
+          "name": "gdp",
+          "tool_count": 3
+        },
+        {
+          "name": "general",
+          "tool_count": 25
+        },
+        {
+          "name": "shipping",
+          "tool_count": 4
+        },
+        {
+          "name": "survey",
+          "tool_count": 8
+        }
+      ],
+      "total_tools": 40
+    },
+    {
+      "name": "equity",
+      "subcategories": [
+        {
+          "name": "calendar",
+          "tool_count": 5
+        },
+        {
+          "name": "compare",
+          "tool_count": 3
+        },
+        {
+          "name": "darkpool",
+          "tool_count": 1
+        },
+        {
+          "name": "discovery",
+          "tool_count": 10
+        },
+        {
+          "name": "estimates",
+          "tool_count": 8
+        },
+        {
+          "name": "fundamental",
+          "tool_count": 25
+        },
+        {
+          "name": "general",
+          "tool_count": 5
+        },
+        {
+          "name": "ownership",
+          "tool_count": 6
+        },
+        {
+          "name": "price",
+          "tool_count": 4
+        },
+        {
+          "name": "shorts",
+          "tool_count": 3
+        }
+      ],
+      "total_tools": 70
+    },
+    {
+      "name": "etf",
+      "subcategories": [
+        {
+          "name": "discovery",
+          "tool_count": 3
+        },
+        {
+          "name": "general",
+          "tool_count": 9
+        }
+      ],
+      "total_tools": 12
+    },
+    {
+      "name": "famafrench",
+      "subcategories": [
+        {
+          "name": "general",
+          "tool_count": 6
+        }
+      ],
+      "total_tools": 6
+    },
+    {
+      "name": "fixedincome",
+      "subcategories": [
+        {
+          "name": "corporate",
+          "tool_count": 4
+        },
+        {
+          "name": "general",
+          "tool_count": 2
+        },
+        {
+          "name": "government",
+          "tool_count": 5
+        },
+        {
+          "name": "rate",
+          "tool_count": 10
+        },
+        {
+          "name": "spreads",
+          "tool_count": 3
+        }
+      ],
+      "total_tools": 24
+    },
+    {
+      "name": "index",
+      "subcategories": [
+        {
+          "name": "general",
+          "tool_count": 6
+        },
+        {
+          "name": "price",
+          "tool_count": 1
+        }
+      ],
+      "total_tools": 7
+    },
+    {
+      "name": "news",
+      "subcategories": [
+        {
+          "name": "general",
+          "tool_count": 2
+        }
+      ],
+      "total_tools": 2
+    },
+    {
+      "name": "regulators",
+      "subcategories": [
+        {
+          "name": "cftc",
+          "tool_count": 2
+        },
+        {
+          "name": "sec",
+          "tool_count": 8
+        }
+      ],
+      "total_tools": 10
+    },
+    {
+      "name": "uscongress",
+      "subcategories": [
+        {
+          "name": "general",
+          "tool_count": 4
+        }
+      ],
+      "total_tools": 4
+    }
+  ]
+}
