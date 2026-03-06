@@ -350,6 +350,51 @@ def fixed_income(
     asyncio.run(_stream_fixed_income(ticker, query))
 
 
+async def _stream_discovery_screening(ticker: str, query: str | None) -> None:
+    """Build the discovery and screening agent and stream output."""
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.agents.data_collection import (
+        create_discovery_screening_data_collection_agent,
+    )
+    from muffin_agent.config import Configuration
+    from muffin_agent.utils.observability import setup_tracing
+
+    config = Configuration.from_runnable_config(RunnableConfig(configurable={}))
+    callbacks = setup_tracing(session_id=ticker)
+    agent = await create_discovery_screening_data_collection_agent(config)
+
+    prompt = (
+        f"Ticker: {ticker}. {query}"
+        if query
+        else (
+            f"Get peer companies, sector group valuation, and upcoming earnings "
+            f"calendar for {ticker}"
+        )
+    )
+
+    printer = StreamPrinter()
+    async for chunk, _metadata in agent.astream(
+        {"messages": [HumanMessage(prompt)]},
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
+        stream_mode="messages",
+    ):
+        printer.print_chunk(chunk)
+    printer.finish()
+
+
+@app.command()
+def discovery_screening(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Custom query (overrides default)"),
+    ] = None,
+) -> None:
+    """Retrieve discovery and screening data for peer and market context."""
+    asyncio.run(_stream_discovery_screening(ticker, query))
+
+
 async def _stream_etf_index(ticker: str, query: str | None) -> None:
     """Build the ETF and index agent and stream output."""
     from langchain_core.runnables import RunnableConfig

@@ -46,6 +46,7 @@ class TestCreateStockEvaluationAgent:
 
     @pytest.mark.asyncio
     async def test_creates_agent_with_subagents(self):
+        mock_discovery_screening_agent = MagicMock()
         mock_economy_macro_agent = MagicMock()
         mock_etf_index_agent = MagicMock()
         mock_fixed_income_agent = MagicMock()
@@ -60,6 +61,12 @@ class TestCreateStockEvaluationAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.stock_evaluation"
+                ".create_discovery_screening_data_collection_agent",
+                new_callable=AsyncMock,
+                return_value=mock_discovery_screening_agent,
+            ),
             patch(
                 "muffin_agent.agents.stock_evaluation"
                 ".create_economy_macro_data_collection_agent",
@@ -130,7 +137,7 @@ class TestCreateStockEvaluationAgent:
             call_kwargs = mock_create.call_args
             assert call_kwargs.kwargs["model"] == config.get_llm.return_value
             subagents = call_kwargs.kwargs["subagents"]
-            assert len(subagents) == 9
+            assert len(subagents) == 10
             assert subagents[0]["name"] == "equity-fundamentals"
             assert subagents[0]["runnable"] is mock_fundamentals_agent
             assert subagents[1]["name"] == "equity-price"
@@ -149,4 +156,6 @@ class TestCreateStockEvaluationAgent:
             assert subagents[7]["runnable"] is mock_fixed_income_agent
             assert subagents[8]["name"] == "etf-index"
             assert subagents[8]["runnable"] is mock_etf_index_agent
+            assert subagents[9]["name"] == "discovery-screening"
+            assert subagents[9]["runnable"] is mock_discovery_screening_agent
             assert agent is mock_create.return_value

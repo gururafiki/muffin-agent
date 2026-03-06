@@ -227,6 +227,36 @@
             "justMyCode": false
         },
         {
+            "name": "Discovery Screening Data Collection Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "discovery-screening",
+                "AAPL",
+                "--query",
+                "Get peer companies, sector group valuation, and upcoming earnings calendar."
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Discovery Screening Data Collection Agent: Custom Ticker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "discovery-screening",
+                "${input:ticker}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
             "name": "ETF Index Data Collection Agent: AAPL",
             "type": "debugpy",
             "request": "launch",
