@@ -14,6 +14,7 @@ from .data_collection import (
     create_equity_fundamentals_data_collection_agent,
     create_equity_ownership_data_collection_agent,
     create_equity_price_data_collection_agent,
+    create_etf_index_data_collection_agent,
     create_fixed_income_data_collection_agent,
     create_news_data_collection_agent,
     create_options_data_collection_agent,
@@ -27,6 +28,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     and equity-price subagents, then validates, analyzes, and scores the stock.
     """
     economy_macro_agent = await create_economy_macro_data_collection_agent(config)
+    etf_index_agent = await create_etf_index_data_collection_agent(config)
     fixed_income_agent = await create_fixed_income_data_collection_agent(config)
     fundamentals_agent = await create_equity_fundamentals_data_collection_agent(config)
     price_agent = await create_equity_price_data_collection_agent(config)
@@ -113,6 +115,15 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "spreads. Use for discount rate, WACC, and credit spread context."
             ),
             runnable=fixed_income_agent,
+        ),
+        CompiledSubAgent(
+            name="etf-index",
+            description=(
+                "Retrieves ETF and index data: ETF info, sector/country weights, "
+                "holdings, index levels, S&P 500 valuation multiples, and which "
+                "ETFs hold a given stock. Use for benchmark and sector context."
+            ),
+            runnable=etf_index_agent,
         ),
     ]
 
