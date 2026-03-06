@@ -1,5 +1,6 @@
 """Data collection agents."""
 
+from .discovery_screening import create_discovery_screening_data_collection_agent
 from .economy_macro import create_economy_macro_data_collection_agent
 from .equity_estimates import create_equity_estimates_data_collection_agent
 from .equity_fundamentals import create_equity_fundamentals_data_collection_agent
@@ -11,6 +12,7 @@ from .news import create_news_data_collection_agent
 from .options import create_options_data_collection_agent
 
 __all__ = [
+    "create_discovery_screening_data_collection_agent",
     "create_economy_macro_data_collection_agent",
     "create_equity_estimates_data_collection_agent",
     "create_equity_fundamentals_data_collection_agent",

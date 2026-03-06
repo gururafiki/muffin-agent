@@ -39,6 +39,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `economy_macro` | 40 | GDP, CPI, unemployment, interest rates, FOMC documents, FRED series, surveys (UMich, SLOOS, payrolls, manufacturing), shipping volumes |
 | `fixed_income` | 24 | Interest rates (SOFR, EFFR, ECB, SONIA), yield curves, Treasury rates/prices, TIPS, corporate bonds, spreads, mortgage indices |
 | `etf_index` | 19 | ETF info/sectors/holdings/returns, index levels, S&P 500 multiples, reverse ETF lookup by stock ticker |
+| `discovery_screening` | 23 | Equity screener, gainers/losers/active, earnings/IPO/dividend calendars, peer comparisons, sector group valuations, company profiles, dark pool |
 
 ### Stock Evaluation Agent
 

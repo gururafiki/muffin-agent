@@ -9,6 +9,7 @@ from deepagents import CompiledSubAgent, create_deep_agent
 from ..config import Configuration
 from ..prompts import render_template
 from .data_collection import (
+    create_discovery_screening_data_collection_agent,
     create_economy_macro_data_collection_agent,
     create_equity_estimates_data_collection_agent,
     create_equity_fundamentals_data_collection_agent,
@@ -27,6 +28,9 @@ async def create_stock_evaluation_agent(config: Configuration):
     Create a deep agent that delegates data collection to equity-fundamentals
     and equity-price subagents, then validates, analyzes, and scores the stock.
     """
+    discovery_screening_agent = await create_discovery_screening_data_collection_agent(
+        config
+    )
     economy_macro_agent = await create_economy_macro_data_collection_agent(config)
     etf_index_agent = await create_etf_index_data_collection_agent(config)
     fixed_income_agent = await create_fixed_income_data_collection_agent(config)
@@ -124,6 +128,17 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "ETFs hold a given stock. Use for benchmark and sector context."
             ),
             runnable=etf_index_agent,
+        ),
+        CompiledSubAgent(
+            name="discovery-screening",
+            description=(
+                "Retrieves market-wide discovery and screening data: equity screener, "
+                "top gainers/losers/active stocks, earnings/IPO/dividend calendars, "
+                "peer comparisons, sector group valuations, company profiles, and "
+                "dark pool volume. Use for peer context, upcoming catalysts, and "
+                "relative market positioning."
+            ),
+            runnable=discovery_screening_agent,
         ),
     ]
 

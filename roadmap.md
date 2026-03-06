@@ -16,7 +16,7 @@
     - [x] 7. Economy & Macro
     - [x] 8. Fixed Income & Rates
     - [x] 9. ETF & Index
-    - [ ] 10. Discovery & Screening
+    - [x] 10. Discovery & Screening
     - [ ] 11. Currency & Commodities
     - [ ] 12. Regulatory & Filings
     - [ ] 13. Fama-French
