@@ -15,7 +15,7 @@
     - [x] 6. Options
     - [x] 7. Economy & Macro
     - [x] 8. Fixed Income & Rates
-    - [ ] 9. ETF & Index
+    - [x] 9. ETF & Index
     - [ ] 10. Discovery & Screening
     - [ ] 11. Currency & Commodities
     - [ ] 12. Regulatory & Filings

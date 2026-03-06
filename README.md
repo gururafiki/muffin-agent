@@ -38,6 +38,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `options` | 2 | Options chains with Greeks (delta, gamma, theta, vega, IV), implied volatility surface |
 | `economy_macro` | 40 | GDP, CPI, unemployment, interest rates, FOMC documents, FRED series, surveys (UMich, SLOOS, payrolls, manufacturing), shipping volumes |
 | `fixed_income` | 24 | Interest rates (SOFR, EFFR, ECB, SONIA), yield curves, Treasury rates/prices, TIPS, corporate bonds, spreads, mortgage indices |
+| `etf_index` | 19 | ETF info/sectors/holdings/returns, index levels, S&P 500 multiples, reverse ETF lookup by stock ticker |
 
 ### Stock Evaluation Agent
 
