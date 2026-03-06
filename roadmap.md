@@ -17,7 +17,7 @@
     - [x] 8. Fixed Income & Rates
     - [x] 9. ETF & Index
     - [x] 10. Discovery & Screening
-    - [ ] 11. Currency & Commodities
+    - [x] 11. Currency & Commodities
     - [ ] 12. Regulatory & Filings
     - [ ] 13. Fama-French
 - [ ] Validate that all MCP tools (except Utility Tools) are assigned to agents
