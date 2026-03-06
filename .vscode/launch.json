@@ -197,6 +197,36 @@
             "justMyCode": false
         },
         {
+            "name": "Fixed Income Data Collection Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "fixed-income",
+                "AAPL",
+                "--query",
+                "Get current yield curve and key rates."
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Fixed Income Data Collection Agent: Custom Ticker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "fixed-income",
+                "${input:ticker}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
             "name": "Stock Evaluation Agent: AAPL",
             "type": "debugpy",
             "request": "launch",

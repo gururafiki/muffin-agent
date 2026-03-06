@@ -14,6 +14,7 @@ from .data_collection import (
     create_equity_fundamentals_data_collection_agent,
     create_equity_ownership_data_collection_agent,
     create_equity_price_data_collection_agent,
+    create_fixed_income_data_collection_agent,
     create_news_data_collection_agent,
     create_options_data_collection_agent,
 )
@@ -26,6 +27,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     and equity-price subagents, then validates, analyzes, and scores the stock.
     """
     economy_macro_agent = await create_economy_macro_data_collection_agent(config)
+    fixed_income_agent = await create_fixed_income_data_collection_agent(config)
     fundamentals_agent = await create_equity_fundamentals_data_collection_agent(config)
     price_agent = await create_equity_price_data_collection_agent(config)
     estimates_agent = await create_equity_estimates_data_collection_agent(config)
@@ -102,6 +104,15 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "discount rate context."
             ),
             runnable=economy_macro_agent,
+        ),
+        CompiledSubAgent(
+            name="fixed-income",
+            description=(
+                "Retrieves fixed income data: interest rates (SOFR, EFFR, ECB), "
+                "yield curves, Treasury rates/prices, TIPS, corporate bonds, "
+                "spreads. Use for discount rate, WACC, and credit spread context."
+            ),
+            runnable=fixed_income_agent,
         ),
     ]
 
