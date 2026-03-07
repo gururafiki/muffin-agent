@@ -317,6 +317,34 @@
             "justMyCode": false
         },
         {
+            "name": "Regulatory Filings Data Collection Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "regulatory-filings",
+                "AAPL"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Regulatory Filings Data Collection Agent: Custom Ticker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "regulatory-filings",
+                "${input:ticker}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
             "name": "Stock Evaluation Agent: AAPL",
             "type": "debugpy",
             "request": "launch",

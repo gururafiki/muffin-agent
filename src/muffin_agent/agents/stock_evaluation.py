@@ -20,6 +20,7 @@ from .data_collection import (
     create_fixed_income_data_collection_agent,
     create_news_data_collection_agent,
     create_options_data_collection_agent,
+    create_regulatory_filings_data_collection_agent,
 )
 
 
@@ -44,6 +45,9 @@ async def create_stock_evaluation_agent(config: Configuration):
     ownership_agent = await create_equity_ownership_data_collection_agent(config)
     news_agent = await create_news_data_collection_agent(config)
     options_agent = await create_options_data_collection_agent(config)
+    regulatory_filings_agent = await create_regulatory_filings_data_collection_agent(
+        config
+    )
 
     subagents = [
         CompiledSubAgent(
@@ -178,6 +182,22 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "Risk dimension scoring (commodity/FX headwinds)."
             ),
             runnable=currency_commodities_agent,
+        ),
+        CompiledSubAgent(
+            name="regulatory-filings",
+            description=(
+                "Retrieves regulatory and filing data: SEC filings via CIK lookup "
+                "(ticker-to-CIK mapping, symbol map, institution search), filing "
+                "headers and raw HTML filing documents, SIC code lookup, SEC "
+                "schema directory, and SEC litigation RSS feed; CFTC Commitment "
+                "of Traders (COT) reports and report search; and US congressional "
+                "bills (bill metadata, full text, document URL listing). Use for "
+                "regulatory risk assessment, compliance monitoring, legislative "
+                "risk analysis (pending bills affecting the sector), COT-based "
+                "commodity positioning context, and Risk dimension scoring "
+                "(regulatory/legal headwinds)."
+            ),
+            runnable=regulatory_filings_agent,
         ),
     ]
 

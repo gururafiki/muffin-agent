@@ -482,6 +482,48 @@ def currency_commodities(
     asyncio.run(_stream_currency_commodities(ticker, query))
 
 
+async def _stream_regulatory_filings(ticker: str, query: str | None) -> None:
+    """Build the regulatory filings agent and stream output."""
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.agents.data_collection import (
+        create_regulatory_filings_data_collection_agent,
+    )
+    from muffin_agent.config import Configuration
+    from muffin_agent.utils.observability import setup_tracing
+
+    config = Configuration.from_runnable_config(RunnableConfig(configurable={}))
+    callbacks = setup_tracing(session_id=ticker)
+    agent = await create_regulatory_filings_data_collection_agent(config)
+
+    prompt = (
+        f"Ticker: {ticker}. {query}"
+        if query
+        else f"Get comprehensive regulatory and filing data for {ticker}"
+    )
+
+    printer = StreamPrinter()
+    async for chunk, _metadata in agent.astream(
+        {"messages": [HumanMessage(prompt)]},
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
+        stream_mode="messages",
+    ):
+        printer.print_chunk(chunk)
+    printer.finish()
+
+
+@app.command()
+def regulatory_filings(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Custom query (overrides default)"),
+    ] = None,
+) -> None:
+    """Retrieve SEC filings, CFTC reports, and congressional bill data."""
+    asyncio.run(_stream_regulatory_filings(ticker, query))
+
+
 async def _stream_evaluate(ticker: str, query: str | None) -> None:
     """Build the stock evaluation agent and stream output."""
     from langchain_core.runnables import RunnableConfig
