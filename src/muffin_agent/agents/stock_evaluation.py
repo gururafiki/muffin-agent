@@ -17,6 +17,7 @@ from .data_collection import (
     create_equity_ownership_data_collection_agent,
     create_equity_price_data_collection_agent,
     create_etf_index_data_collection_agent,
+    create_fama_french_data_collection_agent,
     create_fixed_income_data_collection_agent,
     create_news_data_collection_agent,
     create_options_data_collection_agent,
@@ -42,6 +43,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     fundamentals_agent = await create_equity_fundamentals_data_collection_agent(config)
     price_agent = await create_equity_price_data_collection_agent(config)
     estimates_agent = await create_equity_estimates_data_collection_agent(config)
+    fama_french_agent = await create_fama_french_data_collection_agent(config)
     ownership_agent = await create_equity_ownership_data_collection_agent(config)
     news_agent = await create_news_data_collection_agent(config)
     options_agent = await create_options_data_collection_agent(config)
@@ -198,6 +200,21 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "(regulatory/legal headwinds)."
             ),
             runnable=regulatory_filings_agent,
+        ),
+        CompiledSubAgent(
+            name="fama-french",
+            description=(
+                "Retrieves Fama-French academic factor data: 3-factor and 5-factor "
+                "model returns (market/Mkt-RF, size/SMB, value/HML, profitability/RMW, "
+                "investment/CMA), US portfolio returns sorted by size/value/momentum, "
+                "regional and country portfolio returns, international index returns, "
+                "and size/value breakpoints. Does NOT use a stock ticker — provides "
+                "market-wide factor data. Use for factor exposure analysis, "
+                "quantitative risk decomposition, style tilts (growth vs value, "
+                "small vs large cap), and Risk/Valuation dimension scoring "
+                "(factor risk premiums)."
+            ),
+            runnable=fama_french_agent,
         ),
     ]
 

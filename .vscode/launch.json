@@ -317,6 +317,34 @@
             "justMyCode": false
         },
         {
+            "name": "Fama French Data Collection Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "fama-french",
+                "AAPL"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Fama French Data Collection Agent: Custom Ticker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "fama-french",
+                "${input:ticker}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
             "name": "Regulatory Filings Data Collection Agent: AAPL",
             "type": "debugpy",
             "request": "launch",
