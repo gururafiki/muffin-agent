@@ -21,7 +21,7 @@
     - [x] 12. Regulatory & Filings
     - [x] 13. Fama-French
 - [ ] Validate that all MCP tools (except Utility Tools) are assigned to agents
-- [ ] Handle rate limiting with `openai/gpt-oss-120b:free` model
+- [x] Handle rate limiting with `openai/gpt-oss-120b:free` model
 
 
 ### Stock Evaluation Agent (v1)

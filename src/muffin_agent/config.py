@@ -46,6 +46,13 @@ class Configuration(BaseModel):
         description="Default LLM provider to use",
     )
 
+    llm_max_retries: int = Field(
+        default=6,
+        ge=0,
+        le=10,
+        description="Retries for transient LLM errors (e.g. HTTP 429 rate limits). Both ChatOpenAI and ChatAnthropic use exponential backoff.",
+    )
+
     # ==================== API Keys ====================
 
     openai_api_key: str | None = Field(
@@ -137,6 +144,7 @@ class Configuration(BaseModel):
                 api_key=self.openai_api_key,
                 base_url=self.openai_site_url,
                 default_headers={"HTTP-Referer": self.openai_site_url or ""},
+                max_retries=self.llm_max_retries,
                 **kwargs,
             )
         elif self.llm_provider == "anthropic":
@@ -149,6 +157,7 @@ class Configuration(BaseModel):
                 model=model,
                 temperature=temperature,
                 api_key=self.anthropic_api_key,
+                max_retries=self.llm_max_retries,
                 **kwargs,
             )
         else:
