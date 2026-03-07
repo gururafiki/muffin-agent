@@ -42,6 +42,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `discovery_screening` | 23 | Equity screener, gainers/losers/active, earnings/IPO/dividend calendars, peer comparisons, sector group valuations, company profiles, dark pool |
 | `currency_commodities` | 9 | FX pair history and reference rates, commodity spot prices (WTI, Brent, gold), EIA energy outlook, crypto price history |
 | `regulatory_filings` | 14 | SEC filings, CIK lookups, CFTC Commitment of Traders, US congressional bills |
+| `fama_french` | 6 | Fama-French 3/5-factor model returns, US/regional/country portfolio returns, international index returns, size/value breakpoints |
 
 ### Stock Evaluation Agent
 
