@@ -38,6 +38,25 @@ class TestPromptTemplate:
         assert "Score" in result
         assert "Reasoning" in result
         assert "Data Used" in result
+        assert "Confidence" in result
+        assert "Limitations" in result
+        assert "Scoring Breakdown" in result
+
+    def test_template_contains_financial_guardrails(self):
+        result = render_template("stock_evaluation.jinja")
+        assert "NEVER" in result
+        assert "formula" in result.lower()
+        assert "Sanity check" in result
+        assert "Unit consistency" in result
+
+    def test_template_contains_scoring_dimensions(self):
+        result = render_template("stock_evaluation.jinja")
+        assert "Quality" in result
+        assert "Growth" in result
+        assert "Valuation" in result
+        assert "Risk" in result
+        assert "Catalyst" in result
+        assert "Weight" in result
 
 
 @pytest.mark.unit

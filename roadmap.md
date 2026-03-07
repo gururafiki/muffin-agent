@@ -34,17 +34,20 @@
 - [x] Add logic for data validation that checks if data is sufficient, data is relevant, if point of time is provided - data is not going beyond that point of time
 
 
+### DX
+- [ ] Create prompt generation skill.
+
 ### Deployment
 #### Option 1 (Separate client and agent server):
 ##### For Server options:
 - [x] Setup self-hosted [Standalone Agent Server](https://docs.langchain.com/langsmith/deploy-standalone-server#docker-compose) accept 1M node executions limit for development purpose. Build image with [langgraph cli](https://docs.langchain.com/langsmith/cli#build)
-- [-] Setup [aegra](https://github.com/ibbybuilds/aegra)
+- ~~[-] Setup [aegra](https://github.com/ibbybuilds/aegra)~~
 ##### For client:
 - [x] Setup client web app. For MVP we can go with [langchain-ai/agent-chat-ui](https://docs.langchain.com/oss/python/langchain/ui)
-- [-] Use [LangSmith studio](https://docs.langchain.com/langsmith/studio)
-- [-] Use [Agent Chat UI](https://agentchat.vercel.app/)
+- ~~[ ] Use [LangSmith studio](https://docs.langchain.com/langsmith/studio)~~
+- ~~[ ] Use [Agent Chat UI](https://agentchat.vercel.app/)~~
 #### Option 2:
-- [ ] Go with [chainlit](https://docs.chainlit.io/integrations/langchain) for both client and server
+- ~~[ ] Go with [chainlit](https://docs.chainlit.io/integrations/langchain) for both client and server~~
 #### For both options:
 - [ ] Make sure that integration with langfuse still works. Probalby requires updating graph compilation to pre-compile callback.
 
@@ -83,6 +86,7 @@
 
 ### Data collection
 - [ ] Iterate over data collection agents, improve prompts based on openbb docs. if needed split to smaller specialized agents.
+- [ ] Check https://docs.openbb.co/odp/python/reference . There are a lot of commands that are not covered by MCP.
 - [ ] Add fire crawl to collect data from web (consider adding as MCP)
 
 ### Specialized Agents
@@ -99,6 +103,8 @@
 - [ ] Explore agents from https://github.com/virattt/ai-hedge-fund
 
 ### Other improvements
+- [ ] Design work of financial depeartment from investing/trading firm with all the specific workflows they use (heavy webcrawl and reasoning task) and created tailored agents for this.
+- [ ] Add citations for the data used when analyzing it (where it comes from, which provider, which command, what period of time covered, fillings, etc)
 - [ ] Save information about past tool call failures in some memory, so later agent can learn from them and avoid doing faulty calls (e.g. if some provider is not setup or some call requires premium subscription)
 - [ ] Integrate agent development with langfuse to analyze what changes has to be made based on observations.
 - [ ] Add capability to pass pre-defined conditions

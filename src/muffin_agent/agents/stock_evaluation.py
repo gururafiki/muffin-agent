@@ -50,29 +50,35 @@ async def create_stock_evaluation_agent(config: Configuration):
             name="equity-fundamentals",
             description=(
                 "Retrieves fundamental financial data: income statements, "
-                "balance sheets, cash flow, ratios, metrics, EPS, dividends, "
-                "revenue segments, management info, ESG scores, earnings "
-                "transcripts, SEC filings. Use for any fundamental analysis "
-                "data needs."
+                "balance sheets, cash flow statements, financial ratios "
+                "(ROE, ROIC, D/E, current ratio), per-share metrics (EPS, "
+                "dividends), revenue segments, management info, ESG scores, "
+                "earnings transcripts, and SEC filings. Use for profitability "
+                "analysis, balance sheet health, cash generation assessment, "
+                "and Quality dimension scoring."
             ),
             runnable=fundamentals_agent,
         ),
         CompiledSubAgent(
             name="equity-price",
             description=(
-                "Retrieves stock price data: current quotes, historical OHLCV, "
-                "price performance across timeframes, market cap history, "
-                "bid/ask spreads. Use for any price or market data needs."
+                "Retrieves stock price data: current quotes, historical daily "
+                "OHLCV prices, price performance across timeframes (1D to 5Y), "
+                "market cap history, and bid/ask spreads. Use for current "
+                "valuation multiples, trend analysis, historical price context, "
+                "and Momentum dimension scoring."
             ),
             runnable=price_agent,
         ),
         CompiledSubAgent(
             name="equity-estimates",
             description=(
-                "Retrieves analyst estimates data: consensus estimates, price "
-                "targets, forward EPS, forward EBITDA, forward PE, forward "
-                "sales, analyst rating breakdowns. Use for forward-looking "
-                "valuation and analyst sentiment data."
+                "Retrieves analyst estimates and forward-looking data: "
+                "consensus EPS/revenue estimates, price targets (mean, high, "
+                "low), forward P/E, forward EV/EBITDA, forward sales, analyst "
+                "rating breakdowns (buy/hold/sell), and estimate revision "
+                "history. Use for Growth projections, Valuation vs forward "
+                "multiples, and Catalyst scoring (estimate revisions signal)."
             ),
             runnable=estimates_agent,
         ),
@@ -80,77 +86,96 @@ async def create_stock_evaluation_agent(config: Configuration):
             name="equity-ownership",
             description=(
                 "Retrieves ownership and short interest data: major holders, "
-                "institutional ownership, insider trades, share statistics, "
-                "13F filings, government trades, short interest, short volume, "
-                "fails-to-deliver. Use for conviction signals and short squeeze risk."
+                "institutional ownership changes, insider trades (buys/sells), "
+                "share statistics (float, shares outstanding), 13F filings, "
+                "government trades, short interest, short volume, and "
+                "fails-to-deliver. Use for insider conviction signals, "
+                "institutional sentiment, short squeeze risk assessment, "
+                "and Catalyst dimension scoring."
             ),
             runnable=ownership_agent,
         ),
         CompiledSubAgent(
             name="news",
             description=(
-                "Retrieves news and sentiment data: recent company news articles "
-                "with sentiment signals, and global/macro news headlines. Use for "
-                "catalyst identification, sentiment analysis, and event-driven context."
+                "Retrieves news and sentiment data: recent company-specific "
+                "news articles with sentiment signals (bullish/bearish/neutral), "
+                "and global/macro news headlines. Use for catalyst identification, "
+                "event-driven context (earnings surprises, M&A, regulatory "
+                "actions), market sentiment assessment, and Catalyst dimension "
+                "scoring."
             ),
             runnable=news_agent,
         ),
         CompiledSubAgent(
             name="options",
             description=(
-                "Retrieves options data: full options chains with Greeks "
-                "(delta, gamma, theta, vega, IV) and implied volatility surface. "
-                "Use for options flow analysis, implied volatility assessment, "
-                "and put/call ratio signals."
+                "Retrieves options market data: full options chains with Greeks "
+                "(delta, gamma, theta, vega, IV) and implied volatility surface "
+                "across expirations. Use for implied volatility assessment, "
+                "put/call ratio signals, options flow analysis, and Risk "
+                "dimension scoring (market-implied risk)."
             ),
             runnable=options_agent,
         ),
         CompiledSubAgent(
             name="economy-macro",
             description=(
-                "Retrieves macroeconomic data: GDP, CPI, unemployment, interest "
-                "rates, FOMC documents, FRED series, consumer/business surveys, "
-                "and shipping volumes. Use for macro environment assessment and "
-                "discount rate context."
+                "Retrieves macroeconomic data: GDP growth, CPI/inflation, "
+                "unemployment, interest rates, FOMC documents and minutes, "
+                "FRED economic series, consumer/business confidence surveys, "
+                "and shipping volumes. Use for macro environment assessment, "
+                "cyclical positioning, discount rate context, and Risk "
+                "dimension scoring (macro headwinds/tailwinds)."
             ),
             runnable=economy_macro_agent,
         ),
         CompiledSubAgent(
             name="fixed-income",
             description=(
-                "Retrieves fixed income data: interest rates (SOFR, EFFR, ECB), "
-                "yield curves, Treasury rates/prices, TIPS, corporate bonds, "
-                "spreads. Use for discount rate, WACC, and credit spread context."
+                "Retrieves fixed income and rates data: benchmark rates (SOFR, "
+                "EFFR, ECB), Treasury yield curves, Treasury rates/prices, "
+                "TIPS breakevens, corporate bond yields, and credit spreads "
+                "(IG/HY). Use for discount rate derivation, WACC calculation, "
+                "credit spread context, and Valuation dimension scoring "
+                "(risk-free rate, cost of capital)."
             ),
             runnable=fixed_income_agent,
         ),
         CompiledSubAgent(
             name="etf-index",
             description=(
-                "Retrieves ETF and index data: ETF info, sector/country weights, "
-                "holdings, index levels, S&P 500 valuation multiples, and which "
-                "ETFs hold a given stock. Use for benchmark and sector context."
+                "Retrieves ETF and index data: ETF profiles, sector/country "
+                "weights, holdings, index levels (S&P 500, Nasdaq, etc.), "
+                "S&P 500 valuation multiples, and which ETFs hold a given "
+                "stock. Use for benchmark comparisons, sector context, "
+                "relative valuation, and Valuation dimension scoring "
+                "(market-level multiples)."
             ),
             runnable=etf_index_agent,
         ),
         CompiledSubAgent(
             name="discovery-screening",
             description=(
-                "Retrieves market-wide discovery and screening data: equity screener, "
-                "top gainers/losers/active stocks, earnings/IPO/dividend calendars, "
-                "peer comparisons, sector group valuations, company profiles, and "
-                "dark pool volume. Use for peer context, upcoming catalysts, and "
-                "relative market positioning."
+                "Retrieves market-wide discovery and screening data: equity "
+                "screener, top gainers/losers/active stocks, peer comparisons "
+                "with financial metrics, sector group valuations, company "
+                "profiles, earnings/IPO/dividend calendars, and dark pool "
+                "volume. Use for peer-relative analysis, upcoming catalyst "
+                "identification, and Valuation dimension scoring (sector "
+                "and peer multiples)."
             ),
             runnable=discovery_screening_agent,
         ),
         CompiledSubAgent(
             name="currency-commodities",
             description=(
-                "Retrieves currency, commodity, and crypto data: FX rates and "
-                "history, commodity spot prices (WTI, Brent, gold, copper), "
-                "EIA energy outlooks, and crypto price history. Use for FX "
-                "exposure, commodity input cost, and energy sector context."
+                "Retrieves currency, commodity, and crypto data: FX rates "
+                "and history (major/emerging pairs), commodity spot prices "
+                "(WTI, Brent, gold, copper, natural gas), EIA energy outlooks, "
+                "and crypto price history. Use for FX exposure assessment, "
+                "commodity input cost analysis, energy sector context, and "
+                "Risk dimension scoring (commodity/FX headwinds)."
             ),
             runnable=currency_commodities_agent,
         ),
