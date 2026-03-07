@@ -13,6 +13,7 @@ from .etf_index import create_etf_index_data_collection_agent
 from .fixed_income import create_fixed_income_data_collection_agent
 from .news import create_news_data_collection_agent
 from .options import create_options_data_collection_agent
+from .regulatory_filings import create_regulatory_filings_data_collection_agent
 
 __all__ = [
     "create_currency_commodities_data_collection_agent",
@@ -26,4 +27,5 @@ __all__ = [
     "create_fixed_income_data_collection_agent",
     "create_news_data_collection_agent",
     "create_options_data_collection_agent",
+    "create_regulatory_filings_data_collection_agent",
 ]

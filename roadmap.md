@@ -18,7 +18,7 @@
     - [x] 9. ETF & Index
     - [x] 10. Discovery & Screening
     - [x] 11. Currency & Commodities
-    - [ ] 12. Regulatory & Filings
+    - [x] 12. Regulatory & Filings
     - [ ] 13. Fama-French
 - [ ] Validate that all MCP tools (except Utility Tools) are assigned to agents
 - [ ] Handle rate limiting with `openai/gpt-oss-120b:free` model
