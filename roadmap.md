@@ -6,7 +6,7 @@
 - [x] Create example data collection agent
 - [x] Develop CLI for agents
 - [x] Add setup guide including guide on getting API keys for OpenBB providers, setting up langfuse and getting other .env variables
-- [ ] Create other data collection agents from [docs/data-collection-agents.md](docs/data-collection-agents.md)
+- [x] Create other data collection agents from [docs/data-collection-agents.md](docs/data-collection-agents.md)
     - [x] 1. Equity Fundamentals
     - [x] 2. Equity Price
     - [x] 3. Equity Estimates
@@ -35,26 +35,26 @@
 
 
 ### DX
-- [ ] Create prompt generation skill.
+- [x] Create prompt generation skill.
 
 ### Deployment
 #### Option 1 (Separate client and agent server):
 ##### For Server options:
 - [x] Setup self-hosted [Standalone Agent Server](https://docs.langchain.com/langsmith/deploy-standalone-server#docker-compose) accept 1M node executions limit for development purpose. Build image with [langgraph cli](https://docs.langchain.com/langsmith/cli#build)
-- ~~[-] Setup [aegra](https://github.com/ibbybuilds/aegra)~~
+- [ ] ~~Setup [aegra](https://github.com/ibbybuilds/aegra)~~
 ##### For client:
 - [x] Setup client web app. For MVP we can go with [langchain-ai/agent-chat-ui](https://docs.langchain.com/oss/python/langchain/ui)
-- ~~[ ] Use [LangSmith studio](https://docs.langchain.com/langsmith/studio)~~
-- ~~[ ] Use [Agent Chat UI](https://agentchat.vercel.app/)~~
+- [ ] ~~Use [LangSmith studio](https://docs.langchain.com/langsmith/studio)~~
+- [ ] ~~Use [Agent Chat UI](https://agentchat.vercel.app/)~~
 #### Option 2:
-- ~~[ ] Go with [chainlit](https://docs.chainlit.io/integrations/langchain) for both client and server~~
+- [ ] ~~Go with [chainlit](https://docs.chainlit.io/integrations/langchain) for both client and server~~
 #### For both options:
 - [ ] Make sure that integration with langfuse still works. Probalby requires updating graph compilation to pre-compile callback.
 
 ## Phase 2
 
 ### Data Validation Agent
-- [ ] Develop data validation agent that takes criterion and data collected and checks if data is sufficient, data is relevant, if point of time is provided - data is not going beyond that point of time. Add this agent as sub agent to Stock Evaluation Agent. Agent should produce confidence/relevance scores.
+- [x] Develop data validation agent that takes criterion and data collected and checks if data is sufficient, data is relevant, if point of time is provided - data is not going beyond that point of time. Add this agent as sub agent to Stock Evaluation Agent. Agent should produce confidence/relevance scores.
 
 ### Criterion evaluation Agent
 - [ ] Develop deep agent that takes criterion that needs to be evaluated and with that criterion:

@@ -23,6 +23,7 @@ from .data_collection import (
     create_options_data_collection_agent,
     create_regulatory_filings_data_collection_agent,
 )
+from .data_validation import create_data_validation_agent
 
 
 async def create_stock_evaluation_agent(config: Configuration):
@@ -50,6 +51,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     regulatory_filings_agent = await create_regulatory_filings_data_collection_agent(
         config
     )
+    validation_agent = await create_data_validation_agent(config)
 
     subagents = [
         CompiledSubAgent(
@@ -215,6 +217,19 @@ async def create_stock_evaluation_agent(config: Configuration):
                 "(factor risk premiums)."
             ),
             runnable=fama_french_agent,
+        ),
+        CompiledSubAgent(
+            name="data-validation",
+            description=(
+                "Validates collected data against a criterion. Checks "
+                "sufficiency, relevance, temporal validity, and consistency. "
+                "Returns per-dimension scores (0-1), overall confidence/"
+                "relevance scores, identified gaps, and a recommendation "
+                "(proceed/collect_more_data/insufficient_data). Use after "
+                "data collection, before analysis. Pass the criterion, "
+                "analysis date, and all collected data in the task instruction."
+            ),
+            runnable=validation_agent,
         ),
     ]
 

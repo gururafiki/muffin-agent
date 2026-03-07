@@ -26,12 +26,12 @@ class TestPromptTemplate:
         assert "Analyze" in result
         assert "Reflect" in result
 
-    def test_template_contains_validation_criteria(self):
+    def test_template_delegates_validation_to_subagent(self):
         result = render_template("stock_evaluation.jinja")
-        assert "Sufficiency" in result
-        assert "Relevance" in result
-        assert "Temporal correctness" in result
-        assert "Completeness" in result
+        assert "data-validation" in result
+        assert "proceed" in result
+        assert "collect_more_data" in result
+        assert "insufficient_data" in result
 
     def test_template_contains_output_format(self):
         result = render_template("stock_evaluation.jinja")
@@ -47,7 +47,6 @@ class TestPromptTemplate:
         assert "NEVER" in result
         assert "formula" in result.lower()
         assert "Sanity check" in result
-        assert "Unit consistency" in result
 
     def test_template_contains_scoring_dimensions(self):
         result = render_template("stock_evaluation.jinja")
@@ -78,6 +77,7 @@ class TestCreateStockEvaluationAgent:
         mock_options_agent = MagicMock()
         mock_regulatory_filings_agent = MagicMock()
         mock_fama_french_agent = MagicMock()
+        mock_validation_agent = MagicMock()
 
         config = MagicMock()
         config.get_llm.return_value = MagicMock()
@@ -162,6 +162,12 @@ class TestCreateStockEvaluationAgent:
                 return_value=mock_fama_french_agent,
             ),
             patch(
+                "muffin_agent.agents.stock_evaluation"
+                ".create_data_validation_agent",
+                new_callable=AsyncMock,
+                return_value=mock_validation_agent,
+            ),
+            patch(
                 "muffin_agent.agents.stock_evaluation.create_deep_agent"
             ) as mock_create,
         ):
@@ -177,7 +183,7 @@ class TestCreateStockEvaluationAgent:
             call_kwargs = mock_create.call_args
             assert call_kwargs.kwargs["model"] == config.get_llm.return_value
             subagents = call_kwargs.kwargs["subagents"]
-            assert len(subagents) == 13
+            assert len(subagents) == 14
             assert subagents[0]["name"] == "equity-fundamentals"
             assert subagents[0]["runnable"] is mock_fundamentals_agent
             assert subagents[1]["name"] == "equity-price"
@@ -204,4 +210,6 @@ class TestCreateStockEvaluationAgent:
             assert subagents[11]["runnable"] is mock_regulatory_filings_agent
             assert subagents[12]["name"] == "fama-french"
             assert subagents[12]["runnable"] is mock_fama_french_agent
+            assert subagents[13]["name"] == "data-validation"
+            assert subagents[13]["runnable"] is mock_validation_agent
             assert agent is mock_create.return_value
