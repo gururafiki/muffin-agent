@@ -11,9 +11,9 @@ from muffin_agent.config import Configuration
 class TestGetLlmRetries:
     """Test that get_llm forwards max_retries to LLM constructors."""
 
-    def test_default_max_retries_is_3(self):
+    def test_default_max_retries_is_6(self):
         config = Configuration(llm_provider="openai", openai_api_key="test-key")
-        assert config.llm_max_retries == 3
+        assert config.llm_max_retries == 6
 
     def test_openai_gets_max_retries(self):
         config = Configuration(

@@ -47,7 +47,7 @@ class Configuration(BaseModel):
     )
 
     llm_max_retries: int = Field(
-        default=3,
+        default=6,
         ge=0,
         le=10,
         description="Retries for transient LLM errors (e.g. HTTP 429 rate limits). Both ChatOpenAI and ChatAnthropic use exponential backoff.",
