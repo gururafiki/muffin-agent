@@ -1,4 +1,4 @@
-"""Tests for the stock evaluation agent."""
+"""Tests for the criterion evaluation agent."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,57 +9,74 @@ from muffin_agent.prompts import render_template
 
 @pytest.mark.unit
 class TestPromptTemplate:
-    """Test prompt template rendering."""
+    """Test criterion evaluation prompt template rendering."""
 
-    def test_stock_evaluation_template_renders(self):
-        result = render_template("stock_evaluation.jinja")
-        assert "stock evaluation" in result.lower()
-        assert "equity-fundamentals" in result
-        assert "equity-price" in result
+    def test_criterion_evaluation_template_renders(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "criterion evaluation" in result.lower()
         assert len(result) > 100
 
     def test_template_contains_workflow_steps(self):
-        result = render_template("stock_evaluation.jinja")
-        assert "Plan Data Collection" in result
+        result = render_template("criterion_evaluation.jinja")
+        assert "Analyze the Criterion" in result
         assert "Collect Data" in result
-        assert "Validate Collected Data" in result
-        assert "Analyze" in result
+        assert "Validate Data" in result
+        assert "Evaluate the Criterion" in result
         assert "Reflect" in result
 
+    def test_template_contains_subagent_selection_guide(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "Subagent Selection Guide" in result
+        assert "Profitability" in result
+        assert "Valuation" in result
+        assert "Macro Sensitivity" in result
+
+    def test_template_contains_output_format(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "CRITERION_EVALUATION_START" in result
+        assert "CRITERION_EVALUATION_END" in result
+        assert "score:" in result
+        assert "confidence:" in result
+        assert "signal:" in result
+
+    def test_template_contains_cot_instructions(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "sub-criteria" in result.lower()
+        assert "formula" in result.lower()
+        assert "benchmark" in result.lower()
+
+    def test_template_contains_reflection_checks(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "Score-evidence consistency" in result
+        assert "Confirmation bias" in result
+        assert "Anchoring bias" in result
+        assert "COUNTERARGUMENT" in result
+
+    def test_template_contains_grounding_constraints(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "NEVER" in result
+        assert "fabricat" in result.lower()
+
+    def test_template_contains_iteration_limit(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "at most 2" in result
+
     def test_template_delegates_validation_to_subagent(self):
-        result = render_template("stock_evaluation.jinja")
+        result = render_template("criterion_evaluation.jinja")
         assert "data-validation" in result
         assert "proceed" in result
         assert "collect_more_data" in result
         assert "insufficient_data" in result
 
-    def test_template_contains_output_format(self):
-        result = render_template("stock_evaluation.jinja")
-        assert "Score" in result
-        assert "Reasoning" in result
-        assert "Data Used" in result
-        assert "Confidence" in result
-        assert "Limitations" in result
-        assert "Scoring Breakdown" in result
-
-    def test_template_contains_financial_guardrails(self):
-        result = render_template("stock_evaluation.jinja")
-        assert "NEVER" in result
-        assert "formula" in result.lower()
-        assert "Sanity check" in result
-
-    def test_template_contains_scoring_dimensions(self):
-        result = render_template("stock_evaluation.jinja")
-        assert "Quality" in result
-        assert "Growth" in result
-        assert "Valuation" in result
-        assert "Risk" in result
-        assert "Catalyst" in result
-        assert "Weight" in result
+    def test_template_contains_signal_mapping(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "strong_positive" in result
+        assert "strong_negative" in result
+        assert "neutral" in result
 
 
 @pytest.mark.unit
-class TestCreateStockEvaluationAgent:
+class TestCreateCriterionEvaluationAgent:
     """Test agent creation."""
 
     @pytest.mark.asyncio
@@ -164,16 +181,16 @@ class TestCreateStockEvaluationAgent:
                 return_value=mock_validation_agent,
             ),
             patch(
-                "muffin_agent.agents.stock_evaluation.create_deep_agent"
+                "muffin_agent.agents.criterion_evaluation.create_deep_agent"
             ) as mock_create,
         ):
             mock_create.return_value = MagicMock()
 
-            from muffin_agent.agents.stock_evaluation import (
-                create_stock_evaluation_agent,
+            from muffin_agent.agents.criterion_evaluation import (
+                create_criterion_evaluation_agent,
             )
 
-            agent = await create_stock_evaluation_agent(config)
+            agent = await create_criterion_evaluation_agent(config)
 
             mock_create.assert_called_once()
             call_kwargs = mock_create.call_args

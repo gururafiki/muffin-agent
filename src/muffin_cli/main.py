@@ -278,8 +278,7 @@ async def _stream_economy_macro(ticker: str, query: str | None) -> None:
         f"Ticker: {ticker}. {query}"
         if query
         else (
-            f"Provide current macroeconomic conditions and outlook"
-            f" relevant to {ticker}"
+            f"Provide current macroeconomic conditions and outlook relevant to {ticker}"
         )
     )
 
@@ -567,6 +566,48 @@ def regulatory_filings(
 ) -> None:
     """Retrieve SEC filings, CFTC reports, and congressional bill data."""
     asyncio.run(_stream_regulatory_filings(ticker, query))
+
+
+async def _stream_criterion(ticker: str, criterion: str, query: str | None) -> None:
+    """Build the criterion evaluation agent and stream output."""
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.agents import create_criterion_evaluation_agent
+    from muffin_agent.config import Configuration
+    from muffin_agent.utils.observability import setup_tracing
+
+    config = Configuration.from_runnable_config(RunnableConfig(configurable={}))
+    callbacks = setup_tracing(session_id=ticker)
+    agent = await create_criterion_evaluation_agent(config)
+
+    prompt = f"Ticker: {ticker}. Criterion: {criterion}" + (
+        f" {query}" if query else ""
+    )
+
+    printer = StreamPrinter()
+    async for chunk, _metadata in agent.astream(
+        {"messages": [HumanMessage(prompt)]},
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
+        stream_mode="messages",
+    ):
+        printer.print_chunk(chunk)
+    printer.finish()
+
+
+@app.command()
+def criterion(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    criterion_text: Annotated[
+        str,
+        typer.Option("--criterion", "-c", help="The investment criterion to evaluate"),
+    ],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Additional context or constraints"),
+    ] = None,
+) -> None:
+    """Evaluate a single investment criterion for a given ticker."""
+    asyncio.run(_stream_criterion(ticker, criterion_text, query))
 
 
 async def _stream_evaluate(ticker: str, query: str | None) -> None:

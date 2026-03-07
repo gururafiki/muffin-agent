@@ -45,9 +45,7 @@ class StreamPrinter:
             self._end_agent_text()
             for tc in chunk.tool_call_chunks:
                 if tc.get("name"):
-                    self._console.print(
-                        f"\n[bold yellow]>> Tool call: {tc['name']}[/]"
-                    )
+                    self._console.print(f"\n[bold yellow]>> Tool call: {tc['name']}[/]")
                 if tc.get("args"):
                     self._console.print(tc["args"], end="", highlight=False)
         elif chunk.content:

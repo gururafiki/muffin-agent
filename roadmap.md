@@ -57,7 +57,7 @@
 - [x] Develop data validation agent that takes criterion and data collected and checks if data is sufficient, data is relevant, if point of time is provided - data is not going beyond that point of time. Add this agent as sub agent to Stock Evaluation Agent. Agent should produce confidence/relevance scores.
 
 ### Criterion evaluation Agent
-- [ ] Develop deep agent that takes criterion that needs to be evaluated and with that criterion:
+- [x] Develop deep agent that takes criterion that needs to be evaluated and with that criterion:
     - defines data needs;
     - calls data collection subagents to collect this data;
     - calls data validation agent to validate the data;
@@ -103,6 +103,7 @@
 - [ ] Explore agents from https://github.com/virattt/ai-hedge-fund
 
 ### Other improvements
+- [ ] Utilize jinja capabilities to enrich prompt tempalates with necessary data. I think we should at least include current date.
 - [ ] Design work of financial depeartment from investing/trading firm with all the specific workflows they use (heavy webcrawl and reasoning task) and created tailored agents for this.
 - [ ] Add citations for the data used when analyzing it (where it comes from, which provider, which command, what period of time covered, fillings, etc)
 - [ ] Save information about past tool call failures in some memory, so later agent can learn from them and avoid doing faulty calls (e.g. if some provider is not setup or some call requires premium subscription)
