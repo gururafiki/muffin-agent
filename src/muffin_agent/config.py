@@ -75,12 +75,13 @@ class Configuration(BaseModel):
 
     # ==================== Sandbox ====================
 
-    sandbox_backend: Literal["local", "none"] = Field(
+    sandbox_backend: Literal["local", "docker", "none"] = Field(
         default="local",
         description=(
             "Python code execution backend for the stock evaluation agent. "
-            "'local' runs commands in the current virtualenv (TA-Lib, pandas, "
-            "OpenBB available if installed). 'none' disables code execution."
+            "'local' runs commands in the current virtualenv (no isolation). "
+            "'docker' runs commands in an isolated Docker container. "
+            "'none' disables code execution."
         ),
     )
 
@@ -89,6 +90,29 @@ class Configuration(BaseModel):
         ge=10,
         le=600,
         description="Timeout in seconds for each sandbox command.",
+    )
+
+    sandbox_docker_image: str = Field(
+        default="python:3.12-slim",
+        description=(
+            "Docker image used when sandbox_backend='docker'. "
+            "Must have Python and required packages pre-installed "
+            "(e.g. ta-lib, pandas, numpy). "
+            "Build a custom image if TA-Lib support is needed."
+        ),
+    )
+
+    sandbox_docker_memory: str = Field(
+        default="512m",
+        description="Memory limit for the Docker sandbox container (e.g. '512m', '2g').",
+    )
+
+    sandbox_docker_network: str = Field(
+        default="none",
+        description=(
+            "Docker network mode for the sandbox container. "
+            "'none' (default) disables all networking for maximum isolation."
+        ),
     )
 
     # ==================== MCP Servers ====================
@@ -139,9 +163,21 @@ class Configuration(BaseModel):
 
         Returns:
             Configured sandbox instance, or None if disabled.
+
+        Raises:
+            RuntimeError: If sandbox_backend='docker' and Docker is unavailable.
         """
         if self.sandbox_backend == "none":
             return None
+        if self.sandbox_backend == "docker":
+            from muffin_agent.backends.docker_sandbox import DockerSandbox
+
+            return DockerSandbox(
+                image=self.sandbox_docker_image,
+                timeout=self.sandbox_timeout,
+                memory=self.sandbox_docker_memory,
+                network=self.sandbox_docker_network,
+            )
         from muffin_agent.backends.local_sandbox import LocalSandbox
 
         return LocalSandbox(timeout=self.sandbox_timeout)
