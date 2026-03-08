@@ -4,5 +4,8 @@
     "stock_evaluation": "./src/muffin_agent/graph.py:graph"
   },
   "env": ".env",
-  "python_version": "3.13"
+  "python_version": "3.13",
+  "dockerfile_lines": [
+    "COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker"
+  ]
 }

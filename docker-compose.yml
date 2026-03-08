@@ -3,6 +3,19 @@ volumes:
     driver: local
 
 services:
+  # Restricts Docker socket access to container lifecycle operations only.
+  # langgraph-api uses this proxy (via DOCKER_HOST) to spawn isolated sandbox
+  # containers without getting unrestricted root access to the host daemon.
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1  # /containers/* — create, start, stop, exec, cp
+      EXEC: 1        # /exec/* — exec start/inspect
+      POST: 1        # allow POST method (blocked by default when resources are scoped)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   openbb-mcp:
     build:
       context: extras/openbb
@@ -53,12 +66,19 @@ services:
         condition: service_healthy
       langgraph-postgres:
         condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
     env_file:
       - .env
     environment:
       REDIS_URI: redis://langgraph-redis:6379
       DATABASE_URI: postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
       OPENBB_MCP_URL: http://openbb-mcp:8001/mcp
+      # Route Docker CLI calls through the restricted socket proxy instead of
+      # the raw host socket. Sandbox containers are spawned as host siblings
+      # with --network=none --cap-drop=ALL, keeping the agent env isolated.
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      SANDBOX_BACKEND: docker
 
   agent-chat-ui:
     build:
