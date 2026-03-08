@@ -25,4 +25,5 @@ async def create_stock_evaluation_agent(config: Configuration):
         model=llm,
         system_prompt=prompt,
         subagents=subagents,
+        backend=config.get_sandbox(),
     )

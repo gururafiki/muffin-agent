@@ -1,7 +1,10 @@
 """Configuration and LLM provider management."""
 
 import os
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from deepagents.backends.protocol import SandboxBackendProtocol
 
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
@@ -70,6 +73,24 @@ class Configuration(BaseModel):
         description="OpenRouter site URL (for backward compatibility)",
     )
 
+    # ==================== Sandbox ====================
+
+    sandbox_backend: Literal["local", "none"] = Field(
+        default="local",
+        description=(
+            "Python code execution backend for the stock evaluation agent. "
+            "'local' runs commands in the current virtualenv (TA-Lib, pandas, "
+            "OpenBB available if installed). 'none' disables code execution."
+        ),
+    )
+
+    sandbox_timeout: int = Field(
+        default=120,
+        ge=10,
+        le=600,
+        description="Timeout in seconds for each sandbox command.",
+    )
+
     # ==================== MCP Servers ====================
 
     openbb_mcp_url: str = Field(
@@ -112,6 +133,18 @@ class Configuration(BaseModel):
         values = {k: v for k, v in raw_values.items() if v is not None}
 
         return cls(**values)
+
+    def get_sandbox(self) -> "SandboxBackendProtocol | None":
+        """Get the sandbox backend for Python code execution.
+
+        Returns:
+            Configured sandbox instance, or None if disabled.
+        """
+        if self.sandbox_backend == "none":
+            return None
+        from muffin_agent.backends.local_sandbox import LocalSandbox
+
+        return LocalSandbox(timeout=self.sandbox_timeout)
 
     def get_llm(
         self, model: str | None = None, temperature: float | None = None, **kwargs
