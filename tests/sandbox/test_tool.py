@@ -26,11 +26,13 @@ def _make_sandbox(
     exec_output="42\n",
     exec_exit_code=0,
 ):
-    """Build a mock async Sandbox with files, commands, and close."""
+    """Build a mock async Sandbox usable as an async context manager."""
     from opensandbox.models.execd import CommandStatus
 
     sandbox = MagicMock()
-    sandbox.close = AsyncMock()
+    # async with sandbox as sb: → sb is sandbox itself
+    sandbox.__aenter__ = AsyncMock(return_value=sandbox)
+    sandbox.__aexit__ = AsyncMock(return_value=False)
 
     if write_raises:
         sandbox.files.write_file = AsyncMock(side_effect=PermissionError("denied"))
@@ -83,7 +85,7 @@ class TestCreatePythonExecutionTool:
             result = await tool.ainvoke({"code": "print('hello world')"})
 
         assert result == "hello world\n"
-        sandbox.close.assert_called_once()
+        sandbox.__aexit__.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_write_failure_returns_error_message(self):
@@ -97,7 +99,7 @@ class TestCreatePythonExecutionTool:
 
         assert "Failed to write" in result
         sandbox.commands.run.assert_not_called()
-        sandbox.close.assert_called_once()
+        sandbox.__aexit__.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_nonzero_exit_code_returns_error_with_output(self):
@@ -139,7 +141,7 @@ class TestCreatePythonExecutionTool:
         assert sandbox.commands.run.call_count == 2
         cleanup_cmd = sandbox.commands.run.call_args_list[1].args[0]
         assert cleanup_cmd.startswith("rm -f /tmp/muffin_exec_")
-        sandbox.close.assert_called_once()
+        sandbox.__aexit__.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_writes_code_to_unique_temp_file(self):

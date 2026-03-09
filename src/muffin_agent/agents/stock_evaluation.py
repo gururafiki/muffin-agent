@@ -8,7 +8,7 @@ from deepagents import create_deep_agent
 
 from ..config import Configuration
 from ..prompts import render_template
-from ..sandbox import SandboxRegistry
+from ..sandbox import SandboxFactory
 from .subagents import build_analysis_subagents
 
 
@@ -17,14 +17,14 @@ async def create_stock_evaluation_agent(config: Configuration):
 
     Create a deep agent that delegates data collection to specialized
     subagents, then validates, analyzes, and scores the stock. A
-    ``SandboxRegistry`` is attached as the backend so each conversation
+    ``SandboxFactory`` is attached as the backend so each conversation
     (``thread_id``) gets its own isolated container for Python computations
     (DCF, WACC, technical indicators).
     """
     subagents = await build_analysis_subagents(config)
     prompt = render_template("stock_evaluation.jinja")
     llm = config.get_llm()
-    backend = SandboxRegistry(config)
+    backend = SandboxFactory(config)
 
     return create_deep_agent(
         model=llm,

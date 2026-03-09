@@ -2,7 +2,7 @@
 
 Provides two integration points:
 
-1. **SandboxRegistry** — a deepagents ``BackendFactory`` that provisions one
+1. **SandboxFactory** — a deepagents ``BackendFactory`` that provisions one
    ``OpenSandboxBackend`` per ``thread_id`` and reuses it for all tool calls
    within that conversation. Pass it as ``backend=`` to ``create_deep_agent``.
    On a cache miss it calls ``SandboxSync.connect()`` to reconnect to an
@@ -15,10 +15,10 @@ Provides two integration points:
 
 Usage::
 
-    from muffin_agent.sandbox import SandboxRegistry, create_python_execution_tool
+    from muffin_agent.sandbox import SandboxFactory, create_python_execution_tool
 
     # Deep agent backend: one container per conversation
-    registry = SandboxRegistry(config)
+    registry = SandboxFactory(config)
     agent = create_deep_agent(model=llm, backend=registry, ...)
 
     # Standalone execution tool: fresh container per call
@@ -28,7 +28,7 @@ Usage::
 
 from .backend import (
     OpenSandboxBackend,
-    SandboxRegistry,
+    SandboxFactory,
     create_opensandbox_backend,
     create_opensandbox_sandbox,
 )
@@ -36,7 +36,7 @@ from .tool import create_python_execution_tool
 
 __all__ = [
     "OpenSandboxBackend",
-    "SandboxRegistry",
+    "SandboxFactory",
     "create_opensandbox_backend",
     "create_opensandbox_sandbox",
     "create_python_execution_tool",

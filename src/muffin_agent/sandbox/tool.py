@@ -4,25 +4,23 @@ Provides a LangChain tool that executes arbitrary Python code in an isolated
 OpenSandbox container. Designed for financial calculations, dataframe analysis,
 and technical indicator computation using OpenBB methods and TA-Lib.
 
-A fresh async ``Sandbox`` is created for each tool invocation and closed
-afterwards. This keeps the implementation stateless — no registry or
-persistent connection is required — at the cost of one container-creation
-roundtrip per call. Each invocation's container is independent, which is
-appropriate because ``execute_python`` calls are self-contained: they write
-a temp file, run it, and discard the result.
+A fresh async ``Sandbox`` is created for each tool invocation and released
+via ``async with`` when the call returns. This keeps the implementation
+stateless — no factory or persistent connection is required. Each
+invocation's container is independent, which is appropriate because
+``execute_python`` calls are self-contained: they write a temp file, run
+it, and discard the result.
 """
 
 import uuid
-from typing import TYPE_CHECKING
 
 from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as lc_tool
 
-if TYPE_CHECKING:
-    from muffin_agent.config import Configuration
+from muffin_agent.config import Configuration
 
 
-def create_python_execution_tool(config: "Configuration") -> BaseTool:
+def create_python_execution_tool(config: Configuration) -> BaseTool:
     """Return a LangChain tool that executes Python code in a fresh sandbox.
 
     Uses the native async OpenSandbox SDK — no sync bridging, no thread pool.
@@ -80,8 +78,7 @@ def create_python_execution_tool(config: "Configuration") -> BaseTool:
 
         path = f"/tmp/muffin_exec_{uuid.uuid4().hex}.py"
 
-        sandbox = await create_opensandbox_sandbox(config)
-        try:
+        async with await create_opensandbox_sandbox(config) as sandbox:
             try:
                 await sandbox.files.write_file(path, code)
             except Exception as exc:
@@ -108,7 +105,5 @@ def create_python_execution_tool(config: "Configuration") -> BaseTool:
                 return f"Execution failed (exit {exit_code}):\n{output}"
 
             return output or "(no output)"
-        finally:
-            await sandbox.close()
 
     return execute_python
