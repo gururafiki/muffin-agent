@@ -1,8 +1,10 @@
 """Unit tests for create_python_execution_tool."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+_PATCH_TARGET = "muffin_agent.sandbox.backend.create_opensandbox_sandbox"
 
 
 def _make_execution(stdout_texts=(), stderr_texts=(), error=None, cmd_id="cmd-1"):
@@ -24,10 +26,11 @@ def _make_sandbox(
     exec_output="42\n",
     exec_exit_code=0,
 ):
-    """Build a mock async Sandbox with files and commands services."""
+    """Build a mock async Sandbox with files, commands, and close."""
     from opensandbox.models.execd import CommandStatus
 
     sandbox = MagicMock()
+    sandbox.close = AsyncMock()
 
     if write_raises:
         sandbox.files.write_file = AsyncMock(side_effect=PermissionError("denied"))
@@ -45,6 +48,11 @@ def _make_sandbox(
     return sandbox
 
 
+def _make_config():
+    """Return a minimal mock Configuration."""
+    return MagicMock()
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -57,38 +65,39 @@ class TestCreatePythonExecutionTool:
 
         from muffin_agent.sandbox.tool import create_python_execution_tool
 
-        sandbox = _make_sandbox()
-        tool = create_python_execution_tool(sandbox)
-        assert isinstance(tool, BaseTool)
+        assert isinstance(create_python_execution_tool(_make_config()), BaseTool)
 
     def test_tool_is_named_execute_python(self):
         from muffin_agent.sandbox.tool import create_python_execution_tool
 
-        tool = create_python_execution_tool(_make_sandbox())
-        assert tool.name == "execute_python"
+        assert create_python_execution_tool(_make_config()).name == "execute_python"
 
     @pytest.mark.asyncio
     async def test_successful_execution_returns_output(self):
         from muffin_agent.sandbox.tool import create_python_execution_tool
 
         sandbox = _make_sandbox(exec_output="hello world\n", exec_exit_code=0)
-        tool = create_python_execution_tool(sandbox)
+        tool = create_python_execution_tool(_make_config())
 
-        result = await tool.ainvoke({"code": "print('hello world')"})
+        with patch(_PATCH_TARGET, AsyncMock(return_value=sandbox)):
+            result = await tool.ainvoke({"code": "print('hello world')"})
 
         assert result == "hello world\n"
+        sandbox.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_write_failure_returns_error_message(self):
         from muffin_agent.sandbox.tool import create_python_execution_tool
 
         sandbox = _make_sandbox(write_raises=True)
-        tool = create_python_execution_tool(sandbox)
+        tool = create_python_execution_tool(_make_config())
 
-        result = await tool.ainvoke({"code": "print(1)"})
+        with patch(_PATCH_TARGET, AsyncMock(return_value=sandbox)):
+            result = await tool.ainvoke({"code": "print(1)"})
 
         assert "Failed to write" in result
         sandbox.commands.run.assert_not_called()
+        sandbox.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_nonzero_exit_code_returns_error_with_output(self):
@@ -96,9 +105,10 @@ class TestCreatePythonExecutionTool:
 
         err_output = "NameError: name 'x' is not defined\n"
         sandbox = _make_sandbox(exec_output=err_output, exec_exit_code=1)
-        tool = create_python_execution_tool(sandbox)
+        tool = create_python_execution_tool(_make_config())
 
-        result = await tool.ainvoke({"code": "print(x)"})
+        with patch(_PATCH_TARGET, AsyncMock(return_value=sandbox)):
+            result = await tool.ainvoke({"code": "print(x)"})
 
         assert "Execution failed" in result
         assert "exit 1" in result
@@ -109,24 +119,27 @@ class TestCreatePythonExecutionTool:
         from muffin_agent.sandbox.tool import create_python_execution_tool
 
         sandbox = _make_sandbox(exec_output="", exec_exit_code=0)
-        tool = create_python_execution_tool(sandbox)
+        tool = create_python_execution_tool(_make_config())
 
-        result = await tool.ainvoke({"code": "x = 1 + 1"})
+        with patch(_PATCH_TARGET, AsyncMock(return_value=sandbox)):
+            result = await tool.ainvoke({"code": "x = 1 + 1"})
 
         assert result == "(no output)"
 
     @pytest.mark.asyncio
-    async def test_cleanup_runs_after_execution(self):
+    async def test_sandbox_closed_after_execution(self):
         from muffin_agent.sandbox.tool import create_python_execution_tool
 
         sandbox = _make_sandbox(exec_output="ok\n", exec_exit_code=0)
-        tool = create_python_execution_tool(sandbox)
+        tool = create_python_execution_tool(_make_config())
 
-        await tool.ainvoke({"code": "print('ok')"})
+        with patch(_PATCH_TARGET, AsyncMock(return_value=sandbox)):
+            await tool.ainvoke({"code": "print('ok')"})
 
         assert sandbox.commands.run.call_count == 2
         cleanup_cmd = sandbox.commands.run.call_args_list[1].args[0]
         assert cleanup_cmd.startswith("rm -f /tmp/muffin_exec_")
+        sandbox.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_writes_code_to_unique_temp_file(self):
@@ -134,11 +147,11 @@ class TestCreatePythonExecutionTool:
 
         sandbox1 = _make_sandbox(exec_output="a\n")
         sandbox2 = _make_sandbox(exec_output="b\n")
-        tool1 = create_python_execution_tool(sandbox1)
-        tool2 = create_python_execution_tool(sandbox2)
+        tool = create_python_execution_tool(_make_config())
 
-        await tool1.ainvoke({"code": "print('a')"})
-        await tool2.ainvoke({"code": "print('b')"})
+        with patch(_PATCH_TARGET, AsyncMock(side_effect=[sandbox1, sandbox2])):
+            await tool.ainvoke({"code": "print('a')"})
+            await tool.ainvoke({"code": "print('b')"})
 
         path1 = sandbox1.commands.run.call_args_list[0].args[0]
         path2 = sandbox2.commands.run.call_args_list[0].args[0]

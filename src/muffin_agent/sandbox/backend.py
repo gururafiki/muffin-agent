@@ -5,6 +5,8 @@ providing isolated Python execution for financial calculations, dataframe
 analysis, and technical indicator computation.
 """
 
+import logging
+import threading
 from datetime import timedelta
 
 from deepagents.backends.protocol import (
@@ -199,3 +201,78 @@ async def create_opensandbox_sandbox(config: Configuration):
         timeout=timedelta(hours=1),
         env={"PYTHONUNBUFFERED": "1"},
     )
+
+
+_log = logging.getLogger(__name__)
+
+
+class SandboxRegistry:
+    """Per-thread_id sandbox registry that implements BackendFactory.
+
+    Pass an instance as ``backend=`` to ``create_deep_agent``. deepagents
+    middleware calls the instance on every tool invocation; the registry
+    returns the same ``OpenSandboxBackend`` for the same ``thread_id`` so all
+    tool calls within a conversation share one container.
+
+    On the first call for a ``thread_id`` a new container is provisioned.
+    If the process restarts but the container is still alive, ``connect()``
+    reconnects using the stored sandbox ID rather than spinning up a new one.
+
+    Usage::
+
+        registry = SandboxRegistry(config)
+        agent = create_deep_agent(model=llm, backend=registry, ...)
+    """
+
+    def __init__(self, config: Configuration) -> None:
+        """Initialize the registry with muffin agent configuration."""
+        self._config = config
+        # thread_id → live backend (fast path, no network on lookup)
+        self._backends: dict[str, OpenSandboxBackend] = {}
+        # thread_id → sandbox_id string (enables connect() after cache miss)
+        self._sandbox_ids: dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def __call__(self, runtime) -> OpenSandboxBackend:
+        """Return the backend for the current thread_id, creating one if needed.
+
+        Called by deepagents middleware on every tool invocation.
+        """
+        thread_id: str = (
+            (runtime.config.get("configurable") or {}).get("thread_id") or "default"
+        )
+
+        with self._lock:
+            if thread_id in self._backends:
+                return self._backends[thread_id]
+            existing_id = self._sandbox_ids.get(thread_id)
+
+        # Cache miss — try to reconnect to an existing container first so we
+        # don't spin up a duplicate after a process restart.
+        if existing_id:
+            try:
+                sandbox = SandboxSync.connect(
+                    existing_id,
+                    connection_config=_make_sync_connection(self._config),
+                    skip_health_check=True,
+                )
+                backend = OpenSandboxBackend(sandbox)
+                _log.info(
+                    "Reconnected to sandbox %s for thread %s", existing_id, thread_id
+                )
+                with self._lock:
+                    self._backends[thread_id] = backend
+                return backend
+            except Exception:
+                _log.info(
+                    "Sandbox %s unreachable for thread %s, creating new one",
+                    existing_id,
+                    thread_id,
+                )
+
+        backend = create_opensandbox_backend(self._config)
+        _log.info("Created sandbox %s for thread %s", backend.id, thread_id)
+        with self._lock:
+            self._backends[thread_id] = backend
+            self._sandbox_ids[thread_id] = backend.id
+        return backend

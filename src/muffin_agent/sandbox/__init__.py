@@ -2,37 +2,33 @@
 
 Provides two integration points:
 
-1. **OpenSandboxBackend** — a deepagents ``BaseSandbox`` implementation backed
-   by an OpenSandbox container. Pass it as ``backend=`` to ``create_deep_agent``
-   to give deep agents file system access and shell execution inside a secure
-   container. Created synchronously via ``create_opensandbox_backend``.
+1. **SandboxRegistry** — a deepagents ``BackendFactory`` that provisions one
+   ``OpenSandboxBackend`` per ``thread_id`` and reuses it for all tool calls
+   within that conversation. Pass it as ``backend=`` to ``create_deep_agent``.
+   On a cache miss it calls ``SandboxSync.connect()`` to reconnect to an
+   existing container before falling back to creating a new one.
 
-2. **create_python_execution_tool** — a factory that returns a LangChain async
-   tool using the native OpenSandbox async SDK. Add the tool to data collection
-   agents via the ``custom_tools`` argument of ``get_tools()``. Requires an
-   async ``Sandbox`` from ``create_opensandbox_sandbox``.
+2. **create_python_execution_tool** — returns a LangChain async tool that
+   creates a fresh ``Sandbox`` for each ``execute_python`` invocation, runs
+   the code, and closes the container afterwards. Add the tool to data
+   collection agents via the ``custom_tools`` argument of ``get_tools()``.
 
 Usage::
 
-    from muffin_agent.sandbox import (
-        OpenSandboxBackend,
-        create_opensandbox_backend,
-        create_opensandbox_sandbox,
-        create_python_execution_tool,
-    )
+    from muffin_agent.sandbox import SandboxRegistry, create_python_execution_tool
 
-    # Option A: deep agent backend (sync setup)
-    backend = create_opensandbox_backend(config)
-    agent = create_deep_agent(model=llm, backend=backend, ...)
+    # Deep agent backend: one container per conversation
+    registry = SandboxRegistry(config)
+    agent = create_deep_agent(model=llm, backend=registry, ...)
 
-    # Option B: standalone tool (async setup)
-    sandbox = await create_opensandbox_sandbox(config)
-    tool = create_python_execution_tool(sandbox)
+    # Standalone execution tool: fresh container per call
+    tool = create_python_execution_tool(config)
     tools = await get_tools(config, MCP_TOOLS, custom_tools=[tool])
 """
 
 from .backend import (
     OpenSandboxBackend,
+    SandboxRegistry,
     create_opensandbox_backend,
     create_opensandbox_sandbox,
 )
@@ -40,6 +36,7 @@ from .tool import create_python_execution_tool
 
 __all__ = [
     "OpenSandboxBackend",
+    "SandboxRegistry",
     "create_opensandbox_backend",
     "create_opensandbox_sandbox",
     "create_python_execution_tool",
