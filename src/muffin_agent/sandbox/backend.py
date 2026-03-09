@@ -5,11 +5,7 @@ providing isolated Python execution for financial calculations, dataframe
 analysis, and technical indicator computation.
 """
 
-from __future__ import annotations
-
-import asyncio
 from datetime import timedelta
-from typing import TYPE_CHECKING
 
 from deepagents.backends.protocol import (
     ExecuteResponse,
@@ -19,8 +15,7 @@ from deepagents.backends.protocol import (
 from deepagents.backends.sandbox import BaseSandbox
 from opensandbox.sync.sandbox import SandboxSync
 
-if TYPE_CHECKING:
-    from ..config import Configuration
+from ..config import Configuration
 
 
 class OpenSandboxBackend(BaseSandbox):
@@ -141,11 +136,33 @@ class OpenSandboxBackend(BaseSandbox):
         self._sandbox.close()
 
 
-async def create_opensandbox_backend(config: Configuration) -> OpenSandboxBackend:
+def _make_sync_connection(config: Configuration):
+    """Build a ConnectionConfigSync from muffin agent config."""
+    from opensandbox.config.connection_sync import ConnectionConfigSync
+
+    return ConnectionConfigSync(
+        domain=config.opensandbox_url,
+        api_key=config.opensandbox_api_key or None,
+        protocol="http",
+    )
+
+
+def _make_async_connection(config: Configuration):
+    """Build a ConnectionConfig (async) from muffin agent config."""
+    from opensandbox.config.connection import ConnectionConfig
+
+    return ConnectionConfig(
+        domain=config.opensandbox_url,
+        api_key=config.opensandbox_api_key or None,
+        protocol="http",
+    )
+
+
+def create_opensandbox_backend(config: Configuration) -> OpenSandboxBackend:
     """Create a sandbox container and wrap it in an OpenSandboxBackend.
 
-    Runs SandboxSync.create() in a thread pool so the async event loop is
-    not blocked during container startup.
+    Blocking — intended for use during agent setup before entering the async
+    event loop. Uses SandboxSync so no async bridging is needed.
 
     Args:
         config: Muffin agent configuration with opensandbox_* fields.
@@ -153,18 +170,32 @@ async def create_opensandbox_backend(config: Configuration) -> OpenSandboxBacken
     Returns:
         Connected and ready OpenSandboxBackend.
     """
-    from opensandbox.config.connection_sync import ConnectionConfigSync
-
-    connection = ConnectionConfigSync(
-        domain=config.opensandbox_url,
-        api_key=config.opensandbox_api_key or None,
-        protocol="http",
-    )
-    sandbox = await asyncio.to_thread(
-        SandboxSync.create,
+    sandbox = SandboxSync.create(
         config.opensandbox_image,
-        connection_config=connection,
+        connection_config=_make_sync_connection(config),
         timeout=timedelta(hours=1),
         env={"PYTHONUNBUFFERED": "1"},
     )
     return OpenSandboxBackend(sandbox)
+
+
+async def create_opensandbox_sandbox(config: Configuration):
+    """Create an async Sandbox for use in async tools.
+
+    Uses the native async OpenSandbox SDK — no sync bridging. Intended for
+    tools that run inside an already-running async event loop.
+
+    Args:
+        config: Muffin agent configuration with opensandbox_* fields.
+
+    Returns:
+        Connected and ready async Sandbox instance.
+    """
+    from opensandbox.sandbox import Sandbox
+
+    return await Sandbox.create(
+        config.opensandbox_image,
+        connection_config=_make_async_connection(config),
+        timeout=timedelta(hours=1),
+        env={"PYTHONUNBUFFERED": "1"},
+    )

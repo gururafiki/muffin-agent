@@ -23,7 +23,7 @@ async def create_stock_evaluation_agent(config: Configuration):
     subagents = await build_analysis_subagents(config)
     prompt = render_template("stock_evaluation.jinja")
     llm = config.get_llm()
-    backend = await create_opensandbox_backend(config)
+    backend = create_opensandbox_backend(config)
 
     return create_deep_agent(
         model=llm,

@@ -261,8 +261,7 @@ class TestOpenSandboxBackendDownloadFiles:
 
 @pytest.mark.unit
 class TestCreateOpensandboxBackend:
-    @pytest.mark.asyncio
-    async def test_creates_backend_with_config(self):
+    def test_creates_backend_with_config(self):
         from muffin_agent.sandbox.backend import create_opensandbox_backend
 
         mock_sandbox = _make_sandbox(sandbox_id="new-sandbox")
@@ -276,7 +275,7 @@ class TestCreateOpensandboxBackend:
             "muffin_agent.sandbox.backend.SandboxSync.create",
             return_value=mock_sandbox,
         ) as mock_create:
-            backend = await create_opensandbox_backend(config)
+            backend = create_opensandbox_backend(config)
 
             mock_create.assert_called_once()
             call_kwargs = mock_create.call_args.kwargs

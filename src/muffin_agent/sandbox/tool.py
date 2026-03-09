@@ -9,28 +9,26 @@ import uuid
 
 from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as lc_tool
+from opensandbox.sandbox import Sandbox
 
-from .backend import OpenSandboxBackend
 
-
-def create_python_execution_tool(backend: OpenSandboxBackend) -> BaseTool:
+def create_python_execution_tool(sandbox: Sandbox) -> BaseTool:
     """Return a LangChain tool that executes Python code in the sandbox.
 
-    The returned tool writes code to an isolated temp file inside the sandbox
-    container, executes it with ``python3``, captures all output, and cleans up.
-    Execution is async-safe: the tool is an async function so it does not block
-    the event loop.
+    Uses the native async OpenSandbox SDK — no sync bridging, no thread pool.
+    The tool writes code to an isolated temp file inside the container,
+    executes it with ``python3``, captures all output, and cleans up.
 
     Args:
-        backend: Connected OpenSandboxBackend to run code in.
+        sandbox: Connected async Sandbox instance to run code in.
 
     Returns:
-        Async LangChain ``execute_python`` tool bound to *backend*.
+        Async LangChain ``execute_python`` tool bound to *sandbox*.
 
     Example usage in an agent::
 
-        backend = await create_opensandbox_backend(config)
-        tool = create_python_execution_tool(backend)
+        sandbox = await create_opensandbox_sandbox(config)
+        tool = create_python_execution_tool(sandbox)
         tools = await get_tools(config, MCP_TOOLS, custom_tools=[tool])
     """
 
@@ -70,16 +68,31 @@ def create_python_execution_tool(backend: OpenSandboxBackend) -> BaseTool:
         """
         path = f"/tmp/muffin_exec_{uuid.uuid4().hex}.py"
 
-        write_result = await backend.awrite(path, code)
-        if write_result.error:
-            return f"Failed to write code to sandbox: {write_result.error}"
+        try:
+            await sandbox.files.write_file(path, code)
+        except Exception as exc:
+            return f"Failed to write code to sandbox: {exc}"
 
-        result = await backend.aexecute(f"python3 {path}")
-        await backend.aexecute(f"rm -f {path}")
+        execution = await sandbox.commands.run(f"python3 {path}")
+        await sandbox.commands.run(f"rm -f {path}")
 
-        if result.exit_code is not None and result.exit_code != 0:
-            return f"Execution failed (exit {result.exit_code}):\n{result.output}"
+        stdout = "".join(m.text for m in execution.logs.stdout)
+        stderr = "".join(m.text for m in execution.logs.stderr)
+        output = stdout + stderr
 
-        return result.output or "(no output)"
+        exit_code: int | None = None
+        if execution.id:
+            try:
+                status = await sandbox.commands.get_command_status(execution.id)
+                exit_code = status.exit_code
+            except Exception:
+                pass
+        if execution.error and exit_code is None:
+            exit_code = 1
+
+        if exit_code is not None and exit_code != 0:
+            return f"Execution failed (exit {exit_code}):\n{output}"
+
+        return output or "(no output)"
 
     return execute_python
