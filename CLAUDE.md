@@ -44,9 +44,14 @@ The source lives in `src/muffin_agent/` and is organized as:
   - `get_tools(config, allowed_tools, custom_tools=None)` — loads filtered MCP tools via `MultiServerMCPClient`
   - `handle_tool_errors` — `@wrap_tool_call` middleware that catches tool exceptions
 
-  Currently implemented: `equity_fundamentals.py` (25 tools), `equity_price.py` (5 tools)
+  Currently implemented: `equity_fundamentals.py` (25 tools), `equity_price.py` (5 MCP tools + `execute_python` custom tool via OpenSandbox)
 
 - **`agents/criterion_evaluation/`** — Scaffolded but not yet implemented.
+
+- **`sandbox/`** — OpenSandbox integration. Two integration points:
+  - `OpenSandboxBackend` — `deepagents.BaseSandbox` implementation backed by a `SandboxSync` container. All file operations (read/write/edit/grep/glob) are delegated to shell commands inside the container via `execute()`.
+  - `SandboxFactory` — `BackendFactory` callable (`(ToolRuntime) → OpenSandboxBackend`). Stores sandbox IDs per `thread_id`; calls `SandboxSync.connect(id, skip_health_check=True)` on each invocation to reconnect to an existing container, falling back to creating a new one if the container is gone. Pass as `backend=` to `create_deep_agent` for per-conversation isolation.
+  - `create_python_execution_tool(config)` — Returns a LangChain async tool. Creates a fresh `Sandbox` per call via `async with`, writes code to a temp file, runs it, deletes the file, then closes the container. Stateless — no cross-call filesystem state.
 
 ## Conventions
 

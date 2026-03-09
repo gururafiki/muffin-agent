@@ -4,7 +4,7 @@ Deploy the Muffin Agent to a [LangGraph Standalone Server](https://docs.langchai
 
 ## Prerequisites
 
-Complete the [Setup steps in the README](../README.md#-setup) first (install, OpenBB MCP server, environment variables).
+Complete the [Setup steps in the README](../README.md#-setup) first (install, OpenBB MCP server, OpenSandbox, environment variables).
 
 Additionally you need:
 - **Docker** and **Docker Compose**
@@ -19,7 +19,16 @@ For development with hot-reload:
 langgraph dev
 ```
 
-Requires the OpenBB MCP server running on localhost and all env vars set in `.env`.
+Requires the OpenBB MCP server and the OpenSandbox server running on localhost, and all env vars set in `.env`.
+
+Start OpenSandbox locally:
+
+```bash
+docker run -d --name opensandbox \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/alibaba/opensandbox/server:latest
+```
 
 ## Docker Deployment
 
@@ -47,9 +56,10 @@ See [extras/openbb/README.md](../extras/openbb/README.md) for which providers ar
 docker compose up
 ```
 
-This starts five services:
+This starts six services:
 - **langgraph-api** — the agent server on port `8123`
 - **agent-chat-ui** — chat interface on port `3000`
+- **opensandbox-server** — OpenSandbox container manager on port `8080` (internal only); mounts the Docker socket to provision per-conversation Python execution containers
 - **openbb-mcp** — OpenBB MCP server (internal only)
 - **langgraph-postgres** — PostgreSQL for persistence (internal only)
 - **langgraph-redis** — Redis for streaming pub-sub (internal only)
@@ -93,18 +103,23 @@ Open [LangSmith Studio](https://smith.langchain.com/) — your deployed agent wi
 │ Agent Chat UI│ (:3000)
 └──────┬───────┘
        │
-┌──────▼─────────┐     ┌─────────────────┐
-│ LangGraph API  │────▶│  OpenBB MCP     │
-│   (:8123)      │     │   (:8001)       │
-└───────┬────────┘     └─────────────────┘
-        │
- ┌──────┴──────┐
- │             │
+┌──────▼─────────┐     ┌─────────────────┐     ┌──────────────────────┐
+│ LangGraph API  │────▶│  OpenBB MCP     │     │  OpenSandbox Server  │
+│   (:8123)      │     │   (:8001)       │     │   (:8080)            │
+└───────┬────────┘     └─────────────────┘     └──────────┬───────────┘
+        │                                                  │
+ ┌──────┴──────┐                                sandbox containers
+ │             │                                (one per conversation)
 ┌▼──────────┐ ┌▼───────────┐
 │ PostgreSQL│ │   Redis     │
 │ (persist) │ │ (streaming) │
 └───────────┘ └─────────────┘
 ```
+
+**Sandbox lifecycle**: Each chat conversation (`thread_id`) gets its own
+isolated container. `SandboxFactory` stores the container ID and reconnects
+to it on subsequent messages in the same thread. Containers auto-terminate
+after a 1-hour idle timeout.
 
 ## Production Considerations
 
@@ -115,6 +130,8 @@ The current Docker Compose setup is intended for **local development**. Before d
 - [ ] **Redis authentication** — Enable `requirepass` on Redis
 - [ ] **TLS/HTTPS** — Add a reverse proxy (nginx, Traefik, or Caddy) for HTTPS termination
 - [ ] **API authentication** — The LangGraph API has no auth by default; add authentication at the proxy layer or via LangSmith API keys
+- [ ] **OpenSandbox authentication** — Set `OPENSANDBOX_API_KEY` and `SANDBOX_API_KEY` in the compose environment to require auth on the sandbox server
+- [ ] **Sandbox image** — Set `OPENSANDBOX_IMAGE` to a hardened custom image with only the required packages; avoid `python:3.11-slim` in production as it allows arbitrary package installation at runtime
 
 ### Reliability
 - [ ] **Postgres backups** — Set up periodic `pg_dump` or use a managed database service

@@ -25,7 +25,10 @@ dependencies = [
     "rich",
     # Observability
     "langfuse",
-    "deepagents"
+    "deepagents",
+    # Sandbox
+    "opensandbox",
+    "opensandbox-code-interpreter",
 ]
 
 [project.scripts]

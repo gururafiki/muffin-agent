@@ -8,6 +8,7 @@ from langchain.agents import create_agent
 
 from ...config import Configuration
 from ...prompts import render_template
+from ...sandbox import create_python_execution_tool
 from .utils import ToolErrorHandler, get_tools
 
 MCP_TOOLS = [
@@ -21,7 +22,8 @@ MCP_TOOLS = [
 
 async def create_equity_price_data_collection_agent(config: Configuration):
     """Build the equity price ReAct agent."""
-    tools = await get_tools(config, MCP_TOOLS)
+    python_tool = create_python_execution_tool(config)
+    tools = await get_tools(config, MCP_TOOLS, custom_tools=[python_tool])
     prompt = render_template("equity_price.jinja")
     llm = config.get_llm()
     return create_agent(

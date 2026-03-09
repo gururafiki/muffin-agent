@@ -31,7 +31,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | Agent | Tools | Description |
 |-------|-------|-------------|
 | `equity_fundamentals` | 25 | Financial statements, ratios, metrics, EPS, dividends, revenue segments, management, ESG, transcripts, filings |
-| `equity_price` | 5 | Current quotes, historical OHLCV, NBBO spreads, price performance, market cap history |
+| `equity_price` | 5+1 | Current quotes, historical OHLCV, NBBO spreads, price performance, market cap history. Also includes `execute_python` for in-sandbox computations (DCF, technical indicators) |
 | `equity_estimates` | 8 | Analyst consensus estimates, price targets, forward EPS/EBITDA/PE/sales, analyst rating breakdowns |
 | `equity_ownership` | 9 | Major holders, institutional ownership, insider trading, share statistics, 13F filings, government trades, short interest/volume/FTDs |
 | `news` | 2 | Company news with sentiment signals, global/macro news headlines |
@@ -53,6 +53,8 @@ A deep agent (powered by `deepagents`) that orchestrates data collection subagen
 3. **Validate** — Check data sufficiency, relevance, temporal correctness, completeness
 4. **Analyze** — Produce a 0.0–1.0 score with reasoning backed by specific data points
 5. **Reflect** — Verify score-data consistency, logical coherence, and confidence
+
+**Sandbox isolation**: Each conversation (`thread_id` from the LangGraph Chat UI) gets its own OpenSandbox container. `SandboxFactory` provisions one container per thread on first use and reconnects to it on subsequent requests in the same chat via `SandboxSync.connect()`, so parallel conversations never share execution state.
 
 ### Design Principles
 
@@ -78,6 +80,7 @@ A deep agent (powered by `deepagents`) that orchestrates data collection subagen
 ### Prerequisites
 
 - Python 3.11+
+- Docker (required for OpenSandbox sandbox containers; also needed for Docker deployment)
 - Node.js (optional, for [MCP inspector](https://github.com/modelcontextprotocol/inspector))
 
 ### Step 1: Install Muffin Agent
@@ -106,7 +109,24 @@ openbb-mcp --port 8001
 
 For full OpenBB MCP documentation, see the [official docs](https://docs.openbb.co/odp/python/extensions/interface/openbb-mcp).
 
-### Step 3: Configure Environment Variables
+### Step 3: Start OpenSandbox
+
+Muffin Agent uses [OpenSandbox](https://github.com/alibaba/OpenSandbox) to execute Python code in isolated containers — financial calculations (DCF, WACC), dataframe analysis, and technical indicator computation.
+
+The OpenSandbox server manages container lifecycle. Start it with Docker:
+
+```bash
+docker run -d --name opensandbox \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/alibaba/opensandbox/server:latest
+```
+
+The server starts on `http://localhost:8080`. No API key is needed for local development.
+
+> **Docker Compose**: When deploying with `docker compose up`, the `opensandbox-server` service starts automatically — no manual step required.
+
+### Step 4: Configure Environment Variables
 
 Copy the example and fill in your values:
 
@@ -124,11 +144,14 @@ cp .env.example .env
 | `TEMPERATURE` | No | LLM temperature (0.0–2.0) | Default: `0.1` |
 | `MAX_CRITERIA` | No | Max evaluation criteria per agent (1–20) | Default: `7` |
 | `OPENBB_MCP_URL` | No | OpenBB MCP server URL | Default: `http://127.0.0.1:8001/mcp` |
+| `OPENSANDBOX_URL` | No | OpenSandbox server address (`host:port`) | Default: `localhost:8080` |
+| `OPENSANDBOX_API_KEY` | No | OpenSandbox API key (omit if no auth) | — |
+| `OPENSANDBOX_IMAGE` | No | Docker image for sandbox containers | Default: `python:3.11-slim` |
 | `LANGFUSE_SECRET_KEY` | No | LLM tracing (optional) | [Langfuse Cloud](https://cloud.langfuse.com) → Settings → API Keys |
 | `LANGFUSE_PUBLIC_KEY` | No | LLM tracing (optional) | Same as above |
 | `LANGFUSE_BASE_URL` | No | Langfuse host URL | Default: `https://cloud.langfuse.com` |
 
-### Step 4: Verify
+### Step 5: Verify
 
 ```bash
 # Check CLI is installed
