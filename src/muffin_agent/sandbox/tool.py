@@ -5,17 +5,12 @@ OpenSandbox container. Designed for financial calculations, dataframe analysis,
 and technical indicator computation using OpenBB methods and TA-Lib.
 """
 
-from __future__ import annotations
-
 import uuid
-from typing import TYPE_CHECKING
 
+from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as lc_tool
 
-if TYPE_CHECKING:
-    from langchain_core.tools import BaseTool
-
-    from .backend import OpenSandboxBackend
+from .backend import OpenSandboxBackend
 
 
 def create_python_execution_tool(backend: OpenSandboxBackend) -> BaseTool:
