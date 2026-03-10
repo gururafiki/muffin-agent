@@ -15,6 +15,8 @@ from deepagents.backends.protocol import (
     FileUploadResponse,
 )
 from deepagents.backends.sandbox import BaseSandbox
+from langgraph.config import get_config
+from langgraph.prebuilt import ToolRuntime
 from opensandbox.sync.sandbox import SandboxSync
 
 from ..config import Configuration
@@ -232,13 +234,18 @@ class SandboxFactory:
         self._sandbox_ids: dict[str, str] = {}  # thread_id → sandbox_id
         self._lock = threading.Lock()
 
-    def __call__(self, runtime) -> OpenSandboxBackend:
+    def __call__(self, runtime: ToolRuntime) -> OpenSandboxBackend:
         """Return a backend for the current thread_id, creating one if needed.
 
         Called by deepagents middleware on every tool invocation.
         """
+        runtime_cfg = getattr(runtime, "config", None)
+        
+        if not isinstance(runtime_cfg, dict):
+            runtime_cfg = get_config()
+
         thread_id: str = (
-            (runtime.config.get("configurable") or {}).get("thread_id") or "default"
+            (runtime_cfg.get("configurable") or {}).get("thread_id") or "default"
         )
 
         with self._lock:
@@ -249,7 +256,7 @@ class SandboxFactory:
                 sandbox = SandboxSync.connect(
                     existing_id,
                     connection_config=_make_sync_connection(self._config),
-                    skip_health_check=True,
+                    skip_health_check=False,
                 )
                 return OpenSandboxBackend(sandbox)
             except Exception:

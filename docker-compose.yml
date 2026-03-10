@@ -1,25 +1,35 @@
+configs:
+  opensandbox-config:
+    file: extras/opensandbox/config.toml
+
 volumes:
   langgraph-data:
     driver: local
 
 services:
   opensandbox-server:
-    image: ghcr.io/alibaba/opensandbox/server:latest
+    image: opensandbox/server:latest
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       # Mount Docker socket so opensandbox can spin up sandbox containers
       - /var/run/docker.sock:/var/run/docker.sock
+    configs:
+      - source: opensandbox-config
+        target: /etc/opensandbox/config.toml
     environment:
       # Set OPENSANDBOX_API_KEY in .env to enable authentication
       SANDBOX_API_KEY: ${OPENSANDBOX_API_KEY:-}
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+    networks:
+      - muffin-net
 
   openbb-mcp:
     build:
@@ -33,6 +43,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - muffin-net
 
   langgraph-redis:
     image: redis:6
@@ -42,6 +54,8 @@ services:
       interval: 5s
       timeout: 1s
       retries: 5
+    networks:
+      - muffin-net
 
   langgraph-postgres:
     image: postgres:16
@@ -58,6 +72,8 @@ services:
       timeout: 1s
       retries: 5
       interval: 5s
+    networks:
+      - muffin-net
 
   langgraph-api:
     image: ${IMAGE_NAME:-muffin-agent:latest}
@@ -80,6 +96,8 @@ services:
       DATABASE_URI: postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
       OPENBB_MCP_URL: http://openbb-mcp:8001/mcp
       OPENSANDBOX_URL: opensandbox-server:8080
+    networks:
+      - muffin-net
 
   agent-chat-ui:
     build:
@@ -89,3 +107,10 @@ services:
       - "3000:3000"
     depends_on:
       - langgraph-api
+    networks:
+      - muffin-net
+
+
+networks:
+  muffin-net:
+    driver: bridge
