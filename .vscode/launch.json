@@ -399,6 +399,38 @@
             "console": "integratedTerminal",
             "envFile": "${workspaceFolder}/.env",
             "justMyCode": false
+        },
+        {
+            "name": "Criterion Evaluation Agent: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "criterion",
+                "AAPL",
+                "--criterion",
+                "Does the company have strong and improving profitability?"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Criterion Evaluation Agent: Custom",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "criterion",
+                "${input:ticker}",
+                "--criterion",
+                "${input:criterion}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
         }
     ],
     "inputs": [
@@ -413,6 +445,12 @@
             "type": "promptString",
             "description": "Query to an agent",
             "default": "Get income statement and ratios."
+        },
+        {
+            "id": "criterion",
+            "type": "promptString",
+            "description": "Investment criterion to evaluate",
+            "default": "Does the company have strong and improving profitability?"
         }
     ]
 }

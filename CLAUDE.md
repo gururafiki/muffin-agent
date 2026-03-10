@@ -46,7 +46,9 @@ The source lives in `src/muffin_agent/` and is organized as:
 
   Currently implemented: `equity_fundamentals.py` (25 tools), `equity_price.py` (5 MCP tools + `execute_python` custom tool via OpenSandbox)
 
-- **`agents/criterion_evaluation/`** — Scaffolded but not yet implemented.
+- **`agents/subagents.py`** — Shared `build_analysis_subagents(config)` async helper. Creates the standard 14 subagents (13 data collection + 1 validation), each wrapped in `CompiledSubAgent`. Used by both `stock_evaluation.py` and `criterion_evaluation.py`.
+
+- **`agents/criterion_evaluation.py`** — Deep agent that evaluates a single investment criterion. Uses `build_analysis_subagents()` and `create_deep_agent()`. Follows a 5-step workflow: Analyze Criterion → Collect Data → Validate → Evaluate (CoT with dynamic sub-criteria) → Reflect. Produces structured output with score, confidence, signal, reasoning, and counterargument.
 
 - **`sandbox/`** — OpenSandbox integration. Two integration points:
   - `OpenSandboxBackend` — `deepagents.BaseSandbox` implementation backed by a `SandboxSync` container. All file operations (read/write/edit/grep/glob) are delegated to shell commands inside the container via `execute()`.

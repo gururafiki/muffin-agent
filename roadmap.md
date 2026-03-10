@@ -37,6 +37,15 @@
 ### DX
 - [x] Create prompt generation skill.
 
+### Documentation
+- [ ] Document Data Validation agent and add launch.json config
+- [x] Document Criterion Evaluation agent and add launch.json config
+
+### Sandbox
+- [x] Setup the model to generate python code for deterministic functions instead of doing math on it's own.
+- [ ] Update subagents to re-use existing backend or kill backend after each tool execution
+- [ ] Rework `execute_python` to generic `execute`
+
 ### Deployment
 #### Option 1 (Separate client and agent server):
 ##### For Server options:
@@ -110,7 +119,6 @@
 - [ ] Integrate agent development with langfuse to analyze what changes has to be made based on observations.
 - [ ] Add capability to pass pre-defined conditions
 - [ ] Think about adding HITL to handle: data fetchnig failure, adjusting instructions, validating criteria, etc
-- [ ] Setup the model to generate python code for deterministic functions instead of doing math on it's own.
 - [ ] Agent self-improvement
 - [ ] Add an agent to analyze stock price gainers and reason why they have grown to incorporate this knowledge later
 - [ ] For structure outputs explore response_format for agents

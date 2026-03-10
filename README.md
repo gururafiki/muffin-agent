@@ -46,7 +46,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 
 ### Stock Evaluation Agent
 
-A deep agent (powered by `deepagents`) that orchestrates data collection subagents (equity-fundamentals, equity-price, equity-estimates, equity-ownership, news) to produce scored stock assessments. It follows a 5-step workflow:
+A deep agent (powered by `deepagents`) that orchestrates all 13 data collection subagents plus a data validation subagent to produce scored stock assessments. Subagents are created via the shared `build_analysis_subagents()` helper in `agents/subagents.py`. It follows a 5-step workflow:
 
 1. **Plan** — Determine what data is needed based on ticker and query
 2. **Collect** — Delegate to data collection subagents via `task()` tool
@@ -55,6 +55,18 @@ A deep agent (powered by `deepagents`) that orchestrates data collection subagen
 5. **Reflect** — Verify score-data consistency, logical coherence, and confidence
 
 **Sandbox isolation**: Each conversation (`thread_id` from the LangGraph Chat UI) gets its own OpenSandbox container. `SandboxFactory` provisions one container per thread on first use and reconnects to it on subsequent requests in the same chat via `SandboxSync.connect()`, so parallel conversations never share execution state.
+
+### Criterion Evaluation Agent
+
+A deep agent that evaluates a **single investment criterion** (e.g., "Does the company have strong profitability?", "Is the balance sheet healthy?") by collecting targeted data, validating it, and producing a scored assessment. Uses the same shared subagents as the Stock Evaluation Agent. It follows a 5-step workflow:
+
+1. **Analyze Criterion** — Parse the criterion, determine data needs, select 2-4 relevant subagents using the built-in selection guide
+2. **Collect Data** — Delegate to selected data collection subagents with specific, targeted requests
+3. **Validate Data** — Delegate to the data-validation subagent; iterate up to 2 times if gaps are found
+4. **Evaluate** — Decompose the criterion into 2-4 dynamic sub-criteria, score each 0.0–1.0 using Chain-of-Thought with formula-first calculations, then combine into a weighted overall score
+5. **Reflect** — Check for score-evidence consistency, confirmation bias, anchoring bias, and missing counterarguments
+
+**Output**: Structured `CRITERION_EVALUATION_START/END` delimited output with score, confidence (numeric 0.0–1.0), signal, sub-criteria breakdown, evidence summary, reasoning, counterargument, and limitations. Designed to be consumed by the parent Criteria Evaluation Agent (planned).
 
 ### Design Principles
 
@@ -221,6 +233,10 @@ muffin options AAPL
 # Evaluate a stock (deep agent with subagents)
 muffin evaluate AAPL
 muffin evaluate AAPL -q "Is this stock undervalued based on fundamentals?"
+
+# Evaluate a single investment criterion
+muffin criterion AAPL -c "Does the company have strong and improving profitability?"
+muffin criterion MSFT -c "Is the balance sheet healthy?" -q "Focus on debt levels and liquidity"
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"
