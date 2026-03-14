@@ -199,62 +199,62 @@ Indicative ownership / veto weights by step and core roles (percentages are appr
   - Execution‑level details (algo selection logic, broker/routing preferences, crossing rules) are only partially documented in public sources and would need augmentation from internal best‑execution and trading‑desk manuals.[39][20][19]
 
 Sources
-[1] Equity Research: Equity Excellence: A Guide to Equity Research for Hedge Fund Careers - FasterCapital https://www.fastercapital.com/content/Equity-Research--Equity-Excellence--A-Guide-to-Equity-Research-for-Hedge-Fund-Careers.html
-[2] Citadel International Equities https://www.citadel.com/what-we-do/equities/citadel-international-equities/
-[3] Millennium Management | TrendSpider Learning Center https://trendspider.com/learning-center/millennium-management/
-[4] [PDF] Edge with hedge: primer for equity long/short funds | Aurum https://www.aurum.com/wp-content/uploads/250930-Equity-long-short-funds-primer.pdf
-[5] Invest smarter: A five-step checklist for company analysis - Shyft https://www.shyft.co.za/en-ZA/steps-for-better-fundamental-analysis
-[6] Building your fundamental analysis checklist for stock picking https://www.winvesta.in/blog/investors/building-your-fundamental-analysis-checklist-for-stock-picking
-[7] Global Macro Hedge Fund Strategies and Forecasting Models https://chenjiazizhong.com/2025/03/18/global-macro-hedge-fund-strategies-and-forecasting-models/
-[8] [PDF] Incorporating Market Regimes into Large-Scale Stock Portfolios https://mpra.ub.uni-muenchen.de/121552/1/MPRA_paper_121552.pdf
-[9] H2 2025 hedge fund outlook - Aberdeen Investments https://www.aberdeeninvestments.com/en-us/institutional/insights-and-research/h2-2025-hedge-fund-outlook
-[10] Top Hedge Fund Industry Trends for 2025 | Portfolio for the Future https://caia.org/blog/2025/01/23/top-hedge-fund-industry-trends-2025
-[11] ESG integration in listed equity: A technical guide https://www.unpri.org/listed-equity/esg-integration-in-listed-equity-a-technical-guide/11273.article
-[12] Equity Research: 5 Important Fundamental Analysis Components https://www.equentis.com/blog/equity-research-fundamental-analysis/
-[13] How to find and develop good ideas (discretionary l/s equity) https://www.wallstreetoasis.com/forum/hedge-fund/the-investment-process-how-to-find-and-develop-good-ideas-discretionary-ls-equity
-[14] [PDF] OPTIMIZING RISK-ADJUSTED CONVICTION - Janus Henderson https://cdn.janushenderson.com/webdocs/Optimizing_Risk_Adjusted_Conviction_Implied_Alpha.pdf
-[15] Risk Management Strategies In Long Short Equity Hedge Funds - FasterCapital https://fastercapital.com/topics/risk-management-strategies-in-long-short-equity-hedge-funds.html
-[16] A More Appealing Environment for Equity Long/Short Strategies https://www.cambridgeassociates.com/insight/a-more-appealing-environment-for-equity-long-short-strategies/
-[17] Position Sizing – The Final Act of Conviction - Averaging Up https://averagingup.com/position-sizing-the-final-act-of-conviction/
-[18] [PDF] ESG INTEGRATION IN LISTED EQUITY: A TECHNICAL GUIDE https://www.saoicmai.in/elibrary/practical-guide-to-ESG-integration-for-equity-investing.pdf
-[19] What We Do https://www.janestreet.com/what-we-do/overview/
-[20] Understanding Long-Short Equity Hedge Funds Strategies https://www.tejwin.com/en/insight/long-short-equity/
-[21] Position Sizing & Sell Discipline: A Modern Allocator's Framework https://resonanzcapital.com/insights/position-sizing-sell-discipline-a-modern-allocators-framework
-[22] Sell Discipline and Overcoming Behavioral Biases | EP159 https://www.mawer.com/the-art-of-boring/podcast/from-buy-to-bye-sell-discipline-and-overcoming-behavioral-biases-ep159/
-[23] Ex-Post Performance Attribution Analysis https://www.northstarrisk.com/expostperformanceattributionanalysis
-[24] Decision Attribution: Portfolio Manager Skill vs. Past Performance https://blogs.cfainstitute.org/investor/2023/01/31/decision-attribution-portfolio-manager-skill-vs-past-performance/
-[25] Iii) Historical Performance https://lockstep.beehiiv.com/p/checklist-for-fundamental-analysis-of-stocks
-[26] [PDF] Systematic Macro Hedge Funds: Trending into the New Regime https://insightcommunity.mercer.com/api/v1/uploads/c0c9a252573b447794fb37aa0640cd95.pdf?public=true
-[27] [PDF] Decoding Market Regimes Machine Learning Insights into US Asset ... https://www.ssga.com/library-content/assets/pdf/global/pc/2025/decoding-market-regimes-with-machine-learning.pdf
-[28] Modeling Regime Structure and Informational Drivers of Stock ... https://arxiv.org/html/2504.18958v1
-[29] 2025 Hedge fund investor barometer - Amundi Research Center https://research-center.amundi.com/article/2025-hedge-fund-investor-barometer
-[30] Equities Businesses - Citadel https://www.citadel.com/what-we-do/equities/
-[31] Aurum Hedge Fund Industry Deep Dive Q1 2025 review https://www.aurum.com/wp-content/uploads/Aurum-Hedge-Fund-Industry-Deep-Dive-Q1-2025.pdf
-[32] ESG Due Diligence Checklist - ESG Investing Questionnaire - Neotas https://www.neotas.com/esg-due-diligence-checklist/
-[33] A Practical Guide to ESG Integration for Equity Investing: Navigating the Intersection of Sustainability and Financial Performance - Accountend https://accountend.com/a-practical-guide-to-esg-integration-for-equity-investing-navigating-the-intersection-of-sustainability-and-financial-performance/
-[34] Theory and evidence from long/short equity hedge funds https://www.sciencedirect.com/science/article/abs/pii/S0927539811000211
-[35] [PDF] Conducting an Effective Post-Mortem Exercise for Better Investment ... https://www.td.com/content/dam/tdgis/document/ca/en/pdf/insights/thought-leadership/benefits-of-post-mortem-exercise-en.pdf
-[36] Why Every Investor Needs a Post-Mortem Analysis (And How to Do It Right) https://www.worldlyinvest.com/p/post-mortem-analysis
-[37] [PDF] Performance Analysis and Attribution with Alternative Investments https://uncipc.org/wp-content/uploads/2022/02/IPC-Performance-Attribution-Analysis-2022-01-23.pdf
-[38] [PDF] Long-Short Equity - Meketa Investment Group https://meketa.com/wp-content/uploads/2019/12/Long-Short-Equity-FINAL.pdf
-[39] What do long-only funds look for in a trading system? - LSEG https://www.lseg.com/en/insights/data-analytics/what-do-long-only-funds-look-for-in-a-trading-system
-[40] Quantitative Research :: Jane Street https://www.janestreet.com/quantitative-research/
-[41] Millennium Management's Multi-Strategy Trading Architecture https://navnoorbawa.substack.com/p/millennium-managements-multi-strategy
-[42] Millennium's Pod System: How Platform Design Beats Star Portfolio ... https://www.confluencegp.com/articles-and-news/millennium-s-pod-system-how-platform-design-beats-star-portfolio-managers
-[43] [PDF] 2024 Revealed: ten convictions for a blinding future - Candriam https://www.candriam.com/siteassets/campagne/outlooks/outlook-2024/202401/2024_01_outlook_2024_gb.pdf
-[44] Millennium Management: Overview, History, and Investments https://www.fool.com/investing/how-to-invest/famous-investors/millennium-management/
-[45] Jane Street: Trading, Research, And A Deep Dive https://vault.nimc.gov.ng/blog/jane-street-trading-research-and-a-deep-dive-1764814072
-[46] Stocks for the Long Runs—Investing with Discipline https://www.linkedin.com/pulse/stocks-long-runsinvesting-discipline-nutshell-asset-management-kybze
-[47] [PDF] Global ESG due diligence+ study 2024 https://assets.kpmg.com/content/dam/kpmg/xx/pdf/2024/06/esg-due-diligence-study-2024.pdf
-[48] Citadel: Relentless Optimization at Global Scale - Quartr https://quartr.com/insights/company-research/citadel-relentless-optimization-at-global-scale
-[49] I put together a 5 step checklist on how to fundamental analysis for a ... https://www.reddit.com/r/ValueInvesting/comments/1c66ow0/i_put_together_a_5_step_checklist_on_how_to/
-[50] Citadel's Value Strategy https://www.citadelfund.com/value-investing/citadels-value-strategy/
-[51] Millennium Management Review - SmartAsset.com https://smartasset.com/financial-advisor/millennium-management-review
-[52] Citadel: Overview, History, and Investments | The Motley Fool https://www.fool.com/investing/how-to-invest/famous-investors/citadel/
-[53] Final Round Jane Street Quant Research https://www.reddit.com/r/quantfinance/comments/1mmfs88/final_round_jane_street_quant_research/
-[54] Jane Street: Trading, Research, And Career Insights https://littlecrumblybits.com/blog/jane-street-trading-research-and-1761750958613
-[55] Hedge Fund: The Investment Life Cycle https://www.wallstreetoasis.com/forum/hedge-fund/hedge-fund-the-investment-life-cycle
-[56] Back to basics: The process of exiting a private equity investment https://www.taxadvisermagazine.com/article/back-basics-process-exiting-private-equity-investment
-[57] How I Generate Investment Ideas - CFA Institute Enterprising Investor https://blogs.cfainstitute.org/investor/2019/04/08/how-i-generate-investment-ideas/
-[58] What Is an Exit Strategy in Private Equity? - EQT Group https://eqtgroup.com/thinq/Education/what-is-an-exit-strategy
-[59] Vanguard's portfolio construction framework https://www.vanguard.co.uk/professional/vanguard-365/investment-knowledge/portfolio-construction/portfolio-construction-framework
+- [1] Equity Research: Equity Excellence: A Guide to Equity Research for Hedge Fund Careers - FasterCapital https://www.fastercapital.com/content/Equity-Research--Equity-Excellence--A-Guide-to-Equity-Research-for-Hedge-Fund-Careers.html
+- [2] Citadel International Equities https://www.citadel.com/what-we-do/equities/citadel-international-equities/
+- [3] Millennium Management | TrendSpider Learning Center https://trendspider.com/learning-center/millennium-management/
+- [4] [PDF] Edge with hedge: primer for equity long/short funds | Aurum https://www.aurum.com/wp-content/uploads/250930-Equity-long-short-funds-primer.pdf
+- [5] Invest smarter: A five-step checklist for company analysis - Shyft https://www.shyft.co.za/en-ZA/steps-for-better-fundamental-analysis
+- [6] Building your fundamental analysis checklist for stock picking https://www.winvesta.in/blog/investors/building-your-fundamental-analysis-checklist-for-stock-picking
+- [7] Global Macro Hedge Fund Strategies and Forecasting Models https://chenjiazizhong.com/2025/03/18/global-macro-hedge-fund-strategies-and-forecasting-models/
+- [8] [PDF] Incorporating Market Regimes into Large-Scale Stock Portfolios https://mpra.ub.uni-muenchen.de/121552/1/MPRA_paper_121552.pdf
+- [9] H2 2025 hedge fund outlook - Aberdeen Investments https://www.aberdeeninvestments.com/en-us/institutional/insights-and-research/h2-2025-hedge-fund-outlook
+- [10] Top Hedge Fund Industry Trends for 2025 | Portfolio for the Future https://caia.org/blog/2025/01/23/top-hedge-fund-industry-trends-2025
+- [11] ESG integration in listed equity: A technical guide https://www.unpri.org/listed-equity/esg-integration-in-listed-equity-a-technical-guide/11273.article
+- [12] Equity Research: 5 Important Fundamental Analysis Components https://www.equentis.com/blog/equity-research-fundamental-analysis/
+- [13] How to find and develop good ideas (discretionary l/s equity) https://www.wallstreetoasis.com/forum/hedge-fund/the-investment-process-how-to-find-and-develop-good-ideas-discretionary-ls-equity
+- [14] [PDF] OPTIMIZING RISK-ADJUSTED CONVICTION - Janus Henderson https://cdn.janushenderson.com/webdocs/Optimizing_Risk_Adjusted_Conviction_Implied_Alpha.pdf
+- [15] Risk Management Strategies In Long Short Equity Hedge Funds - FasterCapital https://fastercapital.com/topics/risk-management-strategies-in-long-short-equity-hedge-funds.html
+- [16] A More Appealing Environment for Equity Long/Short Strategies https://www.cambridgeassociates.com/insight/a-more-appealing-environment-for-equity-long-short-strategies/
+- [17] Position Sizing – The Final Act of Conviction - Averaging Up https://averagingup.com/position-sizing-the-final-act-of-conviction/
+- [18] [PDF] ESG INTEGRATION IN LISTED EQUITY: A TECHNICAL GUIDE https://www.saoicmai.in/elibrary/practical-guide-to-ESG-integration-for-equity-investing.pdf
+- [19] What We Do https://www.janestreet.com/what-we-do/overview/
+- [20] Understanding Long-Short Equity Hedge Funds Strategies https://www.tejwin.com/en/insight/long-short-equity/
+- [21] Position Sizing & Sell Discipline: A Modern Allocator's Framework https://resonanzcapital.com/insights/position-sizing-sell-discipline-a-modern-allocators-framework
+- [22] Sell Discipline and Overcoming Behavioral Biases | EP159 https://www.mawer.com/the-art-of-boring/podcast/from-buy-to-bye-sell-discipline-and-overcoming-behavioral-biases-ep159/
+- [23] Ex-Post Performance Attribution Analysis https://www.northstarrisk.com/expostperformanceattributionanalysis
+- [24] Decision Attribution: Portfolio Manager Skill vs. Past Performance https://blogs.cfainstitute.org/investor/2023/01/31/decision-attribution-portfolio-manager-skill-vs-past-performance/
+- [25] Iii) Historical Performance https://lockstep.beehiiv.com/p/checklist-for-fundamental-analysis-of-stocks
+- [26] [PDF] Systematic Macro Hedge Funds: Trending into the New Regime https://insightcommunity.mercer.com/api/v1/uploads/c0c9a252573b447794fb37aa0640cd95.pdf?public=true
+- [27] [PDF] Decoding Market Regimes Machine Learning Insights into US Asset ... https://www.ssga.com/library-content/assets/pdf/global/pc/2025/decoding-market-regimes-with-machine-learning.pdf
+- [28] Modeling Regime Structure and Informational Drivers of Stock ... https://arxiv.org/html/2504.18958v1
+- [29] 2025 Hedge fund investor barometer - Amundi Research Center https://research-center.amundi.com/article/2025-hedge-fund-investor-barometer
+- [30] Equities Businesses - Citadel https://www.citadel.com/what-we-do/equities/
+- [31] Aurum Hedge Fund Industry Deep Dive Q1 2025 review https://www.aurum.com/wp-content/uploads/Aurum-Hedge-Fund-Industry-Deep-Dive-Q1-2025.pdf
+- [32] ESG Due Diligence Checklist - ESG Investing Questionnaire - Neotas https://www.neotas.com/esg-due-diligence-checklist/
+- [33] A Practical Guide to ESG Integration for Equity Investing: Navigating the Intersection of Sustainability and Financial Performance - Accountend https://accountend.com/a-practical-guide-to-esg-integration-for-equity-investing-navigating-the-intersection-of-sustainability-and-financial-performance/
+- [34] Theory and evidence from long/short equity hedge funds https://www.sciencedirect.com/science/article/abs/pii/S0927539811000211
+- [35] [PDF] Conducting an Effective Post-Mortem Exercise for Better Investment ... https://www.td.com/content/dam/tdgis/document/ca/en/pdf/insights/thought-leadership/benefits-of-post-mortem-exercise-en.pdf
+- [36] Why Every Investor Needs a Post-Mortem Analysis (And How to Do It Right) https://www.worldlyinvest.com/p/post-mortem-analysis
+- [37] [PDF] Performance Analysis and Attribution with Alternative Investments https://uncipc.org/wp-content/uploads/2022/02/IPC-Performance-Attribution-Analysis-2022-01-23.pdf
+- [38] [PDF] Long-Short Equity - Meketa Investment Group https://meketa.com/wp-content/uploads/2019/12/Long-Short-Equity-FINAL.pdf
+- [39] What do long-only funds look for in a trading system? - LSEG https://www.lseg.com/en/insights/data-analytics/what-do-long-only-funds-look-for-in-a-trading-system
+- [40] Quantitative Research :: Jane Street https://www.janestreet.com/quantitative-research/
+- [41] Millennium Management's Multi-Strategy Trading Architecture https://navnoorbawa.substack.com/p/millennium-managements-multi-strategy
+- [42] Millennium's Pod System: How Platform Design Beats Star Portfolio ... https://www.confluencegp.com/articles-and-news/millennium-s-pod-system-how-platform-design-beats-star-portfolio-managers
+- [43] [PDF] 2024 Revealed: ten convictions for a blinding future - Candriam https://www.candriam.com/siteassets/campagne/outlooks/outlook-2024/202401/2024_01_outlook_2024_gb.pdf
+- [44] Millennium Management: Overview, History, and Investments https://www.fool.com/investing/how-to-invest/famous-investors/millennium-management/
+- [45] Jane Street: Trading, Research, And A Deep Dive https://vault.nimc.gov.ng/blog/jane-street-trading-research-and-a-deep-dive-1764814072
+- [46] Stocks for the Long Runs—Investing with Discipline https://www.linkedin.com/pulse/stocks-long-runsinvesting-discipline-nutshell-asset-management-kybze
+- [47] [PDF] Global ESG due diligence+ study 2024 https://assets.kpmg.com/content/dam/kpmg/xx/pdf/2024/06/esg-due-diligence-study-2024.pdf
+- [48] Citadel: Relentless Optimization at Global Scale - Quartr https://quartr.com/insights/company-research/citadel-relentless-optimization-at-global-scale
+- [49] I put together a 5 step checklist on how to fundamental analysis for a ... https://www.reddit.com/r/ValueInvesting/comments/1c66ow0/i_put_together_a_5_step_checklist_on_how_to/
+- [50] Citadel's Value Strategy https://www.citadelfund.com/value-investing/citadels-value-strategy/
+- [51] Millennium Management Review - SmartAsset.com https://smartasset.com/financial-advisor/millennium-management-review
+- [52] Citadel: Overview, History, and Investments | The Motley Fool https://www.fool.com/investing/how-to-invest/famous-investors/citadel/
+- [53] Final Round Jane Street Quant Research https://www.reddit.com/r/quantfinance/comments/1mmfs88/final_round_jane_street_quant_research/
+- [54] Jane Street: Trading, Research, And Career Insights https://littlecrumblybits.com/blog/jane-street-trading-research-and-1761750958613
+- [55] Hedge Fund: The Investment Life Cycle https://www.wallstreetoasis.com/forum/hedge-fund/hedge-fund-the-investment-life-cycle
+- [56] Back to basics: The process of exiting a private equity investment https://www.taxadvisermagazine.com/article/back-basics-process-exiting-private-equity-investment
+- [57] How I Generate Investment Ideas - CFA Institute Enterprising Investor https://blogs.cfainstitute.org/investor/2019/04/08/how-i-generate-investment-ideas/
+- [58] What Is an Exit Strategy in Private Equity? - EQT Group https://eqtgroup.com/thinq/Education/what-is-an-exit-strategy
+- [59] Vanguard's portfolio construction framework https://www.vanguard.co.uk/professional/vanguard-365/investment-knowledge/portfolio-construction/portfolio-construction-framework

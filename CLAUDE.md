@@ -46,6 +46,8 @@ The source lives in `src/muffin_agent/` and is organized as:
 
   Currently implemented: `equity_fundamentals.py` (25 tools), `equity_price.py` (5 MCP tools + `execute_python` custom tool via OpenSandbox)
 
+- **`agents/data_validation.py`** — Pure reasoning agent (no MCP tools) that validates collected data against a criterion. Built with `create_agent(model, system_prompt=...)` and no tools — the ReAct loop resolves to a direct LLM response. Checks sufficiency, relevance, temporal validity, and consistency. Prompt: `data_validation.jinja`. Used as a `CompiledSubAgent` in both stock evaluation and criterion evaluation agents.
+
 - **`agents/subagents.py`** — Shared `build_analysis_subagents(config)` async helper. Creates the standard 14 subagents (13 data collection + 1 validation), each wrapped in `CompiledSubAgent`. Used by both `stock_evaluation.py` and `criterion_evaluation.py`.
 
 - **`agents/criterion_evaluation.py`** — Deep agent that evaluates a single investment criterion. Uses `build_analysis_subagents()` and `create_deep_agent()`. Follows a 5-step workflow: Analyze Criterion → Collect Data → Validate → Evaluate (CoT with dynamic sub-criteria) → Reflect. Produces structured output with score, confidence, signal, reasoning, and counterargument.

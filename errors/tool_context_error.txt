@@ -1,0 +1,42 @@
+BadRequestError('Error code: 400 - {\'error\': {\'message\': \'This endpoint\\\'s maximum context length is 262144 tokens. However, you requested about 294101 tokens (291205 of text input, 2896 of tool input). Please reduce the length of either one, or use the "middle-out" transform to compress your prompt automatically.\', \'code\': 400, \'metadata\': {\'provider_name\': None}}}')Traceback (most recent call last):
+
+
+  File "/usr/local/lib/python3.13/site-packages/langchain_core/language_models/chat_models.py", line 1318, in _agenerate_with_cache
+    async for chunk in self._astream(messages, stop=stop, **kwargs):
+    ...<21 lines>...
+        yielded = True
+
+
+  File "/usr/local/lib/python3.13/site-packages/langchain_openai/chat_models/base.py", line 3194, in _astream
+    async for chunk in super()._astream(*args, **kwargs):
+        yield chunk
+
+
+  File "/usr/local/lib/python3.13/site-packages/langchain_openai/chat_models/base.py", line 1696, in _astream
+    _handle_openai_bad_request(e)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+
+
+  File "/usr/local/lib/python3.13/site-packages/langchain_openai/chat_models/base.py", line 1671, in _astream
+    response = await self.async_client.create(**payload)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+  File "/usr/local/lib/python3.13/site-packages/openai/resources/chat/completions/completions.py", line 2714, in create
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+    ...<49 lines>...
+    )
+    ^
+
+
+  File "/usr/local/lib/python3.13/site-packages/openai/_base_client.py", line 1884, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+  File "/usr/local/lib/python3.13/site-packages/openai/_base_client.py", line 1669, in request
+    raise self._make_status_error_from_response(err.response) from None
+
+
+openai.BadRequestError: Error code: 400 - {'error': {'message': 'This endpoint\'s maximum context length is 262144 tokens. However, you requested about 294101 tokens (291205 of text input, 2896 of tool input). Please reduce the length of either one, or use the "middle-out" transform to compress your prompt automatically.', 'code': 400, 'metadata': {'provider_name': None}}}

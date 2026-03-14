@@ -44,6 +44,21 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `regulatory_filings` | 14 | SEC filings, CIK lookups, CFTC Commitment of Traders, US congressional bills |
 | `fama_french` | 6 | Fama-French 3/5-factor model returns, US/regional/country portfolio returns, international index returns, size/value breakpoints |
 
+### Data Validation Agent
+
+A pure reasoning agent (no tools) that validates collected financial data against a given criterion. Used as a subagent by both the Stock Evaluation Agent and the Criterion Evaluation Agent (Step 3 in each workflow).
+
+It scores data across four dimensions (each 0.0–1.0):
+
+| Dimension | What it checks |
+|-----------|---------------|
+| Sufficiency | Are key data points present and usable for the criterion? |
+| Relevance | Does the data directly address the criterion being evaluated? |
+| Temporal Validity | Does all data respect the analysis date cutoff? |
+| Consistency | Do units, periods, and currencies match across sources? |
+
+**Output**: Structured report with per-dimension scores, weighted overall confidence (0.0–1.0), overall relevance, identified gaps/issues, and a recommendation: `proceed`, `collect_more_data` (with specific gaps to fill), or `insufficient_data`.
+
 ### Stock Evaluation Agent
 
 A deep agent (powered by `deepagents`) that orchestrates all 13 data collection subagents plus a data validation subagent to produce scored stock assessments. Subagents are created via the shared `build_analysis_subagents()` helper in `agents/subagents.py`. It follows a 5-step workflow:

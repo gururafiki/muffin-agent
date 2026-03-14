@@ -45,6 +45,12 @@
 - [x] Setup the model to generate python code for deterministic functions instead of doing math on it's own.
 - [ ] Update subagents to re-use existing backend or kill backend after each tool execution
 - [ ] Rework `execute_python` to generic `execute`
+- [ ] Update prompts to guide agents to execute code for computations instead of computing within LLM call
+- [ ] Save tool outputs in file system and pass their references for computations instead of generating them within scripts.
+- [ ] Keep in memory/readme already written scripts.
+- [ ] Share scripts between agent calls.
+- [ ] Once authentication is enabled - store scripts per user in persistent storage and pre-populated sandboxes with them.
+- [ ] Think about having separate Coding agent instead of writing scripts within each agent.
 
 ### Deployment
 #### Option 1 (Separate client and agent server):
@@ -88,6 +94,30 @@
     - Precedent txns
     - SOTP
 
+## Core workflow
+- [ ] Idea Sourcing & Screening: Defines investment idea (Step 1 from [docs/investment-process.md](docs/investment-process.md))
+    - [ ] Macro screeners:
+        - [ ] Sector screener: Compare sectors in the current economic condition to define which has potential to attract more capital.
+        - [ ] Country screener: Compare countries in the current economic condition to define which has potential to attract more capital.
+        - [ ] Technology screener: Search and compare cutting edge technologies, latest advancmenets to define which has potential to attract more capital and/or has high potential to attract many customers and get good market share.
+    - [ ] Ticker Screeners:
+        - [ ] Loser screener: Check weekly/daily losers to later define if companies fairly lost capitalization or if it's temporary (not reasonable long-term) lose. This screener should be able to analyze in specific country/sector/market cap.
+        - [ ] Gainers screener: Check weekly/daily losers to later define if companies fairly gained capitalization or if it's temporary (not reasonable long-term) gain. This screener should be able to analyze in specific country/sector/market cap.
+        - [ ] News screener: Check news to define which companies require attention.
+    - **TODO**
+- [ ] Idea Evaluation (Steps 2-4 from [docs/investment-process.md](docs/investment-process.md))
+    - Check macro
+    - Check sector/industry
+    - Understand business and evaluate it
+- [ ] Ticker Valuation and forecasting (Steps 5-6 from [docs/investment-process.md](docs/investment-process.md))
+    - Do valuations based on fundamentals
+    - Create projections and scenarious
+- [ ] Relative value (Steps 7 from [docs/investment-process.md](docs/investment-process.md))
+    - Peer comparison
+    - **TODO**
+- **TODO**
+- [ ] Analysis check (Steps 6 from [docs/investment-process.md](docs/investment-process.md))
+
 ## Phase 3
 
 ### Agent Evaluations
@@ -112,6 +142,10 @@
 - [ ] Explore agents from https://github.com/virattt/ai-hedge-fund
 
 ### Other improvements
+- [ ] Explore `langchain.agents.middleware.context_editing.ContextEditingMiddleware` and `langchain.agents.middleware.summarization.SummarizationMiddleware`:
+    - [ ] Clean failed tools and just summarize what agent shouldn't do based on failure messages
+    - [ ] Extract from news important in the current context information only (e.g. extract sentiment, evaluate how article may affect ticket short/long-term, etc)
+- [ ] Explore `langchain.agents.middleware.model_retry.ModelRetryMiddleware`. Check if it's applied on top of model retries or not.
 - [ ] Utilize jinja capabilities to enrich prompt tempalates with necessary data. I think we should at least include current date.
 - [ ] Design work of financial depeartment from investing/trading firm with all the specific workflows they use (heavy webcrawl and reasoning task) and created tailored agents for this.
 - [ ] Add citations for the data used when analyzing it (where it comes from, which provider, which command, what period of time covered, fillings, etc)
