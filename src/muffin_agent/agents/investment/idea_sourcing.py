@@ -4,11 +4,11 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
-from muffin_agent.pipeline.state import PipelineState
+from muffin_agent.agents.investment.state import ScreeningState
 
 
 async def idea_sourcing_node(
-    state: PipelineState, config: RunnableConfig
+    state: ScreeningState, config: RunnableConfig
 ) -> dict[str, Any]:
     """Stage 1: Idea Sourcing & Screening.
 

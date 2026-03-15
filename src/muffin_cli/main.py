@@ -659,11 +659,11 @@ async def _run_analyze(ticker: str, query: str | None) -> None:
 
     from langchain_core.runnables import RunnableConfig
 
-    from muffin_agent.pipeline import build_analysis_graph
+    from muffin_agent.agents import build_investment_analysis_graph
     from muffin_agent.utils.observability import setup_tracing
 
     callbacks = setup_tracing(session_id=ticker)
-    graph = build_analysis_graph()
+    graph = build_investment_analysis_graph()
 
     mandate = query or f"Produce a complete investment analysis for {ticker}"
 
@@ -705,12 +705,12 @@ async def _run_screen(query: str, max_tickers: int) -> None:
 
     from langchain_core.runnables import RunnableConfig
 
-    from muffin_agent.pipeline import build_screening_graph
+    from muffin_agent.agents import build_equity_screening_graph
     from muffin_agent.utils.observability import setup_tracing
 
     session_id = f"screen-{query[:40].replace(' ', '-')}"
     callbacks = setup_tracing(session_id=session_id)
-    graph = build_screening_graph()
+    graph = build_equity_screening_graph()
 
     result = await graph.ainvoke(
         {"query": query, "tickers": [], "theses": []},
