@@ -653,6 +653,101 @@ def evaluate(
     asyncio.run(_stream_evaluate(ticker, query))
 
 
+async def _run_analyze(ticker: str, query: str | None) -> None:
+    """Run the full analysis pipeline for a single ticker and print final thesis."""
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.pipeline import build_analysis_graph
+    from muffin_agent.utils.observability import setup_tracing
+
+    callbacks = setup_tracing(session_id=ticker)
+    graph = build_analysis_graph()
+
+    mandate = query or f"Produce a complete investment analysis for {ticker}"
+
+    result = await graph.ainvoke(
+        {"ticker": ticker, "query": mandate},
+        config=RunnableConfig(
+            callbacks=callbacks,
+            configurable={"thread_id": ticker},
+        ),
+    )
+
+    thesis = result.get("thesis", {})
+    typer.echo(json.dumps(thesis, indent=2, default=str))
+
+
+@app.command()
+def analyze(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / analysis focus"),
+    ] = None,
+) -> None:
+    """Run the full 7-stage investment analysis pipeline for a given ticker.
+
+    Stages run with maximum parallelism:
+    Group 1 (parallel): market-regime, sector-analysis, company-analysis
+    Group 2 (parallel): forecasting, risk-assessment
+    Group 3 (sequential): valuation → thesis-synthesis
+
+    NOTE: individual stages are not yet implemented (NotImplementedError).
+    """
+    asyncio.run(_run_analyze(ticker, query))
+
+
+async def _run_screen(query: str, max_tickers: int) -> None:
+    """Run the screening pipeline and print comparison results."""
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.pipeline import build_screening_graph
+    from muffin_agent.utils.observability import setup_tracing
+
+    session_id = f"screen-{query[:40].replace(' ', '-')}"
+    callbacks = setup_tracing(session_id=session_id)
+    graph = build_screening_graph()
+
+    result = await graph.ainvoke(
+        {"query": query, "tickers": [], "theses": []},
+        config=RunnableConfig(
+            callbacks=callbacks,
+            configurable={"thread_id": session_id, "max_tickers": max_tickers},
+        ),
+    )
+
+    comparison = result.get("comparison", {})
+    typer.echo(json.dumps(comparison, indent=2, default=str))
+
+
+@app.command()
+def screen(
+    query: Annotated[
+        str,
+        typer.Option("--query", "-q", help="Investment mandate / screening objective"),
+    ],
+    max_tickers: Annotated[
+        int,
+        typer.Option("--max-tickers", "-n", help="Max candidates to evaluate in depth"),
+    ] = 5,
+) -> None:
+    """Auto-discover investment ideas and run the full pipeline on each candidate.
+
+    Workflow:
+      1. idea-sourcing: screen the market matching the query
+      2. shared context: market-regime + sector-analysis (run once)
+      3. per-ticker analysis: parallel full pipeline for each candidate
+      4. comparison: rank and select the best ideas
+
+    NOTE: individual stages are not yet implemented (NotImplementedError).
+    """
+    asyncio.run(_run_screen(query, max_tickers))
+
+
 def main() -> None:
     """Entry point for the `muffin` CLI."""
     app()
