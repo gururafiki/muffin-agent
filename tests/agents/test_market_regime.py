@@ -1,17 +1,18 @@
 """Tests for the market regime agent."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from muffin_agent.agents.investment.market_regime import (
+    MarketRegimeContext,
+    MarketRegimeOutput,
     _build_task_description,
-    _parse_agent_output,
 )
 from muffin_agent.prompts import render_template
 
-# ── Minimal valid JSON output ──────────────────────────────────────────────────
+# ── Minimal valid output dict ──────────────────────────────────────────────────
 
 _VALID_REGIME_DICT = {
     "regime_label": "Goldilocks late-cycle",
@@ -34,7 +35,7 @@ _VALID_REGIME_DICT = {
             "label": "neutral",
             "score": 0.5,
             "direction": "stable",
-            "key_indicators": "EFFR 4.33% (Fed Jan 2026); FOMC on hold, data-dependent",
+            "key_indicators": "EFFR 4.33% (Fed Jan 2026); FOMC on hold",
         },
         "liquidity_risk_appetite": {
             "label": "cautiously_risk_on",
@@ -84,12 +85,6 @@ _VALID_REGIME_DICT = {
     "limitations": [],
 }
 
-_VALID_AGENT_OUTPUT = (
-    "MARKET_REGIME_JSON_START\n"
-    + json.dumps(_VALID_REGIME_DICT, indent=2)
-    + "\nMARKET_REGIME_JSON_END"
-)
-
 
 # ── Prompt template tests ──────────────────────────────────────────────────────
 
@@ -136,10 +131,11 @@ class TestPromptTemplate:
         assert "risk_on" in result
         assert "crisis" in result
 
-    def test_template_contains_output_markers(self):
+    def test_template_uses_structured_output_tool(self):
         result = render_template("market_regime.jinja")
-        assert "MARKET_REGIME_JSON_START" in result
-        assert "MARKET_REGIME_JSON_END" in result
+        assert "structured output tool" in result
+        assert "MARKET_REGIME_JSON_START" not in result
+        assert "MARKET_REGIME_JSON_END" not in result
 
     def test_template_contains_output_keys(self):
         result = render_template("market_regime.jinja")
@@ -186,111 +182,221 @@ class TestPromptTemplate:
 
 @pytest.mark.unit
 class TestBuildTaskDescription:
-    """Test task description construction from state."""
+    """Test task description construction from context."""
 
     def test_ticker_context(self):
-        state = {"ticker": "AAPL", "query": "Quality tech stock"}
-        result = _build_task_description(state)
+        context: MarketRegimeContext = {"ticker": "AAPL", "query": "Quality tech stock"}
+        result = _build_task_description(context)
         assert "AAPL" in result
         assert "Quality tech stock" in result
         assert "ticker_impact" in result
 
     def test_query_only_context(self):
-        state = {"query": "Find defensive value stocks"}
-        result = _build_task_description(state)
+        context: MarketRegimeContext = {"query": "Find defensive value stocks"}
+        result = _build_task_description(context)
         assert "Find defensive value stocks" in result
-        assert "ticker_impact" not in result
+        assert "Omit the ticker_impact field" in result
         assert "Ticker:" not in result
 
     def test_sector_industry_country_context(self):
-        state = {
+        context: MarketRegimeContext = {
             "query": "European bank stocks",
             "sector": "Financials",
             "industry": "Banks",
             "country": "Europe",
         }
-        result = _build_task_description(state)
+        result = _build_task_description(context)
         assert "Financials" in result
         assert "Banks" in result
         assert "Europe" in result
         assert "European bank stocks" in result
 
-    def test_minimal_empty_state(self):
+    def test_minimal_empty_context(self):
         result = _build_task_description({})
         assert "regime" in result.lower()
 
     def test_ticker_triggers_ticker_impact_instruction(self):
-        state = {"ticker": "MSFT"}
-        result = _build_task_description(state)
+        context: MarketRegimeContext = {"ticker": "MSFT"}
+        result = _build_task_description(context)
         assert "ticker_impact" in result
         assert "MSFT" in result
 
     def test_no_ticker_no_ticker_impact_instruction(self):
-        state = {"query": "defensive stocks"}
-        result = _build_task_description(state)
-        assert "ticker_impact" not in result
+        context: MarketRegimeContext = {"query": "defensive stocks"}
+        result = _build_task_description(context)
+        assert "Omit the ticker_impact field" in result
+        assert "Populate the ticker_impact" not in result
 
 
-# ── _parse_agent_output tests ──────────────────────────────────────────────────
+# ── MarketRegimeOutput Pydantic model tests ────────────────────────────────────
 
 
 @pytest.mark.unit
-class TestParseAgentOutput:
-    """Test JSON extraction from agent output."""
+class TestMarketRegimeOutputModel:
+    """Test Pydantic model validation for MarketRegimeOutput."""
 
-    def test_valid_output_parses_correctly(self):
-        result = _parse_agent_output(_VALID_AGENT_OUTPUT)
-        assert result["regime_label"] == "Goldilocks late-cycle"
-        assert result["confidence"] == 0.8
-        assert "dimensions" in result
-        assert "factor_assessment" in result
-        assert "yield_curve" in result
-        assert "recommended_positioning" in result
+    def test_valid_full_output_validates(self):
+        output = MarketRegimeOutput(**_VALID_REGIME_DICT)
+        assert output.regime_label == "Goldilocks late-cycle"
+        assert output.confidence == 0.8
+        assert output.dimensions.growth_cycle.label == "slowing"
+        assert output.factor_assessment.quality.tilt == "tailwind"
+        assert output.yield_curve.shape == "normal"
 
-    def test_missing_markers_returns_error_dict(self):
-        result = _parse_agent_output("No JSON block here")
-        assert result["regime_label"] == "unknown"
-        assert "error" in result
-        assert "raw_output" in result
+    def test_ticker_impact_is_optional(self):
+        output = MarketRegimeOutput(**_VALID_REGIME_DICT)
+        assert output.ticker_impact is None
 
-    def test_malformed_json_returns_error_dict(self):
-        bad_output = "MARKET_REGIME_JSON_START\n{invalid json\nMARKET_REGIME_JSON_END"
-        result = _parse_agent_output(bad_output)
-        assert result["regime_label"] == "unknown"
-        assert "error" in result
-        assert "JSON parse error" in result["error"]
+    def test_ticker_impact_populates_when_provided(self):
+        data = {
+            **_VALID_REGIME_DICT,
+            "ticker_impact": {
+                "ticker": "AAPL",
+                "regime_sensitivity": "neutral",
+                "rationale": "Tech sector neutral in late-cycle slowdown.",
+                "specific_risks": ["Rate sensitivity"],
+                "specific_tailwinds": ["Quality premium"],
+            },
+        }
+        output = MarketRegimeOutput(**data)
+        assert output.ticker_impact is not None
+        assert output.ticker_impact.ticker == "AAPL"
+        assert output.ticker_impact.regime_sensitivity == "neutral"
 
-    def test_dimensions_structure(self):
-        result = _parse_agent_output(_VALID_AGENT_OUTPUT)
-        dims = result["dimensions"]
-        assert "growth_cycle" in dims
-        assert "inflation_regime" in dims
-        assert "monetary_policy" in dims
-        assert "liquidity_risk_appetite" in dims
-        for dim in dims.values():
-            assert "label" in dim
-            assert "score" in dim
-            assert "direction" in dim
+    def test_invalid_factor_tilt_raises_validation_error(self):
+        data = {
+            **_VALID_REGIME_DICT,
+            "factor_assessment": {
+                **_VALID_REGIME_DICT["factor_assessment"],
+                "value": {"tilt": "bullish", "rationale": "bad value"},
+            },
+        }
+        with pytest.raises(ValidationError):
+            MarketRegimeOutput(**data)
 
-    def test_factor_assessment_structure(self):
-        result = _parse_agent_output(_VALID_AGENT_OUTPUT)
-        factors = result["factor_assessment"]
-        assert "value" in factors
-        assert "quality" in factors
-        assert "momentum" in factors
-        assert "size" in factors
-        for f in factors.values():
-            assert f["tilt"] in ("tailwind", "neutral", "headwind")
+    def test_invalid_yield_curve_shape_raises_validation_error(self):
+        data = {
+            **_VALID_REGIME_DICT,
+            "yield_curve": {
+                **_VALID_REGIME_DICT["yield_curve"],
+                "shape": "steep",
+            },
+        }
+        with pytest.raises(ValidationError):
+            MarketRegimeOutput(**data)
 
-    def test_whitespace_tolerant(self):
-        output_with_whitespace = (
-            "Some preamble text.\n\n"
-            "MARKET_REGIME_JSON_START\n\n"
-            + json.dumps(_VALID_REGIME_DICT)
-            + "\n\nMARKET_REGIME_JSON_END\n\nSome trailing text."
-        )
-        result = _parse_agent_output(output_with_whitespace)
-        assert result["regime_label"] == "Goldilocks late-cycle"
+    def test_model_dump_serialises_correctly(self):
+        output = MarketRegimeOutput(**_VALID_REGIME_DICT)
+        dumped = output.model_dump()
+        assert isinstance(dumped, dict)
+        assert dumped["regime_label"] == "Goldilocks late-cycle"
+        assert dumped["dimensions"]["growth_cycle"]["label"] == "slowing"
+        assert dumped["ticker_impact"] is None
+        assert isinstance(dumped["data_sources"], list)
+        assert isinstance(dumped["limitations"], list)
+
+
+# ── MarketRegimeContext TypedDict tests ────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestMarketRegimeContextTypedDict:
+    """Test MarketRegimeContext construction in the node function."""
+
+    @pytest.mark.asyncio
+    async def test_node_builds_context_with_ticker_and_query(self):
+        """Node constructs context with ticker + query when both present in state."""
+        mock_structured = MagicMock(spec=MarketRegimeOutput)
+        mock_structured.model_dump.return_value = _VALID_REGIME_DICT
+        mock_agent = AsyncMock()
+        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
+
+        with (
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".create_market_regime_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".Configuration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
+        ):
+            from muffin_agent.agents.investment.market_regime import market_regime_node
+
+            state = {"ticker": "AAPL", "query": "Quality tech stock"}
+            await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
+
+        task_input = mock_agent.ainvoke.call_args[0][0]["input"]
+        assert "AAPL" in task_input
+        assert "Quality tech stock" in task_input
+
+    @pytest.mark.asyncio
+    async def test_node_omits_ticker_when_absent(self):
+        """Node omits ticker key when state has no ticker."""
+        mock_structured = MagicMock(spec=MarketRegimeOutput)
+        mock_structured.model_dump.return_value = _VALID_REGIME_DICT
+        mock_agent = AsyncMock()
+        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
+
+        with (
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".create_market_regime_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".Configuration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
+        ):
+            from muffin_agent.agents.investment.market_regime import market_regime_node
+
+            state = {"query": "Defensive value stocks"}
+            await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
+
+        task_input = mock_agent.ainvoke.call_args[0][0]["input"]
+        assert "Ticker:" not in task_input
+
+    @pytest.mark.asyncio
+    async def test_node_passes_sector_industry_country(self):
+        """Sector, industry, country flow through from state to task description."""
+        mock_structured = MagicMock(spec=MarketRegimeOutput)
+        mock_structured.model_dump.return_value = _VALID_REGIME_DICT
+        mock_agent = AsyncMock()
+        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
+
+        with (
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".create_market_regime_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".Configuration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
+        ):
+            from muffin_agent.agents.investment.market_regime import market_regime_node
+
+            state = {
+                "sector": "Financials",
+                "industry": "Banks",
+                "country": "Europe",
+                "query": "European bank stocks",
+            }
+            await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
+
+        task_input = mock_agent.ainvoke.call_args[0][0]["input"]
+        assert "Financials" in task_input
+        assert "Banks" in task_input
+        assert "Europe" in task_input
 
 
 # ── create_market_regime_agent tests ──────────────────────────────────────────
@@ -356,6 +462,7 @@ class TestCreateMarketRegimeAgent:
             mock_create.return_value = MagicMock()
 
             from muffin_agent.agents.investment.market_regime import (
+                MarketRegimeOutput,
                 create_market_regime_agent,
             )
 
@@ -379,6 +486,13 @@ class TestCreateMarketRegimeAgent:
             assert subagents[5]["name"] == "data-validation"
             assert subagents[5]["runnable"] is mock_validation
             assert agent is mock_create.return_value
+
+            # Verify response_format uses AutoStrategy with the correct schema
+            response_format = call_kwargs.kwargs["response_format"]
+            from langchain.agents.structured_output import AutoStrategy
+
+            assert isinstance(response_format, AutoStrategy)
+            assert response_format.schema is MarketRegimeOutput
 
     @pytest.mark.asyncio
     async def test_uses_backend(self):
@@ -451,8 +565,10 @@ class TestMarketRegimeNode:
 
     @pytest.mark.asyncio
     async def test_node_returns_market_regime_key(self):
+        mock_structured = MagicMock(spec=MarketRegimeOutput)
+        mock_structured.model_dump.return_value = _VALID_REGIME_DICT
         mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"output": _VALID_AGENT_OUTPUT}
+        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
 
         with (
             patch(
@@ -482,8 +598,10 @@ class TestMarketRegimeNode:
 
     @pytest.mark.asyncio
     async def test_node_passes_ticker_in_task(self):
+        mock_structured = MagicMock(spec=MarketRegimeOutput)
+        mock_structured.model_dump.return_value = _VALID_REGIME_DICT
         mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"output": _VALID_AGENT_OUTPUT}
+        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
 
         with (
             patch(
@@ -509,8 +627,10 @@ class TestMarketRegimeNode:
 
     @pytest.mark.asyncio
     async def test_node_works_without_ticker(self):
+        mock_structured = MagicMock(spec=MarketRegimeOutput)
+        mock_structured.model_dump.return_value = _VALID_REGIME_DICT
         mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"output": _VALID_AGENT_OUTPUT}
+        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
 
         with (
             patch(
@@ -533,7 +653,7 @@ class TestMarketRegimeNode:
         assert "market_regime" in result
 
     @pytest.mark.asyncio
-    async def test_node_handles_missing_json_gracefully(self):
+    async def test_node_handles_missing_structured_response(self):
         mock_agent = AsyncMock()
         mock_agent.ainvoke.return_value = {
             "output": "Sorry, I could not complete the analysis."
@@ -560,3 +680,36 @@ class TestMarketRegimeNode:
         assert "market_regime" in result
         assert result["market_regime"]["regime_label"] == "unknown"
         assert "error" in result["market_regime"]
+
+    @pytest.mark.asyncio
+    async def test_node_handles_none_structured_response(self):
+        """Explicit None in structured_response key triggers fallback."""
+        mock_agent = AsyncMock()
+        mock_agent.ainvoke.return_value = {
+            "structured_response": None,
+            "output": "Partial analysis text.",
+        }
+
+        with (
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".create_market_regime_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".Configuration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
+        ):
+            from muffin_agent.agents.investment.market_regime import market_regime_node
+
+            result = await market_regime_node(
+                {"query": "test"},
+                MagicMock(),  # type: ignore[arg-type]
+            )
+
+        assert result["market_regime"]["regime_label"] == "unknown"
+        assert "error" in result["market_regime"]
+        assert result["market_regime"]["raw_output"] == "Partial analysis text."

@@ -1,11 +1,12 @@
 """Stage 2: Market Regime & Top-Down Context."""
 
-import json
-import re
-from typing import Any
+from typing import Any, Literal
 
 from deepagents import CompiledSubAgent, create_deep_agent
+from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 from muffin_agent.agents.data_collection import (
     create_currency_commodities_data_collection_agent,
@@ -19,6 +20,158 @@ from muffin_agent.agents.investment.state import TickerAnalysisState
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
 from muffin_agent.sandbox import get_backend
+
+# ── Context schema ────────────────────────────────────────────────────────────
+
+
+class MarketRegimeContext(TypedDict, total=False):
+    """Context passed to the market regime agent.
+
+    All fields are optional; at least one should be provided.
+
+    Context modes:
+        (a) ticker — agent derives sector/style via ``etf_equity_exposure``
+        (b) sector / industry / country — explicit context, no ticker lookup
+        (c) query only — investment mandate narrows geographic/style focus
+    """
+
+    ticker: str
+    query: str
+    sector: str
+    industry: str
+    country: str
+
+
+# ── Output schema ─────────────────────────────────────────────────────────────
+
+
+class DimensionDetail(BaseModel):
+    """Assessment of a single macro regime dimension."""
+
+    label: str
+    """Vocabulary label, e.g. 'expanding', 'risk_off', 'neutral'."""
+
+    score: float
+    """0.0–1.0 scale; higher = more extreme positive end of the dimension."""
+
+    direction: str
+    """Trend direction: 'improving' | 'stable' | 'deteriorating'."""
+
+    key_indicators: str
+    """2-3 data points with values and sources supporting the assessment."""
+
+
+class RegimeDimensions(BaseModel):
+    """The four macro dimensions that together define the regime."""
+
+    growth_cycle: DimensionDetail
+    inflation_regime: DimensionDetail
+    monetary_policy: DimensionDetail
+    liquidity_risk_appetite: DimensionDetail
+
+
+class FactorTilt(BaseModel):
+    """Regime-implied tilt for a single Fama-French factor."""
+
+    tilt: Literal["tailwind", "neutral", "headwind"]
+    rationale: str
+    """One sentence citing specific data supporting the tilt."""
+
+
+class FactorAssessment(BaseModel):
+    """Factor tilts implied by the current macro regime."""
+
+    value: FactorTilt
+    quality: FactorTilt
+    momentum: FactorTilt
+    size: FactorTilt
+
+
+class YieldCurve(BaseModel):
+    """Yield curve and credit spread snapshot."""
+
+    slope_10y2y_bps: float
+    """10Y minus 2Y Treasury yield spread in basis points."""
+
+    shape: Literal["normal", "flat", "inverted", "humped"]
+    trend: Literal["steepening", "flattening", "stable"]
+    credit_spread_ig_bps: float
+    """Investment-grade OAS spread in basis points."""
+
+    credit_spread_hy_bps: float
+    """High-yield OAS spread in basis points."""
+
+
+class RecommendedPositioning(BaseModel):
+    """Regime-implied portfolio positioning guidance."""
+
+    beta_range: str
+    """E.g. '0.7-1.0'."""
+
+    gross_exposure: str
+    """Guidance relative to normal, e.g. 'reduce 10-15%'."""
+
+    net_exposure: str
+    """Guidance relative to normal, e.g. 'cautiously net long 40-50%'."""
+
+    sector_tilts: str
+    """Favoured and avoided sectors."""
+
+    style_tilts: str
+    """Factor/style preferences, e.g. 'quality over growth'."""
+
+
+class TickerImpact(BaseModel):
+    """How the current macro regime specifically affects a given ticker."""
+
+    ticker: str
+    regime_sensitivity: Literal["favorable", "neutral", "adverse"]
+    rationale: str
+    """2-3 sentences tying the regime to this stock's sector and style."""
+
+    specific_risks: list[str]
+    specific_tailwinds: list[str]
+
+
+class DataSource(BaseModel):
+    """Record of data collected from one subagent."""
+
+    subagent: str
+    data_retrieved: str
+    period: str
+
+
+class MarketRegimeOutput(BaseModel):
+    """Structured output produced by the market regime deep agent."""
+
+    regime_label: str
+    """3-6 word plain-English label, e.g. 'Late-cycle stagflationary pressure'."""
+
+    as_of_date: str
+    """Analysis date in YYYY-MM-DD format."""
+
+    confidence: float
+    """0.0–1.0 reflecting data quality and completeness."""
+
+    dimensions: RegimeDimensions
+    factor_assessment: FactorAssessment
+    yield_curve: YieldCurve
+    macro_summary: str
+    """3-4 sentence narrative covering regime dynamics and directional outlook."""
+
+    key_risks: list[str]
+    """2-4 macro tail risks."""
+
+    recommended_positioning: RecommendedPositioning
+    ticker_impact: TickerImpact | None = None
+    """Present only when a ticker was provided in the task."""
+
+    data_sources: list[DataSource] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    """Data gaps or uncertainties that reduce confidence."""
+
+
+# ── Subagent builder ──────────────────────────────────────────────────────────
 
 
 async def _build_macro_subagents(config: Configuration) -> list[CompiledSubAgent]:
@@ -107,6 +260,9 @@ async def _build_macro_subagents(config: Configuration) -> list[CompiledSubAgent
     ]
 
 
+# ── Agent factory ─────────────────────────────────────────────────────────────
+
+
 async def create_market_regime_agent(config: Configuration):
     """Build the market regime deep agent.
 
@@ -118,6 +274,11 @@ async def create_market_regime_agent(config: Configuration):
     ``get_backend`` discovers or creates a sandbox container per conversation
     by ``thread_id`` metadata for Python computations (yield curve slope,
     factor Z-scores, composite indicators).
+
+    ``response_format=AutoStrategy(MarketRegimeOutput)`` instructs the agent
+    to call a structured output tool as its final act, returning a validated
+    ``MarketRegimeOutput`` instance in ``result["structured_response"]``
+    instead of free-form text.
     """
     subagents = await _build_macro_subagents(config)
     prompt = render_template("market_regime.jinja")
@@ -128,70 +289,41 @@ async def create_market_regime_agent(config: Configuration):
         system_prompt=prompt,
         subagents=subagents,
         backend=get_backend,
+        response_format=AutoStrategy(schema=MarketRegimeOutput),
     )
 
 
-def _build_task_description(state: dict[str, Any]) -> str:
-    """Build the task description string from available state fields.
+# ── Context and node helpers ──────────────────────────────────────────────────
 
-    Supports 3 context modes:
-    - (a) With ticker: TickerAnalysisState — passes ticker + query
-    - (b) With sector/country/industry: ScreeningState or custom — passes those fields
-    - (c) Query-only: passes only the investment mandate
+
+def _build_task_description(context: MarketRegimeContext) -> str:
+    """Build the task description string from a MarketRegimeContext.
+
+    Converts the typed context into a task string that the deep agent receives
+    as its user message.  Only includes keys that are present in the context.
     """
     parts: list[str] = ["Classify the current macro and market regime."]
 
-    ticker: str | None = state.get("ticker")
-    query: str | None = state.get("query")
-    sector: str | None = state.get("sector")
-    industry: str | None = state.get("industry")
-    country: str | None = state.get("country")
-
-    if ticker:
+    if ticker := context.get("ticker"):
         parts.append(f"Ticker: {ticker}")
-    if sector:
+    if sector := context.get("sector"):
         parts.append(f"Sector: {sector}")
-    if industry:
+    if industry := context.get("industry"):
         parts.append(f"Industry: {industry}")
-    if country:
+    if country := context.get("country"):
         parts.append(f"Country/region focus: {country}")
-    if query:
+    if query := context.get("query"):
         parts.append(f"Investment mandate: {query}")
 
-    if ticker:
+    if context.get("ticker"):
         parts.append(
-            "Include a ticker_impact section assessing how the current regime "
-            f"specifically affects {ticker}."
+            "Populate the ticker_impact field with the regime impact on "
+            f"{context['ticker']}."
         )
+    else:
+        parts.append("Omit the ticker_impact field (no ticker provided).")
 
     return "\n".join(parts)
-
-
-def _parse_agent_output(output: str) -> dict[str, Any]:
-    """Extract and parse the JSON block from the agent's output.
-
-    Return the parsed dict on success, or a minimal error dict if the JSON
-    block is missing or malformed.
-    """
-    match = re.search(
-        r"MARKET_REGIME_JSON_START\s*(.*?)\s*MARKET_REGIME_JSON_END",
-        output,
-        re.DOTALL,
-    )
-    if not match:
-        return {
-            "regime_label": "unknown",
-            "error": "Agent did not produce a parseable MARKET_REGIME_JSON block",
-            "raw_output": output,
-        }
-    try:
-        return json.loads(match.group(1))
-    except json.JSONDecodeError as exc:
-        return {
-            "regime_label": "unknown",
-            "error": f"JSON parse error: {exc}",
-            "raw_output": match.group(1),
-        }
 
 
 async def market_regime_node(
@@ -214,37 +346,46 @@ async def market_regime_node(
     ``ScreeningState`` (query-only); reads fields via ``.get()`` so missing
     keys degrade gracefully.
 
-    Supported context modes (all optional, combined as available):
+    Context is passed to the agent via ``MarketRegimeContext``:
         (a) ticker — agent derives sector/style via ``etf_equity_exposure``
-        (b) sector / industry / country — passed directly to the agent
-        (c) query — investment mandate narrows geographic/style focus
+        (b) sector / industry / country — passed explicitly
+        (c) query only — investment mandate narrows geographic/style focus
 
     Outputs (state update):
-        market_regime: dict containing:
-            - regime_label: str — e.g. "Goldilocks late-cycle"
-            - as_of_date: str — YYYY-MM-DD
-            - confidence: float — 0.0–1.0
-            - dimensions: dict — 4 sub-dicts (growth_cycle, inflation_regime,
-              monetary_policy, liquidity_risk_appetite), each with label,
-              score, direction, key_indicators
-            - factor_assessment: dict — value/quality/momentum/size tilts
-            - yield_curve: dict — slope, shape, trend, credit spreads
-            - macro_summary: str — 3-4 sentence narrative
-            - key_risks: list[str] — macro tail risks
-            - recommended_positioning: dict — beta, gross/net, sector/style tilts
-            - ticker_impact: dict | absent — regime impact on specific ticker
-            - data_sources: list[dict]
-            - limitations: list[str]
+        market_regime: ``MarketRegimeOutput.model_dump()`` dict, or an error
+        dict ``{"regime_label": "unknown", "error": ..., "raw_output": ...}``
+        if the agent fails to return structured output.
     """
     configuration = Configuration.from_runnable_config(config)
     agent = await create_market_regime_agent(configuration)
 
-    task = _build_task_description(state)  # type: ignore[arg-type]
+    # Build typed context from whatever is available in state
+    context: MarketRegimeContext = {}
+    if ticker := state.get("ticker"):  # type: ignore[union-attr]
+        context["ticker"] = ticker
+    if query := state.get("query"):  # type: ignore[union-attr]
+        context["query"] = query
+    for field in ("sector", "industry", "country"):
+        if val := state.get(field):  # type: ignore[union-attr]
+            context[field] = val  # type: ignore[literal-required]
+
+    task = _build_task_description(context)
     result = await agent.ainvoke({"input": task})
 
-    raw_output: str = (
-        result.get("output", "") if isinstance(result, dict) else str(result)
+    structured: MarketRegimeOutput | None = (
+        result.get("structured_response") if isinstance(result, dict) else None
     )
-    market_regime = _parse_agent_output(raw_output)
+    if structured is None:
+        return {
+            "market_regime": {
+                "regime_label": "unknown",
+                "error": "Agent did not produce structured output",
+                "raw_output": (
+                    result.get("output", "")
+                    if isinstance(result, dict)
+                    else str(result)
+                ),
+            }
+        }
 
-    return {"market_regime": market_regime}
+    return {"market_regime": structured.model_dump()}

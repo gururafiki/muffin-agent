@@ -164,83 +164,44 @@ Before outputting, critically review your regime classification:
 4. **What would flip the regime**: State the one indicator change that would most likely shift the regime label (e.g., "a 50bps cut would shift monetary from neutral to easing").
 5. **Ticker consistency** (if applicable): Is the ticker-specific impact consistent with the overall regime?
 
-If reflection reveals a material inconsistency, revise the classification before outputting.
+If reflection reveals a material inconsistency, revise the classification before submitting.
 
-## Output Format
+## Returning Your Analysis
 
-Output the result as JSON between the markers below. Omit `ticker_impact` entirely if no ticker was provided.
+When you have completed all 5 steps and are confident in your regime assessment, **call
+the structured output tool** to submit your final result. Do not output raw JSON text —
+use the tool directly. The tool validates your response against the output schema.
 
-```
-MARKET_REGIME_JSON_START
-{
-  "regime_label": "string — 3-6 word plain-English regime label",
-  "as_of_date": "YYYY-MM-DD",
-  "confidence": 0.00,
-  "dimensions": {
-    "growth_cycle": {
-      "label": "expanding|slowing|contracting|recovering",
-      "score": 0.00,
-      "direction": "improving|stable|deteriorating",
-      "key_indicators": "string — 2-3 data points with values and sources"
-    },
-    "inflation_regime": {
-      "label": "high_rising|elevated_stable|moderate|low_falling|deflationary",
-      "score": 0.00,
-      "direction": "rising|stable|falling",
-      "key_indicators": "string — 2-3 data points with values and sources"
-    },
-    "monetary_policy": {
-      "label": "aggressively_tightening|tightening|neutral|easing|aggressively_easing",
-      "score": 0.00,
-      "direction": "tightening|stable|easing",
-      "key_indicators": "string — 2-3 data points with values and sources"
-    },
-    "liquidity_risk_appetite": {
-      "label": "risk_on|cautiously_risk_on|neutral|risk_off|crisis",
-      "score": 0.00,
-      "direction": "improving|stable|deteriorating",
-      "key_indicators": "string — 2-3 data points with values and sources"
-    }
-  },
-  "factor_assessment": {
-    "value": {"tilt": "tailwind|neutral|headwind", "rationale": "string — 1 sentence citing data"},
-    "quality": {"tilt": "tailwind|neutral|headwind", "rationale": "string — 1 sentence citing data"},
-    "momentum": {"tilt": "tailwind|neutral|headwind", "rationale": "string — 1 sentence citing data"},
-    "size": {"tilt": "tailwind|neutral|headwind", "rationale": "string — 1 sentence citing data"}
-  },
-  "yield_curve": {
-    "slope_10y2y_bps": 0,
-    "shape": "normal|flat|inverted|humped",
-    "trend": "steepening|flattening|stable",
-    "credit_spread_ig_bps": 0,
-    "credit_spread_hy_bps": 0
-  },
-  "macro_summary": "string — 3-4 sentences describing regime, key dynamics, and directional outlook",
-  "key_risks": [
-    "string — tail risk 1",
-    "string — tail risk 2",
-    "string — tail risk 3"
-  ],
-  "recommended_positioning": {
-    "beta_range": "string — e.g. '0.7-1.0'",
-    "gross_exposure": "string — guidance relative to normal",
-    "net_exposure": "string — guidance relative to normal",
-    "sector_tilts": "string — favoured and avoided sectors",
-    "style_tilts": "string — factor/style preferences"
-  },
-  "ticker_impact": {
-    "ticker": "string",
-    "regime_sensitivity": "favorable|neutral|adverse",
-    "rationale": "string — 2-3 sentences tying regime to this specific stock",
-    "specific_risks": ["string", "string"],
-    "specific_tailwinds": ["string", "string"]
-  },
-  "data_sources": [
-    {"subagent": "string", "data_retrieved": "string", "period": "string"}
-  ],
-  "limitations": ["string — data gap or uncertainty that affects confidence"]
-}
-MARKET_REGIME_JSON_END
-```
+Fill in all required fields as follows:
 
-**Confidence** reflects data quality and completeness: 1.0 = all 5 subagents returned recent, consistent data; reduce by ~0.15 per missing primary source; reduce by ~0.10 per major data gap within a source.
+- `regime_label` — 3-6 word plain-English label (e.g. "Late-cycle stagflationary
+  pressure", "Goldilocks expansion", "Risk-off Fed pivot")
+- `as_of_date` — today's date in YYYY-MM-DD format
+- `confidence` — 0.0-1.0; start at 1.0 and reduce by ~0.15 per missing primary
+  subagent result, ~0.10 per major data gap within a source
+- `dimensions.growth_cycle` — label (expanding / slowing / contracting / recovering),
+  score 0-1 (1=strong expansion, 0=deep contraction), direction, key_indicators
+- `dimensions.inflation_regime` — label (high_rising / elevated_stable / moderate /
+  low_falling / deflationary), score 0-1 (1=severe inflation, 0=deflation),
+  direction, key_indicators
+- `dimensions.monetary_policy` — label (aggressively_tightening / tightening /
+  neutral / easing / aggressively_easing), score 0-1 (1=aggressive tightening,
+  0=aggressive easing), direction, key_indicators
+- `dimensions.liquidity_risk_appetite` — label (risk_on / cautiously_risk_on /
+  neutral / risk_off / crisis), score 0-1 (1=extreme risk-on, 0=crisis),
+  direction, key_indicators
+- `factor_assessment.{value,quality,momentum,size}` — tilt (tailwind / neutral /
+  headwind), rationale (1 sentence citing specific data)
+- `yield_curve` — slope_10y2y_bps (float), shape (normal / flat / inverted /
+  humped), trend (steepening / flattening / stable), credit_spread_ig_bps,
+  credit_spread_hy_bps
+- `macro_summary` — 3-4 sentence narrative covering regime dynamics and outlook
+- `key_risks` — list of 2-4 macro tail risks
+- `recommended_positioning` — beta_range, gross_exposure, net_exposure,
+  sector_tilts, style_tilts
+- `ticker_impact` — **only if a ticker was provided in the task**; include
+  regime_sensitivity (favorable / neutral / adverse), rationale, specific_risks,
+  specific_tailwinds. Omit this field entirely if no ticker was given.
+- `data_sources` — one entry per subagent: subagent name, what was retrieved,
+  period covered
+- `limitations` — data gaps or uncertainties that reduce confidence
