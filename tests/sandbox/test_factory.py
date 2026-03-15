@@ -143,9 +143,7 @@ class TestSandboxFactoryGetSandbox:
         mock_create.assert_called_once()
         assert result.id == "new-sb"
         # Verify thread_id metadata is passed
-        assert mock_create.call_args.kwargs["metadata"] == {
-            "thread_id": "thread-abc"
-        }
+        assert mock_create.call_args.kwargs["metadata"] == {"thread_id": "thread-abc"}
 
 
 # ---------------------------------------------------------------------------
@@ -227,9 +225,7 @@ class TestSandboxFactoryAgetSandbox:
 
         mock_create.assert_called_once()
         assert result.id == "new-sb"
-        assert mock_create.call_args.kwargs["metadata"] == {
-            "thread_id": "thread-abc"
-        }
+        assert mock_create.call_args.kwargs["metadata"] == {"thread_id": "thread-abc"}
 
 
 # ---------------------------------------------------------------------------
