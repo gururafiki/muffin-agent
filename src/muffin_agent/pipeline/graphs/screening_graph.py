@@ -12,8 +12,13 @@ Graph topology
       ▼
     idea_sourcing           ← Stage 1: find candidate tickers
       │
-      │  (fan-out via Send — one per ticker)
-      ▼
+      ├──→ market_regime ─────┐
+      └──→ sector_analysis ───┤
+                              ↓ (context_ready barrier: both must complete)
+                        context_ready
+                              │
+                  (Send fan-out: one per ticker)
+                              ↓
     ┌─────────────────────────────────────────────────────────┐
     │  per-ticker sub-graph (runs in parallel for each ticker) │
     │                                                          │
@@ -24,8 +29,8 @@ Graph topology
     │   forecasting ─────────────────────────────────┐        │
     │   risk_assessment ─────────────────────────────┘        │
     │                       ↓ (barrier)                        │
-    │   valuation ─────────────────────────────────────→       │
-    │   thesis_synthesis ──────────────────────────────→       │
+    │   valuation ──────────────────────────────────────→      │
+    │   thesis_synthesis ───────────────────────────────→      │
     └──────────────────────────────────────────────────────────┘
       │
       │  (fan-in: theses list accumulated by operator.add reducer)
@@ -37,10 +42,11 @@ Graph topology
 
 Shared context optimisation
 ----------------------------
-In ``screening_graph``, ``market_regime`` and ``sector_analysis`` run on the
-**outer graph** before the fan-out so they execute *once* rather than once
-per ticker.  Their results are injected into each ``TickerAnalysisState``
-when the ``Send`` objects are created in ``_fan_out_tickers``.
+``market_regime`` and ``sector_analysis`` run on the **outer graph** before
+the fan-out so they execute *once* rather than once per ticker.  Both run in
+**parallel** after ``idea_sourcing``; the ``context_ready`` no-op barrier node
+fires only when both have completed.  Their results are injected into each
+``TickerAnalysisState`` when the ``Send`` objects are created.
 
 Replaceability
 --------------
@@ -60,10 +66,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from muffin_agent.pipeline.graphs.analysis_graph import (
-    _DEFAULT_STAGES,
-    build_analysis_graph,
-)
+from muffin_agent.pipeline.graphs.analysis_graph import build_analysis_graph
 from muffin_agent.pipeline.stages import (
     comparison_node,
     idea_sourcing_node,
@@ -101,22 +104,6 @@ def _fan_out_tickers(state: PipelineState) -> list[Send]:
     ]
 
 
-async def _collect_thesis(
-    state: TickerAnalysisState, config: RunnableConfig
-) -> dict[str, Any]:
-    """Fan-in adapter: run the per-ticker sub-graph and collect the thesis.
-
-    This node wraps ``build_analysis_graph()`` so that the outer screening
-    graph can invoke the full analysis pipeline as a single node, then
-    appends the completed thesis into the outer ``PipelineState.theses`` list
-    via the ``operator.add`` reducer.
-    """
-    # Lazy import to avoid circular dependency at module load time
-    analysis_graph = build_analysis_graph()
-    result: TickerAnalysisState = await analysis_graph.ainvoke(state, config)
-    return {"theses": [result.get("thesis", {})]}
-
-
 def build_screening_graph(
     sourcing_node: Callable[..., Any] | None = None,
     stages: dict[str, Callable[..., Any]] | None = None,
@@ -145,20 +132,36 @@ def build_screening_graph(
         )
     """
     sourcing = sourcing_node or idea_sourcing_node
+    _stages = stages  # captured by _collect_thesis closure below
 
-    # Override analysis sub-graph stages if requested
-    if stages:
-        _DEFAULT_STAGES.update(stages)
+    async def _collect_thesis(
+        state: TickerAnalysisState, config: RunnableConfig
+    ) -> dict[str, Any]:
+        """Fan-in adapter: run the per-ticker sub-graph and collect the thesis.
+
+        Wraps ``build_analysis_graph()`` so that the outer screening graph can
+        invoke the full analysis pipeline as a single node, then appends the
+        completed thesis into the outer ``PipelineState.theses`` list via the
+        ``operator.add`` reducer.
+
+        ``stages`` overrides are forwarded into the inner graph so custom stage
+        implementations propagate correctly without mutating any module-level state.
+        """
+        analysis_graph = build_analysis_graph(stages=_stages)
+        result: TickerAnalysisState = await analysis_graph.ainvoke(state, config)
+        return {"theses": [result.get("thesis", {})]}
 
     outer: StateGraph = StateGraph(PipelineState)
 
     # ── Outer nodes ───────────────────────────────────────────────────────────
-    # Stage 1: find candidates
     outer.add_node("idea_sourcing", sourcing)
 
-    # Shared context (run once before fan-out)
+    # Shared context (run once before fan-out, in parallel with each other)
     outer.add_node("market_regime", market_regime_node)
     outer.add_node("sector_analysis", sector_analysis_node)
+
+    # No-op barrier: fires only after both market_regime AND sector_analysis complete
+    outer.add_node("context_ready", lambda s: {})
 
     # Per-ticker worker (wraps full analysis sub-graph)
     outer.add_node("analyze_ticker", _collect_thesis)
@@ -169,22 +172,20 @@ def build_screening_graph(
     # ── Outer edges ───────────────────────────────────────────────────────────
     outer.add_edge(START, "idea_sourcing")
 
-    # After sourcing, run shared context stages in parallel
+    # market_regime and sector_analysis run in parallel after sourcing
     outer.add_edge("idea_sourcing", "market_regime")
     outer.add_edge("idea_sourcing", "sector_analysis")
 
-    # Fan-out: after shared context is ready, spawn one worker per ticker.
-    # _fan_out_tickers reads state["tickers"] (from idea_sourcing) and
-    # state["market_regime"] / state["sector_view"] (from shared stages).
-    outer.add_conditional_edges(
-        "market_regime",
-        _fan_out_tickers,
-        ["analyze_ticker"],
-    )
-    outer.add_edge("sector_analysis", "market_regime")  # sector feeds into fan-out gate
+    # context_ready fires only when BOTH shared-context nodes complete
+    outer.add_edge("market_regime", "context_ready")
+    outer.add_edge("sector_analysis", "context_ready")
+
+    # Fan-out: one Send per ticker; shared context is injected via _fan_out_tickers
+    outer.add_conditional_edges("context_ready", _fan_out_tickers, ["analyze_ticker"])
 
     # Fan-in: each worker appends to theses; comparison fires when all done
     outer.add_edge("analyze_ticker", "comparison")
     outer.add_edge("comparison", END)
 
     return outer.compile()
+
