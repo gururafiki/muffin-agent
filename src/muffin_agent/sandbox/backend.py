@@ -5,8 +5,6 @@ providing isolated Python execution for financial calculations, dataframe
 analysis, and technical indicator computation.
 """
 
-import logging
-import threading
 from datetime import timedelta
 
 from deepagents.backends.protocol import (
@@ -15,11 +13,6 @@ from deepagents.backends.protocol import (
     FileUploadResponse,
 )
 from deepagents.backends.sandbox import BaseSandbox
-from langgraph.config import get_config
-from langgraph.prebuilt import ToolRuntime
-from opensandbox.sync.sandbox import SandboxSync
-
-from ..config import Configuration
 
 
 class OpenSandboxBackend(BaseSandbox):
@@ -30,7 +23,7 @@ class OpenSandboxBackend(BaseSandbox):
     asyncio.to_thread, so the event loop is never blocked).
     """
 
-    def __init__(self, sandbox: SandboxSync) -> None:
+    def __init__(self, sandbox) -> None:
         """Initialize with a connected SandboxSync instance.
 
         Args:
@@ -138,136 +131,3 @@ class OpenSandboxBackend(BaseSandbox):
         Does not terminate the remote container — call sandbox.kill() for that.
         """
         self._sandbox.close()
-
-
-def _make_sync_connection(config: Configuration):
-    """Build a ConnectionConfigSync from muffin agent config."""
-    from opensandbox.config.connection_sync import ConnectionConfigSync
-
-    return ConnectionConfigSync(
-        domain=config.opensandbox_url,
-        api_key=config.opensandbox_api_key or None,
-        protocol="http",
-    )
-
-
-def _make_async_connection(config: Configuration):
-    """Build a ConnectionConfig (async) from muffin agent config."""
-    from opensandbox.config.connection import ConnectionConfig
-
-    return ConnectionConfig(
-        domain=config.opensandbox_url,
-        api_key=config.opensandbox_api_key or None,
-        protocol="http",
-    )
-
-
-def create_opensandbox_backend(config: Configuration) -> OpenSandboxBackend:
-    """Create a sandbox container and wrap it in an OpenSandboxBackend.
-
-    Blocking — intended for use during agent setup before entering the async
-    event loop. Uses SandboxSync so no async bridging is needed.
-
-    Args:
-        config: Muffin agent configuration with opensandbox_* fields.
-
-    Returns:
-        Connected and ready OpenSandboxBackend.
-    """
-    sandbox = SandboxSync.create(
-        config.opensandbox_image,
-        connection_config=_make_sync_connection(config),
-        timeout=timedelta(hours=1),
-        env={"PYTHONUNBUFFERED": "1"},
-    )
-    return OpenSandboxBackend(sandbox)
-
-
-async def create_opensandbox_sandbox(config: Configuration):
-    """Create an async Sandbox for use in async tools.
-
-    Uses the native async OpenSandbox SDK — no sync bridging. Intended for
-    tools that run inside an already-running async event loop.
-
-    Args:
-        config: Muffin agent configuration with opensandbox_* fields.
-
-    Returns:
-        Connected and ready async Sandbox instance.
-    """
-    from opensandbox.sandbox import Sandbox
-
-    return await Sandbox.create(
-        config.opensandbox_image,
-        connection_config=_make_async_connection(config),
-        timeout=timedelta(hours=1),
-        env={"PYTHONUNBUFFERED": "1"},
-    )
-
-
-_log = logging.getLogger(__name__)
-
-
-class SandboxFactory:
-    """Per-thread_id sandbox factory that implements BackendFactory.
-
-    Pass an instance as ``backend=`` to ``create_deep_agent``. deepagents
-    middleware calls the instance on every tool invocation; the factory
-    reconnects to (or provisions) the sandbox for that ``thread_id`` so all
-    tool calls within a conversation share one container.
-
-    Only sandbox IDs are stored in memory — no live connection objects are
-    held between calls. ``SandboxSync.connect()`` is used on every invocation
-    (with ``skip_health_check=True`` to avoid blocking), so the overhead is
-    one lightweight client construction per tool call rather than a round-trip
-    health check.
-
-    Usage::
-
-        factory = SandboxFactory(config)
-        agent = create_deep_agent(model=llm, backend=factory, ...)
-    """
-
-    def __init__(self, config: Configuration) -> None:
-        """Initialize with muffin agent configuration."""
-        self._config = config
-        self._sandbox_ids: dict[str, str] = {}  # thread_id → sandbox_id
-        self._lock = threading.Lock()
-
-    def __call__(self, runtime: ToolRuntime) -> OpenSandboxBackend:
-        """Return a backend for the current thread_id, creating one if needed.
-
-        Called by deepagents middleware on every tool invocation.
-        """
-        runtime_cfg = getattr(runtime, "config", None)
-        
-        if not isinstance(runtime_cfg, dict):
-            runtime_cfg = get_config()
-
-        thread_id: str = (
-            (runtime_cfg.get("configurable") or {}).get("thread_id") or "default"
-        )
-
-        with self._lock:
-            existing_id = self._sandbox_ids.get(thread_id)
-
-        if existing_id:
-            try:
-                sandbox = SandboxSync.connect(
-                    existing_id,
-                    connection_config=_make_sync_connection(self._config),
-                    skip_health_check=False,
-                )
-                return OpenSandboxBackend(sandbox)
-            except Exception:
-                _log.info(
-                    "Sandbox %s unreachable for thread %s, creating new one",
-                    existing_id,
-                    thread_id,
-                )
-
-        backend = create_opensandbox_backend(self._config)
-        _log.info("Created sandbox %s for thread %s", backend.id, thread_id)
-        with self._lock:
-            self._sandbox_ids[thread_id] = backend.id
-        return backend

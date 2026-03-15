@@ -116,10 +116,14 @@ Open [LangSmith Studio](https://smith.langchain.com/) — your deployed agent wi
 └───────────┘ └─────────────┘
 ```
 
-**Sandbox lifecycle**: Each chat conversation (`thread_id`) gets its own
-isolated container. `SandboxFactory` stores the container ID and reconnects
-to it on subsequent messages in the same thread. Containers auto-terminate
-after a 1-hour idle timeout.
+**Sandbox lifecycle**: Each chat conversation gets its own isolated container.
+Sandboxes are discovered lazily by `thread_id` metadata — `get_backend` and
+`execute_python` call the OpenSandbox API to find a running container tagged
+with the current `thread_id`. If none exists, a new container is created
+automatically. If the container dies mid-conversation (e.g. 1-hour timeout,
+container crash), a new container is created transparently on the next call
+(in-sandbox state like installed packages or written files is lost).
+Containers auto-terminate after a 1-hour idle timeout.
 
 ## Production Considerations
 

@@ -1,43 +1,50 @@
 """OpenSandbox integration for muffin agents.
 
-Provides two integration points:
+Provides three integration points:
 
-1. **SandboxFactory** — a deepagents ``BackendFactory`` that provisions one
-   ``OpenSandboxBackend`` per ``thread_id`` and reuses it for all tool calls
-   within that conversation. Pass it as ``backend=`` to ``create_deep_agent``.
-   On a cache miss it calls ``SandboxSync.connect()`` to reconnect to an
-   existing container before falling back to creating a new one.
+1. **get_backend** — ``BackendFactory`` function that discovers or creates
+   a sandbox by ``thread_id`` metadata via the OpenSandbox API. Works with
+   both ``ToolRuntime`` and ``Runtime`` contexts (``thread_id`` comes from
+   ``langgraph.config.get_config()``). Pass as ``backend=get_backend`` to
+   ``create_deep_agent``.
 
-2. **create_python_execution_tool** — returns a LangChain async tool that
-   creates a fresh ``Sandbox`` for each ``execute_python`` invocation, runs
-   the code, and closes the container afterwards. Add the tool to data
-   collection agents via the ``custom_tools`` argument of ``get_tools()``.
+2. **get_sandbox** / **aget_sandbox** — Sync and async functions that find
+   or create a sandbox for the current thread. Used internally by
+   ``execute_python`` and available for direct use when a raw sandbox
+   instance is needed.
+
+3. **execute_python** — LangChain async tool that discovers the sandbox for
+   the current thread and executes Python code in it. If no sandbox exists,
+   creates one automatically.
 
 Usage::
 
-    from muffin_agent.sandbox import SandboxFactory, create_python_execution_tool
+    from muffin_agent.sandbox import get_backend, execute_python
 
-    # Deep agent backend: one container per conversation
-    registry = SandboxFactory(config)
-    agent = create_deep_agent(model=llm, backend=registry, ...)
+    # Deep agent: sandbox discovered/created lazily per conversation
+    agent = create_deep_agent(
+        model=llm, backend=get_backend, ...
+    )
 
-    # Standalone execution tool: fresh container per call
-    tool = create_python_execution_tool(config)
-    tools = await get_tools(config, MCP_TOOLS, custom_tools=[tool])
+    # Subagent with execute_python tool
+    agent = create_agent(
+        model=llm, tools=[execute_python], ...
+    )
+
+Limitations:
+    - If the sandbox dies mid-conversation (e.g. 1-hour timeout, container
+      crash), a new container is created transparently on the next call.
+      Any in-sandbox state (installed packages, written files) is lost.
 """
 
-from .backend import (
-    OpenSandboxBackend,
-    SandboxFactory,
-    create_opensandbox_backend,
-    create_opensandbox_sandbox,
-)
-from .tool import create_python_execution_tool
+from .backend import OpenSandboxBackend
+from .factory import aget_sandbox, get_backend, get_sandbox
+from .tools import execute_python
 
 __all__ = [
     "OpenSandboxBackend",
-    "SandboxFactory",
-    "create_opensandbox_backend",
-    "create_opensandbox_sandbox",
-    "create_python_execution_tool",
+    "aget_sandbox",
+    "execute_python",
+    "get_backend",
+    "get_sandbox",
 ]

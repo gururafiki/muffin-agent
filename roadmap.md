@@ -36,6 +36,12 @@
 
 ### DX
 - [x] Create prompt generation skill.
+- [ ] Extend docker compose to allow mounting local code to the code location within docker to allow making changes locally and test them immediately.
+- [ ] Add configuration to allow debugging python code when docker compose is launched. Options:
+    - using VSCode debugging in docker
+    - using `langraph dev`
+    - using normal python debugger to execute muffin-cli, just connect it to other services hosted within docker compose.
+    - update docker compose to use executed outside of docker compose
 
 ### Documentation
 - [ ] Document Data Validation agent and add launch.json config
@@ -43,14 +49,12 @@
 
 ### Sandbox
 - [x] Setup the model to generate python code for deterministic functions instead of doing math on it's own.
-- [ ] Update subagents to re-use existing backend or kill backend after each tool execution
+- [x] Update subagents to re-use existing backend or kill backend after each tool execution
+    - `SandboxFactory` discovers sandboxes by `thread_id` metadata, creates if not found
+    - `get_backend` (deep agent) and `execute_python` (subagent tool) reuse the same container
+    - Dead containers are auto-recreated transparently (in-sandbox state is lost)
 - [ ] Rework `execute_python` to generic `execute`
 - [ ] Update prompts to guide agents to execute code for computations instead of computing within LLM call
-- [ ] Save tool outputs in file system and pass their references for computations instead of generating them within scripts.
-- [ ] Keep in memory/readme already written scripts.
-- [ ] Share scripts between agent calls.
-- [ ] Once authentication is enabled - store scripts per user in persistent storage and pre-populated sandboxes with them.
-- [ ] Think about having separate Coding agent instead of writing scripts within each agent.
 
 ### Deployment
 #### Option 1 (Separate client and agent server):
@@ -198,6 +202,16 @@
         - Check (Gifted Chat)[https://github.com/FaridSafi/react-native-gifted-chat]
         - If costly we can start with web-only app based on React + CopilotKit.
     - [ ] Messengers
+
+#### Sandbox
+- [ ] Save tool outputs in file system and pass their references for computations instead of generating them within scripts.
+- [ ] Explore `context_schema` to store sandbox id/thread id: https://docs.langchain.com/oss/python/langchain/tools#context
+- [ ] Keep in memory/readme already written scripts.
+- [x] Auto-recreate dead sandboxes — `SandboxFactory` discovers by `thread_id` metadata and creates if not found
+- [x] ~~External DB for thread_id→sandbox mapping~~ — solved by OpenSandbox metadata API (`SandboxFilter(metadata={"thread_id": ...})`)
+- [ ] Share scripts between agent calls.
+- [ ] Once authentication is enabled - store scripts per user in persistent storage and pre-populated sandboxes with them.
+- [ ] Think about having separate Coding agent instead of writing scripts within each agent.
 
 ### DX
 - [ ] Add Claude Code skills for Spec driven development

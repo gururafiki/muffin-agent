@@ -69,7 +69,7 @@ A deep agent (powered by `deepagents`) that orchestrates all 13 data collection 
 4. **Analyze** — Produce a 0.0–1.0 score with reasoning backed by specific data points
 5. **Reflect** — Verify score-data consistency, logical coherence, and confidence
 
-**Sandbox isolation**: Each conversation (`thread_id` from the LangGraph Chat UI) gets its own OpenSandbox container. `SandboxFactory` provisions one container per thread on first use and reconnects to it on subsequent requests in the same chat via `SandboxSync.connect()`, so parallel conversations never share execution state.
+**Sandbox isolation**: Each conversation gets its own OpenSandbox container. Sandboxes are discovered lazily by `thread_id` metadata — `get_backend` and `execute_python` find or create a container for the current conversation via the OpenSandbox API. If a container dies mid-conversation, a new one is created transparently. Parallel conversations never share execution state.
 
 ### Criterion Evaluation Agent
 

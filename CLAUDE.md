@@ -52,10 +52,12 @@ The source lives in `src/muffin_agent/` and is organized as:
 
 - **`agents/criterion_evaluation.py`** — Deep agent that evaluates a single investment criterion. Uses `build_analysis_subagents()` and `create_deep_agent()`. Follows a 5-step workflow: Analyze Criterion → Collect Data → Validate → Evaluate (CoT with dynamic sub-criteria) → Reflect. Produces structured output with score, confidence, signal, reasoning, and counterargument.
 
-- **`sandbox/`** — OpenSandbox integration. Two integration points:
-  - `OpenSandboxBackend` — `deepagents.BaseSandbox` implementation backed by a `SandboxSync` container. All file operations (read/write/edit/grep/glob) are delegated to shell commands inside the container via `execute()`.
-  - `SandboxFactory` — `BackendFactory` callable (`(ToolRuntime) → OpenSandboxBackend`). Stores sandbox IDs per `thread_id`; calls `SandboxSync.connect(id, skip_health_check=True)` on each invocation to reconnect to an existing container, falling back to creating a new one if the container is gone. Pass as `backend=` to `create_deep_agent` for per-conversation isolation.
-  - `create_python_execution_tool(config)` — Returns a LangChain async tool. Creates a fresh `Sandbox` per call via `async with`, writes code to a temp file, runs it, deletes the file, then closes the container. Stateless — no cross-call filesystem state.
+- **`sandbox/`** — OpenSandbox integration. Sandboxes are discovered/created lazily by `thread_id` metadata — no middleware or state propagation needed.
+  - `OpenSandboxBackend` (`backend.py`) — `deepagents.BaseSandbox` implementation backed by a `SandboxSync` container. Pure wrapper; all file operations delegated to shell commands via `execute()`.
+  - `SandboxFactory` (`factory.py`, internal) — Discovers running sandboxes by `thread_id` metadata via `SandboxManagerSync.list_sandbox_infos()`. Creates a new sandbox if none found. Works with both `ToolRuntime` and `Runtime` contexts (`thread_id` from `langgraph.config.get_config()`).
+  - `get_backend` (`factory.py`) — `BackendFactory` function. Pass as `backend=get_backend` to `create_deep_agent`.
+  - `get_sandbox` / `aget_sandbox` (`factory.py`) — Sync/async functions returning a raw sandbox instance for direct use.
+  - `execute_python` (`tools.py`) — `@tool` async tool. Discovers the sandbox for the current thread via `aget_sandbox` and executes Python code in it.
 
 ## Conventions
 

@@ -1,6 +1,6 @@
 """Unit tests for OpenSandboxBackend."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from deepagents.backends.protocol import (
@@ -251,35 +251,4 @@ class TestOpenSandboxBackendDownloadFiles:
 
         assert results[0].error == "file_not_found"
         assert results[0].content is None
-        backend.close()
-
-
-# ---------------------------------------------------------------------------
-# Tests — create_opensandbox_backend factory
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestCreateOpensandboxBackend:
-    def test_creates_backend_with_config(self):
-        from muffin_agent.sandbox.backend import create_opensandbox_backend
-
-        mock_sandbox = _make_sandbox(sandbox_id="new-sandbox")
-
-        config = MagicMock()
-        config.opensandbox_url = "localhost:8080"
-        config.opensandbox_api_key = None
-        config.opensandbox_image = "python:3.11-slim"
-
-        with patch(
-            "muffin_agent.sandbox.backend.SandboxSync.create",
-            return_value=mock_sandbox,
-        ) as mock_create:
-            backend = create_opensandbox_backend(config)
-
-            mock_create.assert_called_once()
-            call_kwargs = mock_create.call_args.kwargs
-            assert call_kwargs["connection_config"].domain == "localhost:8080"
-            assert backend.id == "new-sandbox"
-
         backend.close()
