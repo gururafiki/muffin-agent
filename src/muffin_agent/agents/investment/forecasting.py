@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
-from muffin_agent.pipeline.state import TickerAnalysisState
+from muffin_agent.agents.investment.state import TickerAnalysisState
 
 
 async def forecasting_node(

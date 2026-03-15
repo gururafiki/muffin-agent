@@ -1,13 +1,10 @@
-"""Pipeline state schemas for the investment process workflow.
+"""State schemas for the investment workflow agents.
 
-Three TypedDicts define the data contract between stages:
-
-- ``TickerAnalysisState`` — per-ticker state for the analysis sub-graph.
-  Each parallel worker gets its own instance populated from the outer graph.
-- ``PipelineState`` — outer state for the screening graph.
+- ``TickerAnalysisState`` — per-ticker state flowing through the analysis
+  sub-graph.  Each parallel worker gets its own instance.
+- ``ScreeningState`` — outer state for the equity screening graph.
   ``theses`` uses an ``operator.add`` reducer so parallel ticker workers can
   each append their result without overwriting one another.
-- ``IdeaSourcingInput`` — minimal entry-point state for the screening graph.
 """
 
 import operator
@@ -19,8 +16,9 @@ from typing_extensions import TypedDict
 class TickerAnalysisState(TypedDict):
     """State flowing through the per-ticker analysis sub-graph.
 
-    Fields are written sequentially by the stage nodes (or in parallel for
-    Group 1).  Every node returns a partial dict — only the keys it owns.
+    Fields are written by stage nodes (in parallel for Group 1, sequentially
+    for Groups 2 and 3).  Every node returns a partial dict — only the keys
+    it owns.
     """
 
     # ── Input ────────────────────────────────────────────────────────────────
@@ -83,8 +81,8 @@ class TickerAnalysisState(TypedDict):
     """
 
 
-class PipelineState(TypedDict):
-    """Outer state for the screening graph (auto-discovery entry point).
+class ScreeningState(TypedDict):
+    """Outer state for the equity screening graph (auto-discovery entry point).
 
     ``theses`` is the only list-accumulating field: parallel ticker workers
     each append one thesis dict, so the reducer must be ``operator.add``.
@@ -92,39 +90,28 @@ class PipelineState(TypedDict):
 
     # ── Input ────────────────────────────────────────────────────────────────
     query: str
-    """Investment mandate / screening objective, e.g. "find undervalued growth
-    stocks in the semiconductor sector"."""
+    """Investment mandate / screening objective."""
 
-    # ── Shared context (written once, passed into every ticker sub-graph) ────
+    # ── Shared context (written once before fan-out) ──────────────────────────
     tickers: list[str]
     """Candidate tickers produced by ``idea_sourcing_node``."""
 
     market_regime: dict[str, Any]
-    """Shared macro regime context.
-
-    Written once before the fan-out so every ticker analysis starts with the
-    same top-down view rather than each worker re-fetching macro data.
-    """
+    """Shared macro regime context — computed once, injected into every ticker
+    sub-graph so it is not re-fetched per ticker."""
 
     sector_view: dict[str, Any]
-    """Shared sector/industry backdrop.
-
-    Written once before the fan-out.  For cross-sector screens this will be
-    a summary; for single-sector screens it will be sector-specific.
-    """
+    """Shared sector/industry backdrop — computed once before fan-out."""
 
     # ── Fan-in accumulator ───────────────────────────────────────────────────
     theses: Annotated[list[dict[str, Any]], operator.add]
-    """Collected thesis dicts from all parallel ticker sub-graphs.
+    """Thesis dicts collected from all parallel ticker sub-graphs.
 
-    Each parallel worker appends ``[thesis_dict]`` — the ``operator.add``
-    reducer merges the lists correctly across concurrent branches.
+    Each parallel worker appends ``[thesis_dict]``; the ``operator.add``
+    reducer merges lists correctly across concurrent branches.
     """
 
     # ── Final output ─────────────────────────────────────────────────────────
     comparison: dict[str, Any]
-    """Output of ``comparison_node``.
-
-    Ranked candidates with conviction scores, relative attractiveness, and a
-    recommended watch-list or position allocation.
-    """
+    """Output of ``comparison_node`` — ranked candidates with conviction scores
+    and recommended watch-list or allocation."""
