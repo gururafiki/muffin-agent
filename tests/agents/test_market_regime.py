@@ -1,14 +1,14 @@
 """Tests for the market regime agent."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
 from muffin_agent.agents.investment.market_regime import (
-    MarketRegimeContext,
+    MarketRegimeInputState,
     MarketRegimeOutput,
-    _build_task_description,
 )
 from muffin_agent.prompts import render_template
 
@@ -195,55 +195,21 @@ class TestPromptTemplate:
         assert "top-down context" in result
 
 
-# ── _build_task_description tests ─────────────────────────────────────────────
+# ── MarketRegimeInputState schema tests ───────────────────────────────────────
 
 
 @pytest.mark.unit
-class TestBuildTaskDescription:
-    """Test task description construction from context."""
+class TestMarketRegimeInputState:
+    """Test that MarketRegimeInputState defines the correct optional fields."""
 
-    def test_ticker_context(self):
-        context: MarketRegimeContext = {"ticker": "AAPL", "query": "Quality tech stock"}
-        result = _build_task_description(context)
-        assert "AAPL" in result
-        assert "Quality tech stock" in result
-        assert "ticker_impact" in result
+    def test_all_fields_optional(self):
+        # total=False means no fields are required — empty dict is valid
+        state: MarketRegimeInputState = {}
+        assert isinstance(state, dict)
 
-    def test_query_only_context(self):
-        context: MarketRegimeContext = {"query": "Find defensive value stocks"}
-        result = _build_task_description(context)
-        assert "Find defensive value stocks" in result
-        assert "Omit the ticker_impact field" in result
-        assert "Ticker:" not in result
-
-    def test_sector_industry_country_context(self):
-        context: MarketRegimeContext = {
-            "query": "European bank stocks",
-            "sector": "Financials",
-            "industry": "Banks",
-            "country": "Europe",
-        }
-        result = _build_task_description(context)
-        assert "Financials" in result
-        assert "Banks" in result
-        assert "Europe" in result
-        assert "European bank stocks" in result
-
-    def test_minimal_empty_context(self):
-        result = _build_task_description({})
-        assert "regime" in result.lower()
-
-    def test_ticker_triggers_ticker_impact_instruction(self):
-        context: MarketRegimeContext = {"ticker": "MSFT"}
-        result = _build_task_description(context)
-        assert "ticker_impact" in result
-        assert "MSFT" in result
-
-    def test_no_ticker_no_ticker_impact_instruction(self):
-        context: MarketRegimeContext = {"query": "defensive stocks"}
-        result = _build_task_description(context)
-        assert "Omit the ticker_impact field" in result
-        assert "Populate the ticker_impact" not in result
+    def test_annotations_contain_expected_fields(self):
+        fields = set(MarketRegimeInputState.__annotations__)
+        assert fields == {"ticker", "query", "sector", "industry", "country"}
 
 
 # ── MarketRegimeOutput Pydantic model tests ────────────────────────────────────
@@ -314,16 +280,15 @@ class TestMarketRegimeOutputModel:
         assert isinstance(dumped["limitations"], list)
 
 
-# ── MarketRegimeContext TypedDict tests ────────────────────────────────────────
+# ── Node JSON input tests ──────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
-class TestMarketRegimeContextTypedDict:
-    """Test MarketRegimeContext construction in the node function."""
+class TestMarketRegimeNodeJsonInput:
+    """Test that market_regime_node passes context as JSON to the agent."""
 
     @pytest.mark.asyncio
-    async def test_node_builds_context_with_ticker_and_query(self):
-        """Node constructs context with ticker + query when both present in state."""
+    async def test_node_passes_ticker_and_query_as_json(self):
         mock_structured = MagicMock(spec=MarketRegimeOutput)
         mock_structured.model_dump.return_value = _VALID_REGIME_DICT
         mock_agent = AsyncMock()
@@ -347,13 +312,13 @@ class TestMarketRegimeContextTypedDict:
             state = {"ticker": "AAPL", "query": "Quality tech stock"}
             await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
 
-        task_input = mock_agent.ainvoke.call_args[0][0]["input"]
-        assert "AAPL" in task_input
-        assert "Quality tech stock" in task_input
+        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        ctx = json.loads(raw)
+        assert ctx["ticker"] == "AAPL"
+        assert ctx["query"] == "Quality tech stock"
 
     @pytest.mark.asyncio
     async def test_node_omits_ticker_when_absent(self):
-        """Node omits ticker key when state has no ticker."""
         mock_structured = MagicMock(spec=MarketRegimeOutput)
         mock_structured.model_dump.return_value = _VALID_REGIME_DICT
         mock_agent = AsyncMock()
@@ -377,12 +342,13 @@ class TestMarketRegimeContextTypedDict:
             state = {"query": "Defensive value stocks"}
             await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
 
-        task_input = mock_agent.ainvoke.call_args[0][0]["input"]
-        assert "Ticker:" not in task_input
+        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        ctx = json.loads(raw)
+        assert "ticker" not in ctx
+        assert ctx["query"] == "Defensive value stocks"
 
     @pytest.mark.asyncio
     async def test_node_passes_sector_industry_country(self):
-        """Sector, industry, country flow through from state to task description."""
         mock_structured = MagicMock(spec=MarketRegimeOutput)
         mock_structured.model_dump.return_value = _VALID_REGIME_DICT
         mock_agent = AsyncMock()
@@ -411,10 +377,50 @@ class TestMarketRegimeContextTypedDict:
             }
             await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
 
-        task_input = mock_agent.ainvoke.call_args[0][0]["input"]
-        assert "Financials" in task_input
-        assert "Banks" in task_input
-        assert "Europe" in task_input
+        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        ctx = json.loads(raw)
+        assert ctx["sector"] == "Financials"
+        assert ctx["industry"] == "Banks"
+        assert ctx["country"] == "Europe"
+
+    @pytest.mark.asyncio
+    async def test_node_excludes_non_input_state_fields(self):
+        """State fields outside MarketRegimeInputState are not sent to agent."""
+        mock_structured = MagicMock(spec=MarketRegimeOutput)
+        mock_structured.model_dump.return_value = _VALID_REGIME_DICT
+        mock_agent = AsyncMock()
+        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
+
+        with (
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".create_market_regime_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".Configuration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
+        ):
+            from muffin_agent.agents.investment.market_regime import market_regime_node
+
+            # Simulate full TickerAnalysisState with extra fields
+            state = {
+                "ticker": "NVDA",
+                "query": "AI growth",
+                "market_regime": None,
+                "company_analysis": None,
+                "forecast": None,
+            }
+            await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
+
+        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        ctx = json.loads(raw)
+        assert set(ctx.keys()) <= set(MarketRegimeInputState.__annotations__)
+        assert "market_regime" not in ctx
+        assert "company_analysis" not in ctx
 
 
 # ── create_market_regime_agent tests ──────────────────────────────────────────

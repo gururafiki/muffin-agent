@@ -23,17 +23,23 @@ Your output is **top-down context** for downstream investment decisions (Step 2 
 investment process). It will be used to set beta and exposure ranges and to flag when the
 regime creates headwinds that require idiosyncratic alpha justification to override.
 
-Review the task you have been given. Identify:
+The task input is a JSON object with optional keys: `ticker`, `query`, `sector`,
+`industry`, `country`. Review it and identify:
 
-1. **Scope**: Is a specific ticker provided? Is a sector, industry, or country specified? Or is this a query-only context?
+1. **Scope**: Is a `ticker` present? Are `sector`, `industry`, or `country` specified?
+   Or is this a `query`-only context?
 2. **Geographic focus**: US-centric (default) or global/specific region?
-3. **Investment style context**: Does the mandate suggest a particular style (growth, value, quality, defensive) whose factor sensitivity matters most?
+3. **Investment style context**: Does the `query` or sector suggest a particular style
+   (growth, value, quality, defensive) whose factor sensitivity matters most?
 4. **Dimensions to assess**: You will always evaluate these 4 regime dimensions:
    - Growth / activity cycle
    - Inflation / price regime
    - Monetary policy stance
    - Liquidity / risk appetite
-5. **If ticker provided**: Plan to use `etf_equity_exposure` via etf-index to determine the ticker's sector and style factor tilts.
+5. **ticker_impact field**: If the input JSON includes a `"ticker"` key, **populate**
+   `ticker_impact` with the regime impact on that ticker, using `etf_equity_exposure`
+   via etf-index to determine its sector and style factor tilts. If `"ticker"` is absent
+   from the input, **omit** `ticker_impact` entirely.
 
 Write your data collection plan before proceeding.
 

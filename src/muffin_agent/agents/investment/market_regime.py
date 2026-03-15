@@ -1,5 +1,6 @@
 """Stage 2: Market Regime & Top-Down Context."""
 
+import json
 from typing import Any, Literal
 
 from deepagents import CompiledSubAgent, create_deep_agent
@@ -16,21 +17,21 @@ from muffin_agent.agents.data_collection import (
     create_fixed_income_data_collection_agent,
 )
 from muffin_agent.agents.data_validation import create_data_validation_agent
-from muffin_agent.agents.investment.state import TickerAnalysisState
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
 from muffin_agent.sandbox import get_backend
 
-# ── Context schema ────────────────────────────────────────────────────────────
+# ── Input state schema ─────────────────────────────────────────────────────────
 
 
-class MarketRegimeContext(TypedDict, total=False):
-    """Context passed to the market regime agent.
+class MarketRegimeInputState(TypedDict, total=False):
+    """Input state schema for ``market_regime_node``.
 
-    All fields are optional; at least one should be provided.
+    Documents which state fields the node reads.  All fields are optional;
+    at least one should be present.
 
     Context modes:
-        (a) ticker — agent derives sector/style via ``etf_equity_exposure``
+        (a) ticker — agent calls ``etf_equity_exposure`` to derive sector/style
         (b) sector / industry / country — explicit context, no ticker lookup
         (c) query only — investment mandate narrows geographic/style focus
     """
@@ -293,41 +294,11 @@ async def create_market_regime_agent(config: Configuration):
     )
 
 
-# ── Context and node helpers ──────────────────────────────────────────────────
-
-
-def _build_task_description(context: MarketRegimeContext) -> str:
-    """Build the task description string from a MarketRegimeContext.
-
-    Converts the typed context into a task string that the deep agent receives
-    as its user message.  Only includes keys that are present in the context.
-    """
-    parts: list[str] = ["Classify the current macro and market regime."]
-
-    if ticker := context.get("ticker"):
-        parts.append(f"Ticker: {ticker}")
-    if sector := context.get("sector"):
-        parts.append(f"Sector: {sector}")
-    if industry := context.get("industry"):
-        parts.append(f"Industry: {industry}")
-    if country := context.get("country"):
-        parts.append(f"Country/region focus: {country}")
-    if query := context.get("query"):
-        parts.append(f"Investment mandate: {query}")
-
-    if context.get("ticker"):
-        parts.append(
-            "Populate the ticker_impact field with the regime impact on "
-            f"{context['ticker']}."
-        )
-    else:
-        parts.append("Omit the ticker_impact field (no ticker provided).")
-
-    return "\n".join(parts)
+# ── Node ──────────────────────────────────────────────────────────────────────
 
 
 async def market_regime_node(
-    state: TickerAnalysisState, config: RunnableConfig
+    state: MarketRegimeInputState, config: RunnableConfig
 ) -> dict[str, Any]:
     """Stage 2: Market Regime & Top-Down Context.
 
@@ -343,11 +314,11 @@ async def market_regime_node(
     Also used as a shared context node in the equity screening graph
     (``ScreeningState``) where it runs once before the per-ticker fan-out.
     Accepts both ``TickerAnalysisState`` (with ``ticker``) and
-    ``ScreeningState`` (query-only); reads fields via ``.get()`` so missing
-    keys degrade gracefully.
+    ``ScreeningState`` (query-only); ``MarketRegimeInputState`` documents
+    which fields are read — LangGraph passes the full state at runtime.
 
-    Context is passed to the agent via ``MarketRegimeContext``:
-        (a) ticker — agent derives sector/style via ``etf_equity_exposure``
+    Input state fields (``MarketRegimeInputState``):
+        (a) ticker — agent calls ``etf_equity_exposure`` to derive sector/style
         (b) sector / industry / country — passed explicitly
         (c) query only — investment mandate narrows geographic/style focus
 
@@ -359,18 +330,12 @@ async def market_regime_node(
     configuration = Configuration.from_runnable_config(config)
     agent = await create_market_regime_agent(configuration)
 
-    # Build typed context from whatever is available in state
-    context: MarketRegimeContext = {}
-    if ticker := state.get("ticker"):  # type: ignore[union-attr]
-        context["ticker"] = ticker
-    if query := state.get("query"):  # type: ignore[union-attr]
-        context["query"] = query
-    for field in ("sector", "industry", "country"):
-        if val := state.get(field):  # type: ignore[union-attr]
-            context[field] = val  # type: ignore[literal-required]
-
-    task = _build_task_description(context)
-    result = await agent.ainvoke({"input": task})
+    context = {
+        k: state[k]  # type: ignore[literal-required]
+        for k in MarketRegimeInputState.__annotations__
+        if state.get(k)  # type: ignore[union-attr]
+    }
+    result = await agent.ainvoke({"input": json.dumps(context)})
 
     structured: MarketRegimeOutput | None = (
         result.get("structured_response") if isinstance(result, dict) else None
