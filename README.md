@@ -83,6 +83,35 @@ A deep agent that evaluates a **single investment criterion** (e.g., "Does the c
 
 **Output**: Structured `CRITERION_EVALUATION_START/END` delimited output with score, confidence (numeric 0.0–1.0), signal, sub-criteria breakdown, evidence summary, reasoning, counterargument, and limitations. Designed to be consumed by the parent Criteria Evaluation Agent (planned).
 
+### Market Regime Agent
+
+A deep agent (Step 2 of the investment process) that classifies the current macro and liquidity regime, identifies factor tailwinds and headwinds, and provides portfolio positioning guidance. Uses a **macro-focused subset** of 6 subagents — the 5 market-wide data collection agents plus data-validation — built by a private `_build_macro_subagents()` helper rather than the full 14-agent set.
+
+Supports three context modes via the `MarketRegimeContext` TypedDict:
+
+| Mode | Fields | Behaviour |
+|------|--------|-----------|
+| Ticker | `ticker` | Calls `etf_equity_exposure` to derive sector/style; populates `ticker_impact` in output |
+| Explicit context | `sector`, `industry`, `country` | Uses supplied context directly |
+| Query-only | `query` | Narrows geographic or style focus via investment mandate text |
+
+Follows a 5-step workflow: **Parse Context → Collect Macro Data → Validate → Classify Regime (4 dimensions) → Reflect**.
+
+**Four regime dimensions** are scored and labelled:
+
+| Dimension | Scale | Labels |
+|-----------|-------|--------|
+| Growth / Activity Cycle | 0 = deep contraction → 1 = strong expansion | `expanding`, `slowing`, `contracting`, `recovering` |
+| Inflation / Price Regime | 0 = deflation → 1 = severe inflation | `high_rising`, `elevated_stable`, `moderate`, `low_falling`, `deflationary` |
+| Monetary Policy Stance | 0 = aggressively easing → 1 = aggressively tightening | `aggressively_tightening`, `tightening`, `neutral`, `easing`, `aggressively_easing` |
+| Liquidity / Risk Appetite | 0 = crisis → 1 = extreme risk-on | `risk_on`, `cautiously_risk_on`, `neutral`, `risk_off`, `crisis` |
+
+**Structured output** is enforced via `response_format=AutoStrategy(schema=MarketRegimeOutput)` — the LLM calls a structured output tool as its final act, returning a validated `MarketRegimeOutput` Pydantic instance in `result["structured_response"]`. No regex parsing. The `market_regime_node` calls `.model_dump()` to store the result in graph state.
+
+**Output** (`MarketRegimeOutput`) includes: `regime_label`, `as_of_date`, `confidence`, `dimensions`, `factor_assessment` (value / quality / momentum / size tilts), `yield_curve`, `macro_summary`, `key_risks`, `recommended_positioning` (beta range, gross/net exposure, sector/style tilts), optional `ticker_impact`, `data_sources`, and `limitations`.
+
+Used in both `TickerAnalysisState` (per-ticker analysis) and `ScreeningState` (shared pre-fanout context for equity screening).
+
 ### Design Principles
 
 0. **KISS. Keep it simple stupid**: Implementation has to be simple and extensible, no over-engineering.

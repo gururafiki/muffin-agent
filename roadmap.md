@@ -46,6 +46,7 @@
 ### Documentation
 - [ ] Document Data Validation agent and add launch.json config
 - [x] Document Criterion Evaluation agent and add launch.json config
+- [x] Document Market Regime Agent (README.md, CLAUDE.md, roadmap.md)
 
 ### Sandbox
 - [x] Setup the model to generate python code for deterministic functions instead of doing math on it's own.
@@ -110,9 +111,9 @@
         - [ ] News screener: Check news to define which companies require attention.
     - **TODO**
 - [ ] Idea Evaluation (Steps 2-4 from [docs/investment-process.md](docs/investment-process.md))
-    - Check macro
-    - Check sector/industry
-    - Understand business and evaluate it
+    - [x] Step 2 — Market Regime Agent: classifies macro/liquidity regime across 4 dimensions (growth, inflation, monetary policy, liquidity/risk appetite); produces factor tilts and positioning guidance; supports ticker / sector+industry+country / query-only context modes; structured output via `AutoStrategy(schema=MarketRegimeOutput)`.
+    - [ ] Step 3 — Sector / Industry Agent
+    - [ ] Step 4 — Business, Moat, Management & ESG Triage Agent
 - [ ] Ticker Valuation and forecasting (Steps 5-6 from [docs/investment-process.md](docs/investment-process.md))
     - Do valuations based on fundamentals
     - Create projections and scenarious
@@ -159,7 +160,7 @@
 - [ ] Think about adding HITL to handle: data fetchnig failure, adjusting instructions, validating criteria, etc
 - [ ] Agent self-improvement
 - [ ] Add an agent to analyze stock price gainers and reason why they have grown to incorporate this knowledge later
-- [ ] For structure outputs explore response_format for agents
+- [x] For structure outputs explore response_format for agents — implemented in Market Regime Agent via `AutoStrategy(schema=MarketRegimeOutput)`
 
 ### Unbiasing agents
 - [ ] When defining data needs for criterion - agent shouldn't know about subagents available, to make sure that data needs are unbaiased
