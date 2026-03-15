@@ -171,10 +171,28 @@ class TestPromptTemplate:
         assert "Momentum" in result
         assert "Size" in result
 
-    def test_template_contains_sandbox_example(self):
+    def test_template_sandbox_is_mandatory(self):
         result = render_template("market_regime.jinja")
+        assert "MANDATORY" in result
         assert "execute_python" in result
-        assert "slope_10y2y" in result
+
+    def test_template_contains_sandbox_computations(self):
+        result = render_template("market_regime.jinja")
+        assert "slope_10y2y_bps" in result
+        assert "cpi_3m_annualised_pct" in result
+        assert "ff_zscores" in result
+        assert "policy_rate_distance_bps" in result
+        assert "ig_oas_pctile" in result
+        assert "copper_mom_pct" in result
+
+    def test_template_contains_adverse_regime_guidance(self):
+        result = render_template("market_regime.jinja")
+        assert "adverse regime" in result.lower()
+        assert "idiosyncratic alpha" in result
+
+    def test_template_contains_investment_process_framing(self):
+        result = render_template("market_regime.jinja")
+        assert "top-down context" in result
 
 
 # ── _build_task_description tests ─────────────────────────────────────────────
