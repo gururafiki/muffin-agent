@@ -45,7 +45,13 @@ Read ALL of these before proceeding:
 
 ---
 
-## Step 2 — Identify analytical dimensions / criteria
+## Step 2 — Identify analytical dimensions / criteria and present design options
+
+> **Collaboration gate**: Complete this step fully, then **present your findings and at
+> least 2–3 design options to the user before writing any code**. Do not proceed to
+> Step 3 until the user explicitly approves an approach. Ask follow-up questions if
+> anything in the spec is ambiguous — the user may have documentation pointers or
+> constraints not visible in the codebase.
 
 Every investment process step evaluates the company/idea through **a set of dimensions or
 criteria**. These drive everything else: what data to collect, how to score it, and what
@@ -96,8 +102,9 @@ class {Step}Output(BaseModel):
     limitations: list[str] = Field(default_factory=list)
 ```
 
-Propose the schema to the user and iterate if needed. Do not proceed to Step 4 until the
-schema is approved.
+Propose the schema to the user. Present it as a design option alongside at least one
+alternative approach (e.g., flat schema vs. nested, scored vs. classified). Do not proceed
+to Step 4 until the user explicitly approves the schema.
 
 ---
 
@@ -120,7 +127,12 @@ class {Name}InputState(TypedDict, total=False):
 ```
 
 **Rules:**
-- Always `total=False` — all fields optional
+- Use `total=False` **only when all fields are genuinely optional** — i.e., the node
+  supports multiple context modes where any combination of inputs can work (as in
+  market_regime: ticker-only, sector/industry/country, or query-only). If a field is
+  always required (e.g., `ticker` for sector_analysis, upstream step outputs for
+  thesis_synthesis), do NOT mark the whole TypedDict `total=False`; instead use a
+  mix of required and `Optional` fields (or split into a base + extension)
 - Include `ticker` and `query` if the step ever uses them
 - Include upstream outputs the step needs (e.g., `market_regime` for step 3+)
 - Do NOT include fields the node never touches
@@ -252,6 +264,12 @@ Step 1. Verify the prompt covers ALL of:
 | **Cross-references from source links** | Key frameworks from the cited papers/articles are embedded in dimension definitions and scale anchors |
 
 Fix any gaps before proceeding.
+
+> **Implementation gate**: After completing Steps 2–7 (dimensions, schema, InputState,
+> subagents, prompt design, spec validation), **present a complete design summary to the
+> user** — dimensions identified, output schema, subagents selected, and the prompt outline
+> — and ask for explicit approval before writing any Python or Jinja2 files. Do not proceed
+> to Step 8 until the user says to go ahead.
 
 ---
 
