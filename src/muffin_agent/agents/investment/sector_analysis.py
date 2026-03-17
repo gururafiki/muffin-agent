@@ -1,63 +1,367 @@
 """Stage 3: Sector / Industry & Thematic View."""
 
-from typing import Any
+import json
+from typing import Any, Literal
 
+from deepagents import CompiledSubAgent, create_deep_agent
+from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
-from muffin_agent.agents.investment.state import TickerAnalysisState
+from muffin_agent.agents.data_collection import (
+    create_discovery_screening_data_collection_agent,
+    create_etf_index_data_collection_agent,
+    create_news_data_collection_agent,
+    create_regulatory_filings_data_collection_agent,
+)
+from muffin_agent.agents.data_validation import create_data_validation_agent
+from muffin_agent.config import Configuration
+from muffin_agent.prompts import render_template
+from muffin_agent.sandbox import get_backend
+
+# ── Input state schema ─────────────────────────────────────────────────────────
+
+
+class SectorAnalysisInputState(TypedDict, total=False):
+    """Input state schema for ``sector_analysis_node``.
+
+    Documents which state fields the node reads.  All fields are optional;
+    at least one should be present.
+
+    Context modes:
+        (a) ticker — agent calls ``etf_equity_exposure`` to derive sector/industry
+        (b) sector / industry — explicit context, no ticker lookup needed
+        (c) query only — thematic scan; agent infers sector focus from the mandate
+    """
+
+    ticker: str
+    query: str
+    sector: str
+    industry: str
+
+
+# ── Output schema ─────────────────────────────────────────────────────────────
+
+
+class CompetitiveAssessment(BaseModel):
+    """Porter's Five Forces competitive structure assessment."""
+
+    rivalry_intensity: Literal["low", "moderate", "high", "very_high"]
+    """Intensity of competition among existing players."""
+
+    barriers_to_entry: Literal["low", "moderate", "high"]
+    """Height of structural barriers (capital, patents, network effects, licensing)."""
+
+    supplier_power: Literal["low", "moderate", "high"]
+    """Bargaining power of key input suppliers."""
+
+    buyer_power: Literal["low", "moderate", "high"]
+    """Bargaining power of customers over pricing and terms."""
+
+    threat_of_substitutes: Literal["low", "moderate", "high"]
+    """Threat from alternative products or technology disruption."""
+
+    overall_attractiveness: Literal["unattractive", "moderate", "attractive"]
+    """Composite attractiveness: 'attractive' if ≥3 forces are favorable."""
+
+    summary: str
+    """2-3 sentences synthesising all five forces and their net effect on margins."""
+
+
+class CyclePosition(BaseModel):
+    """Sector cycle position assessment."""
+
+    label: Literal[
+        "early_expansion", "mid_expansion", "late_cycle", "contraction", "recovery"
+    ]
+    """Current phase of the sector business/demand cycle."""
+
+    direction: Literal["accelerating", "stable", "decelerating"]
+    """Whether the cycle is gaining momentum, plateauing, or losing steam."""
+
+    key_indicators: str
+    """2-3 data points with values and sources supporting the cycle assessment."""
+
+
+class ThematicDriver(BaseModel):
+    """A single secular theme affecting the sector."""
+
+    theme: str
+    """Short descriptive name, e.g. 'AI infrastructure buildout', 'GLP-1 disruption'."""
+
+    direction: Literal["tailwind", "headwind", "neutral"]
+    """Whether this theme helps, hurts, or has mixed impact on the sector."""
+
+    time_horizon: Literal["near_term", "medium_term", "long_term"]
+    """Expected horizon: near_term (≤12M), medium_term (1-3Y), long_term (>3Y)."""
+
+    rationale: str
+    """1 sentence citing a specific news headline, regulatory item, or data point."""
+
+
+class SectorValuation(BaseModel):
+    """Sector valuation snapshot relative to the S&P 500 and historical levels."""
+
+    pe_ratio: float | None = None
+    """Sector P/E ratio (trailing or forward); null if unavailable."""
+
+    ev_ebitda: float | None = None
+    """Sector EV/EBITDA multiple; null if unavailable."""
+
+    pe_vs_sp500_pct: float | None = None
+    """Premium (+) or discount (-) to S&P 500 P/E in percent; null if unavailable."""
+
+    pe_vs_5y_avg_pct: float | None = None
+    """Premium (+) or discount (-) to sector's own 5-year average P/E.
+
+    Null if 5-year history is unavailable.
+    """
+
+    valuation_signal: Literal["expensive", "fairly_valued", "cheap"]
+    """Summary signal.
+
+    'expensive' if >+20% vs S&P 500 or 5Y avg; 'cheap' if <-20%; else
+    'fairly_valued'.
+    """
+
+
+class RegulatoryBackdrop(BaseModel):
+    """Regulatory and legislative environment assessment."""
+
+    risk_level: Literal["low", "moderate", "elevated", "high"]
+    """'high' = enforcement ongoing or near-term adverse legislation likely."""
+
+    key_items: list[str]
+    """Specific bills, enforcement actions, or regulatory changes identified."""
+
+    summary: str
+    """1-2 sentences on the net regulatory direction and its timing."""
+
+
+class DataSource(BaseModel):
+    """Record of data collected from one subagent."""
+
+    subagent: str
+    data_retrieved: str
+    period: str
+
+
+class SectorViewOutput(BaseModel):
+    """Structured output produced by the sector analysis deep agent."""
+
+    sector: str
+    """GICS sector name, e.g. 'Information Technology'."""
+
+    industry: str
+    """GICS industry or sub-industry name, e.g. 'Semiconductors'."""
+
+    cycle_position: CyclePosition
+    competitive_assessment: CompetitiveAssessment
+    thematic_drivers: list[ThematicDriver]
+    """3–5 secular themes; each scored for direction and time horizon."""
+
+    sector_valuation: SectorValuation
+    regulatory_backdrop: RegulatoryBackdrop
+
+    peer_tickers: list[str]
+    """5–10 comparable ticker symbols identified by discovery-screening."""
+
+    alpha_opportunity: Literal["high", "moderate", "low"]
+    """Dispersion-based alpha signal: 'high' if peer return std dev >25%."""
+
+    alpha_rationale: str
+    """1-2 sentences citing peer dispersion metric and spread between winners/losers."""
+
+    sector_signal: Literal["favorable", "neutral", "cautious"]
+    """Composite sector attractiveness: 'favorable' = good cycle + alpha + competitive
+    dynamics; 'cautious' = late cycle, low dispersion, or elevated regulatory risk."""
+
+    sector_summary: str
+    """3-4 sentence narrative covering cycle stage, competitive dynamics, thematic
+    backdrop, and alpha outlook."""
+
+    data_sources: list[DataSource] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    """Data gaps or uncertainties that reduce confidence in the assessment."""
+
+
+# ── Subagent builder ──────────────────────────────────────────────────────────
+
+
+async def _build_sector_subagents(config: Configuration) -> list[CompiledSubAgent]:
+    """Build the sector-focused subagent set for sector/industry analysis.
+
+    Return 4 data collection subagents + 1 data validation subagent, covering
+    ETF/index data, peer comparisons, thematic news, and regulatory signals.
+    Excludes macro and company-specific subagents irrelevant to sector-level
+    competitive and structural analysis.
+    """
+    etf_index_agent = await create_etf_index_data_collection_agent(config)
+    discovery_screening_agent = await create_discovery_screening_data_collection_agent(
+        config
+    )
+    news_agent = await create_news_data_collection_agent(config)
+    regulatory_filings_agent = await create_regulatory_filings_data_collection_agent(
+        config
+    )
+    validation_agent = await create_data_validation_agent(config)
+
+    return [
+        CompiledSubAgent(
+            name="etf-index",
+            description=(
+                "Retrieves ETF and index data for sector analysis: sector ETF "
+                "price performance (1M, 3M, 12M), `etf_equity_exposure` to "
+                "identify sector/industry/ETF from a ticker, S&P 500 multiples "
+                "(P/E, EV/EBITDA) from `index_sp500_multiples`, index sector "
+                "weights, and ETF holdings/info. Primary source for sector "
+                "identification, relative performance, and valuation benchmarks."
+            ),
+            runnable=etf_index_agent,
+        ),
+        CompiledSubAgent(
+            name="discovery-screening",
+            description=(
+                "Retrieves peer comparison and screening data: `equity_compare_peers` "
+                "for comparable ticker lists, `equity_compare_groups` for "
+                "sector/industry group valuation stats (median P/E, EV/EBITDA), "
+                "`equity_profile` for company descriptions and market caps, and "
+                "`equity_screener` for filtered peer lists. Primary source for "
+                "peer tickers, dispersion inputs, and sector valuation multiples."
+            ),
+            runnable=discovery_screening_agent,
+        ),
+        CompiledSubAgent(
+            name="news",
+            description=(
+                "Retrieves news and sentiment data: `news_world` for sector-level "
+                "and thematic macro headlines (capex cycles, technology transitions, "
+                "geopolitical impacts, regulatory shifts), `news_company` for "
+                "key competitor news. Primary source for thematic driver "
+                "identification and competitive dynamics signals."
+            ),
+            runnable=news_agent,
+        ),
+        CompiledSubAgent(
+            name="regulatory-filings",
+            description=(
+                "Retrieves regulatory and legislative data: `uscongress_bills` "
+                "for pending legislation affecting the sector, "
+                "`regulators_sec_rss_litigation` for SEC enforcement actions and "
+                "litigation patterns in the sector. Primary source for regulatory "
+                "risk level and specific legislative/enforcement items."
+            ),
+            runnable=regulatory_filings_agent,
+        ),
+        CompiledSubAgent(
+            name="data-validation",
+            description=(
+                "Validates collected data against a criterion. Checks "
+                "sufficiency, relevance, temporal validity, and consistency. "
+                "Returns per-dimension scores (0-1), overall confidence/"
+                "relevance scores, identified gaps, and a recommendation "
+                "(proceed/collect_more_data/insufficient_data). Use after "
+                "data collection, before analysis. Pass the criterion, "
+                "analysis date, and all collected data in the task instruction."
+            ),
+            runnable=validation_agent,
+        ),
+    ]
+
+
+# ── Agent factory ─────────────────────────────────────────────────────────────
+
+
+async def create_sector_analysis_agent(config: Configuration):
+    """Build the sector analysis deep agent.
+
+    Create a deep agent that identifies the sector/industry for a ticker (or
+    uses explicit sector context), collects ETF performance, peer comparison,
+    thematic news, and regulatory data, then scores the sector across six
+    dimensions: cycle position, Porter's Five Forces competitive structure,
+    thematic drivers, relative valuation, regulatory backdrop, and alpha
+    opportunity (peer dispersion).
+
+    ``get_backend`` discovers or creates a sandbox container per conversation
+    by ``thread_id`` metadata for Python computations (sector relative
+    performance, valuation premium/discount, peer return dispersion).
+
+    ``response_format=AutoStrategy(SectorViewOutput)`` instructs the agent
+    to call a structured output tool as its final act, returning a validated
+    ``SectorViewOutput`` instance in ``result["structured_response"]``
+    instead of free-form text.
+    """
+    subagents = await _build_sector_subagents(config)
+    prompt = render_template("sector_analysis.jinja")
+    llm = config.get_llm()
+
+    return create_deep_agent(
+        model=llm,
+        system_prompt=prompt,
+        subagents=subagents,
+        backend=get_backend,
+        response_format=AutoStrategy(schema=SectorViewOutput),
+    )
+
+
+# ── Node ──────────────────────────────────────────────────────────────────────
 
 
 async def sector_analysis_node(
-    state: TickerAnalysisState, config: RunnableConfig
+    state: SectorAnalysisInputState, config: RunnableConfig
 ) -> dict[str, Any]:
     """Stage 3: Sector / Industry & Thematic View.
 
     Assesses the attractiveness of the ticker's sector and industry: cycle
-    position, competitive structure, thematic tailwinds, sector-relative
-    valuation, and the regulatory / legislative backdrop.
+    position, Porter's Five Forces competitive structure, thematic tailwinds
+    and headwinds, sector-relative valuation, regulatory/legislative backdrop,
+    and alpha opportunity (peer return dispersion).
 
     Runs in **parallel** with ``market_regime_node`` and
     ``company_analysis_node`` (Group 1).  Its output flows into
-    ``valuation_node`` (Group 3) for peer-relative valuation benchmarks.
+    ``valuation_node`` (Group 3) for peer-relative valuation benchmarks and
+    into ``thesis_synthesis_node`` for the sector attractiveness narrative.
 
     In ``screening_graph`` this node runs **once** on the outer graph before
-    the per-ticker fan-out when all candidates belong to the same sector; for
-    multi-sector screens the outer graph may run it once per sector or leave
-    it to each ticker worker.
+    the per-ticker fan-out when all candidates share a sector; for multi-sector
+    screens the outer graph may run it once per sector or skip it when each
+    ticker worker handles sector identification independently.
 
-    Inputs (from state):
-        ticker: Used to identify the sector/industry.
-        query: Provides thematic context (e.g. "AI infrastructure stocks").
+    Input state fields (``SectorAnalysisInputState``):
+        (a) ticker — agent calls ``etf_equity_exposure`` to derive sector/industry
+        (b) sector / industry — passed explicitly (screening graph pre-fanout)
+        (c) query only — thematic scan; agent infers sector from the mandate
 
     Outputs (state update):
-        sector_view: dict containing, e.g.:
-            - sector: str — GICS sector name
-            - industry: str — GICS industry name
-            - cycle_stage: str — e.g. "Early expansion", "Late-cycle"
-            - competitive_structure: str — Porter's Five Forces summary
-            - thematic_drivers: list[str]
-            - sector_relative_valuation: dict — sector P/E, EV/EBITDA vs.
-              historical and vs. S&P 500
-            - regulatory_risk: str — summary of pending legislation / litigation
-            - peer_tickers: list[str] — comparable companies
-
-    Planned agent type:
-        Deep agent (``create_deep_agent``) with 4 data collection subagents.
-
-    Data collection subagents:
-        - ``etf-index`` ⭐ primary
-            etf_sectors, etf_holdings, etf_equity_exposure,
-            etf_price_performance, index_sectors, index_sp500_multiples,
-            etf_info, etf_nport_disclosure
-        - ``discovery-screening``
-            equity_compare_groups, equity_compare_peers,
-            equity_calendar_events, equity_calendar_earnings,
-            equity_market_snapshots
-        - ``news``
-            news_world (sector/thematic macro headlines),
-            news_company (key competitor news)
-        - ``regulatory-filings``
-            uscongress_bills (pending legislation),
-            regulators_sec_rss_litigation (sector enforcement actions)
+        sector_view: ``SectorViewOutput.model_dump()`` dict, or an error dict
+        ``{"sector": "unknown", "error": ..., "raw_output": ...}`` if the
+        agent fails to return structured output.
     """
-    raise NotImplementedError("sector_analysis_node not yet implemented")
+    configuration = Configuration.from_runnable_config(config)
+    agent = await create_sector_analysis_agent(configuration)
+
+    context = {
+        k: state[k]  # type: ignore[literal-required]
+        for k in SectorAnalysisInputState.__annotations__
+        if state.get(k)  # type: ignore[union-attr]
+    }
+    result = await agent.ainvoke({"input": json.dumps(context)})
+
+    structured: SectorViewOutput | None = (
+        result.get("structured_response") if isinstance(result, dict) else None
+    )
+    if structured is None:
+        return {
+            "sector_view": {
+                "sector": "unknown",
+                "error": "Agent did not produce structured output",
+                "raw_output": (
+                    result.get("output", "")
+                    if isinstance(result, dict)
+                    else str(result)
+                ),
+            }
+        }
+
+    return {"sector_view": structured.model_dump()}
