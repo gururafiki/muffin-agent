@@ -112,7 +112,7 @@
     - **TODO**
 - [ ] Idea Evaluation (Steps 2-4 from [docs/investment-process.md](docs/investment-process.md))
     - [x] Step 2 — Market Regime Agent: classifies macro/liquidity regime across 4 dimensions (growth, inflation, monetary policy, liquidity/risk appetite); produces factor tilts and positioning guidance; supports ticker / sector+industry+country / query-only context modes; structured output via `AutoStrategy(schema=MarketRegimeOutput)`.
-    - [ ] Step 3 — Sector / Industry Agent
+    - [x] Step 3 — Sector / Industry Agent: assesses sector/industry attractiveness across 6 dimensions (cycle position, Porter's Five Forces competitive structure, thematic drivers, relative valuation, regulatory backdrop, alpha opportunity/dispersion); 4 data subagents (etf-index, discovery-screening, news, regulatory-filings) + data-validation; supports ticker / sector+industry / query-only context modes; structured output via `AutoStrategy(schema=SectorViewOutput)`.
     - [ ] Step 4 — Business, Moat, Management & ESG Triage Agent
 - [ ] Ticker Valuation and forecasting (Steps 5-6 from [docs/investment-process.md](docs/investment-process.md))
     - Do valuations based on fundamentals

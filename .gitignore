@@ -1,4 +1,5 @@
 .venv/
 .env
 __pycache__/
-*.egg-info/
+*.egg-info/uv.lock
+src/*.egg-info/
