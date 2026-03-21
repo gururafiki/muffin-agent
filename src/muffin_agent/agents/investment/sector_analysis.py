@@ -293,7 +293,7 @@ async def create_sector_analysis_agent(config: Configuration):
     instead of free-form text.
     """
     subagents = await _build_sector_subagents(config)
-    prompt = render_template("sector_analysis.jinja")
+    prompt = render_template("investment/sector_analysis.jinja")
     llm = config.get_llm()
 
     return create_deep_agent(

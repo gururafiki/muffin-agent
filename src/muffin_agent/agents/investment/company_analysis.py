@@ -381,7 +381,7 @@ async def create_company_analysis_agent(config: Configuration):
     ``result["structured_response"]`` instead of free-form text.
     """
     subagents = await _build_company_analysis_subagents(config)
-    prompt = render_template("company_analysis.jinja")
+    prompt = render_template("investment/company_analysis.jinja")
     llm = config.get_llm()
 
     return create_deep_agent(

@@ -94,11 +94,11 @@ class TestPromptTemplate:
     """Test market regime prompt template rendering."""
 
     def test_template_renders(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert len(result) > 100
 
     def test_template_contains_subagents(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "economy-macro" in result
         assert "fixed-income" in result
         assert "fama-french" in result
@@ -107,7 +107,7 @@ class TestPromptTemplate:
         assert "data-validation" in result
 
     def test_template_contains_workflow_steps(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "Parse Context" in result
         assert "Collect Macro Data" in result
         assert "Validate Data" in result
@@ -115,14 +115,14 @@ class TestPromptTemplate:
         assert "Reflect" in result
 
     def test_template_contains_four_dimensions(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "Growth" in result
         assert "Inflation" in result
         assert "Monetary" in result
         assert "Liquidity" in result
 
     def test_template_contains_dimension_labels(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "expanding" in result
         assert "contracting" in result
         assert "high_rising" in result
@@ -132,13 +132,13 @@ class TestPromptTemplate:
         assert "crisis" in result
 
     def test_template_uses_structured_output_tool(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "structured output tool" in result
         assert "MARKET_REGIME_JSON_START" not in result
         assert "MARKET_REGIME_JSON_END" not in result
 
     def test_template_contains_output_keys(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "regime_label" in result
         assert "factor_assessment" in result
         assert "yield_curve" in result
@@ -146,24 +146,24 @@ class TestPromptTemplate:
         assert "ticker_impact" in result
 
     def test_template_contains_grounding_constraint(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "NEVER" in result
         assert "fabricat" in result.lower()
 
     def test_template_contains_validation_loop(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "data-validation" in result
         assert "proceed" in result
         assert "collect_more_data" in result
         assert "insufficient_data" in result
 
     def test_template_contains_reflection_checks(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "Internal consistency" in result
         assert "Factor consistency" in result
 
     def test_template_contains_factor_guidance(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "tailwind" in result
         assert "headwind" in result
         assert "Value" in result
@@ -172,12 +172,12 @@ class TestPromptTemplate:
         assert "Size" in result
 
     def test_template_sandbox_is_mandatory(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "MANDATORY" in result
         assert "execute_python" in result
 
     def test_template_contains_sandbox_computations(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "slope_10y2y_bps" in result
         assert "cpi_3m_annualised_pct" in result
         assert "ff_zscores" in result
@@ -186,12 +186,12 @@ class TestPromptTemplate:
         assert "copper_mom_pct" in result
 
     def test_template_contains_adverse_regime_guidance(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "adverse regime" in result.lower()
         assert "idiosyncratic alpha" in result
 
     def test_template_contains_investment_process_framing(self):
-        result = render_template("market_regime.jinja")
+        result = render_template("investment/market_regime.jinja")
         assert "top-down context" in result
 
 

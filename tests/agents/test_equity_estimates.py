@@ -89,6 +89,6 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_equity_estimates_template_renders(self):
-        result = render_template("equity_estimates.jinja")
+        result = render_template("data_collection/equity_estimates.jinja")
         assert "equity estimates" in result.lower()
         assert len(result) > 100

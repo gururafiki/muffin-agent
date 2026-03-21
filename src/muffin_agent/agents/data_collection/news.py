@@ -19,7 +19,7 @@ MCP_TOOLS = [
 async def create_news_data_collection_agent(config: Configuration):
     """Build the news & sentiment ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("news.jinja")
+    prompt = render_template("data_collection/news.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

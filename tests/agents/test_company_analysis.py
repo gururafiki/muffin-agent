@@ -139,11 +139,11 @@ class TestPromptTemplate:
     """Verify prompt renders and contains required structural elements."""
 
     def test_renders(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert len(result) > 200
 
     def test_contains_all_subagent_names(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         for name in [
             "equity-fundamentals",
             "equity-ownership",
@@ -155,12 +155,12 @@ class TestPromptTemplate:
             assert name in result
 
     def test_contains_workflow_steps(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         for step in ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]:
             assert step in result
 
     def test_contains_step_labels(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "Parse Context" in result
         assert "Collect" in result
         assert "Validate" in result
@@ -168,12 +168,12 @@ class TestPromptTemplate:
         assert "Reflect" in result
 
     def test_contains_moat_width_labels(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         for label in ["wide", "narrow", "none", "negative"]:
             assert label in result
 
     def test_contains_moat_sources(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         for source in [
             "network_effects",
             "switching_costs",
@@ -184,24 +184,24 @@ class TestPromptTemplate:
             assert source in result
 
     def test_contains_company_signal_labels(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "pass" in result
         assert "watch" in result
         assert "fail" in result
 
     def test_contains_esg_signal_labels(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "green" in result
         assert "amber" in result
         assert "red" in result
 
     def test_contains_financial_quality_signal_labels(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "distressed" in result
         assert "adequate" in result
 
     def test_contains_output_schema_keys(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         for field in [
             "company_signal",
             "quality_summary",
@@ -215,16 +215,16 @@ class TestPromptTemplate:
             assert field in result
 
     def test_grounding_constraint_present(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "NEVER" in result
 
     def test_sandbox_mandatory_marker(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "MANDATORY" in result
         assert "execute_python" in result
 
     def test_sandbox_computation_variables_named(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "roic_pct" in result
         assert "fcf_conversion_pct" in result
         assert "net_debt_to_ebitda" in result
@@ -233,26 +233,26 @@ class TestPromptTemplate:
         assert "peer_roic_premium_pp" in result
 
     def test_reflection_step_present(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "consistency" in result.lower() or "reflect" in result.lower()
 
     def test_validation_loop_present(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "data-validation" in result
         assert "proceed" in result
         assert "collect_more_data" in result
         assert "insufficient_data" in result
 
     def test_structured_output_tool_instruction(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "structured output tool" in result
 
     def test_no_fabrication_clause(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "fabricate" in result.lower() or "NEVER estimate" in result
 
     def test_triage_gate_logic_present(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert (
             "must-have" in result.lower()
             or "must_have" in result.lower()
@@ -260,7 +260,7 @@ class TestPromptTemplate:
         )
 
     def test_financial_history_arrays_mentioned(self):
-        result = render_template("company_analysis.jinja")
+        result = render_template("investment/company_analysis.jinja")
         assert "financial_history" in result
         assert "forecasting_node" in result
 

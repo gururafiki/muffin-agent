@@ -368,7 +368,7 @@ async def create_forecasting_agent(config: Configuration):
     scenario projection arithmetic, sensitivity table, accruals ratio).
     """
     subagents = await _build_forecasting_subagents(config)
-    prompt = render_template("forecasting.jinja")
+    prompt = render_template("investment/forecasting.jinja")
     llm = config.get_llm()
 
     return create_deep_agent(

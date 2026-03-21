@@ -87,6 +87,6 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_news_template_renders(self):
-        result = render_template("news.jinja")
+        result = render_template("data_collection/news.jinja")
         assert "news" in result.lower()
         assert len(result) > 100

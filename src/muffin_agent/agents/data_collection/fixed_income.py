@@ -41,7 +41,7 @@ MCP_TOOLS = [
 async def create_fixed_income_data_collection_agent(config: Configuration):
     """Build the fixed income and rates ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("fixed_income.jinja")
+    prompt = render_template("data_collection/fixed_income.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

@@ -282,7 +282,7 @@ async def create_market_regime_agent(config: Configuration):
     instead of free-form text.
     """
     subagents = await _build_macro_subagents(config)
-    prompt = render_template("market_regime.jinja")
+    prompt = render_template("investment/market_regime.jinja")
     llm = config.get_llm()
 
     return create_deep_agent(

@@ -87,12 +87,12 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_template_renders(self):
-        result = render_template("currency_commodities.jinja")
+        result = render_template("data_collection/currency_commodities.jinja")
         assert "currency" in result.lower()
         assert len(result) > 100
 
     def test_template_contains_tool_names(self):
-        result = render_template("currency_commodities.jinja")
+        result = render_template("data_collection/currency_commodities.jinja")
         assert "commodity_price_spot" in result
         assert "currency_snapshots" in result
         assert "crypto_price_historical" in result

@@ -90,6 +90,6 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_regulatory_filings_template_renders(self):
-        result = render_template("regulatory_filings.jinja")
+        result = render_template("data_collection/regulatory_filings.jinja")
         assert "regulatory" in result.lower()
         assert len(result) > 100

@@ -87,6 +87,6 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_fama_french_template_renders(self):
-        result = render_template("fama_french.jinja")
+        result = render_template("data_collection/fama_french.jinja")
         assert "fama" in result.lower()
         assert len(result) > 100

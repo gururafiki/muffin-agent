@@ -25,7 +25,7 @@ MCP_TOOLS = [
 async def create_equity_estimates_data_collection_agent(config: Configuration):
     """Build the equity estimates ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("equity_estimates.jinja")
+    prompt = render_template("data_collection/equity_estimates.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

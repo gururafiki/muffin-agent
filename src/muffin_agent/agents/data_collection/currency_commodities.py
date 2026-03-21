@@ -28,7 +28,7 @@ async def create_currency_commodities_data_collection_agent(
 ):
     """Build the currency, commodity, and crypto data ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("currency_commodities.jinja")
+    prompt = render_template("data_collection/currency_commodities.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

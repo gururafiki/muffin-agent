@@ -40,7 +40,7 @@ MCP_TOOLS = [
 async def create_discovery_screening_data_collection_agent(config: Configuration):
     """Build the discovery and screening data ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("discovery_screening.jinja")
+    prompt = render_template("data_collection/discovery_screening.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

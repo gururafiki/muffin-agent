@@ -31,7 +31,7 @@ MCP_TOOLS = [
 async def create_regulatory_filings_data_collection_agent(config: Configuration):
     """Build the regulatory filings ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("regulatory_filings.jinja")
+    prompt = render_template("data_collection/regulatory_filings.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

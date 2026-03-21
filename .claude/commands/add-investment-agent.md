@@ -13,7 +13,7 @@ proceeding.
 
 This skill encodes the full methodology used to build the market regime agent (Step 2).
 Study `src/muffin_agent/agents/investment/market_regime.py` and
-`src/muffin_agent/prompts/market_regime.jinja` as the canonical implementation reference
+`src/muffin_agent/prompts/investment/market_regime.jinja` as the canonical implementation reference
 before writing any code.
 
 Make a todo list for all tasks below and work through them one at a time. Mark each task
@@ -41,7 +41,7 @@ Read ALL of these before proceeding:
   read `MCP_TOOLS` to understand exactly what data is available
 
 **Prompt reference:**
-- `src/muffin_agent/prompts/market_regime.jinja` — canonical 5-step prompt structure
+- `src/muffin_agent/prompts/investment/market_regime.jinja` — canonical 5-step prompt structure
 
 ---
 
@@ -192,7 +192,7 @@ Always include `data-validation` as the final subagent.
 
 ## Step 6 — Design the prompt (5-step workflow)
 
-Study `src/muffin_agent/prompts/market_regime.jinja` closely. Every investment agent prompt
+Study `src/muffin_agent/prompts/investment/market_regime.jinja` closely. Every investment agent prompt
 follows this structure:
 
 ```
@@ -273,7 +273,7 @@ Fix any gaps before proceeding.
 
 ---
 
-## Step 8 — Create `src/muffin_agent/prompts/{name}.jinja`
+## Step 8 — Create `src/muffin_agent/prompts/investment/{name}.jinja`
 
 Write the prompt from Step 6 into a Jinja2 template file. No Jinja2 variables needed — this
 is a static system prompt.
@@ -374,7 +374,7 @@ async def create_{name}_agent(config: Configuration):
     Create a deep agent that [what it does in 1-2 sentences].
     """
     subagents = await _build_{name}_subagents(config)
-    prompt = render_template("{name}.jinja")
+    prompt = render_template("investment/{name}.jinja")
     llm = config.get_llm()
 
     return create_deep_agent(
@@ -463,35 +463,35 @@ class TestPromptTemplate:
     """Verify prompt renders and contains required structural elements."""
 
     def test_renders(self):
-        result = render_template("{name}.jinja")
+        result = render_template("investment/{name}.jinja")
         assert len(result) > 200
 
     def test_contains_subagent_table(self):
-        result = render_template("{name}.jinja")
+        result = render_template("investment/{name}.jinja")
         for name in ["{subagent-1}", "{subagent-2}", "data-validation"]:
             assert name in result
 
     def test_contains_workflow_steps(self):
-        result = render_template("{name}.jinja")
+        result = render_template("investment/{name}.jinja")
         for step in ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]:
             assert step in result
 
     def test_contains_output_schema_keys(self):
-        result = render_template("{name}.jinja")
+        result = render_template("investment/{name}.jinja")
         # Check the key output field names are mentioned in the "Returning" section
         for field in ["{key_output_field_1}", "{key_output_field_2}"]:
             assert field in result
 
     def test_grounding_constraint_present(self):
-        result = render_template("{name}.jinja")
+        result = render_template("investment/{name}.jinja")
         assert "NEVER" in result  # no-fabrication clause
 
     def test_sandbox_mandatory_marker(self):
-        result = render_template("{name}.jinja")
+        result = render_template("investment/{name}.jinja")
         assert "MANDATORY" in result  # execute_python sandbox marker
 
     def test_reflection_step_present(self):
-        result = render_template("{name}.jinja")
+        result = render_template("investment/{name}.jinja")
         assert "consistency" in result.lower() or "reflect" in result.lower()
 
     # Add step-specific tests for gates, adverse conditions, etc.

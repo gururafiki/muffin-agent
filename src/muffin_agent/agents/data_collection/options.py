@@ -19,7 +19,7 @@ MCP_TOOLS = [
 async def create_options_data_collection_agent(config: Configuration):
     """Build the options ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("options.jinja")
+    prompt = render_template("data_collection/options.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,
