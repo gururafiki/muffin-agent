@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 from langchain_core.runnables import RunnableConfig
 
+from muffin_agent.agents.investment.validators import get_validator
 from muffin_agent.config import Configuration
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,18 @@ async def run_deep_agent_node(
                 }
             }
 
-        return {state_key: structured.model_dump()}
+        result_dict = structured.model_dump()
+        validator = get_validator(type(structured))
+        if validator:
+            validation_warnings = validator(result_dict)
+            if validation_warnings:
+                result_dict["_validation_warnings"] = validation_warnings
+                logger.warning(
+                    "Validation warnings for '%s': %s",
+                    state_key,
+                    validation_warnings,
+                )
+        return {state_key: result_dict}
 
     except TRANSIENT_ERRORS:
         logger.warning(
