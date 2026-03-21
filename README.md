@@ -143,6 +143,34 @@ Follows a 5-step workflow: **Parse Context → Collect Sector Data → Validate 
 
 Runs in parallel with `market_regime_node` and `company_analysis_node` (Group 1). Also used as a shared context node in `ScreeningState` before the per-ticker fan-out.
 
+### Forecasting Agent
+
+A deep agent (Step 6 of the investment process) that builds a 3-year forward financial model with bull, base, and bear scenarios anchored to analyst consensus. Uses a **forecasting-focused subset** of 4 subagents — equity-estimates, equity-fundamentals, economy-macro, currency-commodities, and data-validation — built by a private `_build_forecasting_subagents()` helper.
+
+Supports three context modes via `ForecastingInputState`:
+
+| Mode | Fields | Behaviour |
+|------|--------|-----------|
+| Full pipeline | `ticker` + `query` + `company_analysis` + `market_regime` | Uses `financial_history` from company_analysis as baseline; applies macro regime context from market_regime |
+| Ticker + query | `ticker` + `query` | Fetches all historical financials fresh from equity-fundamentals |
+| Query-only | `query` | Thematic or sector-level forward model without a specific ticker |
+
+Follows a 5-step workflow: **Parse Context → Collect Data → Validate → Build Scenarios → Reflect**.
+
+**Sandbox computations** (all mandatory): historical calibration (revenue CAGR, EBITDA margin average, FCF conversion, capex intensity from `financial_history`), consensus revision momentum (3M delta), accruals ratio for earnings quality, scenario projection arithmetic for all three scenarios, and sensitivity table (±1pp revenue/margin impact on EPS and FCF).
+
+**Three scenarios with explicit probability anchors:**
+
+| Signal | Base | Bull | Bear | Notes |
+|--------|------|------|------|-------|
+| `pass` | 0.60 | 0.25 | 0.15 | Default; LLM can deviate with written rationale |
+| `watch` | 0.50 | 0.25 | 0.25 | Increased bear weight for watch-listed companies |
+| `fail` | 0.40 | 0.25 | 0.35 | Full analysis still runs; useful for short theses |
+
+**Structured output** is enforced via `response_format=AutoStrategy(schema=ForecastOutput)`. Output includes: `base_case`, `bull_case`, `bear_case` (each with `list[YearlyProjection]` for Y+1/+2/+3 covering revenue, EBITDA, EBIT, EPS, FCF), `consensus_anchoring` (consensus EPS/revenue/EBITDA, price targets, revision_trend_3m, surprise_history), `revision_momentum`, `sensitivity_table`, `earnings_quality_flags`, `modeling_notes`, `data_sources`, `limitations`. EPS is null if diluted share count is unavailable.
+
+Runs in parallel with `risk_assessment_node` (Group 2). Its output is the primary input for `valuation_node` (Group 3).
+
 ### Design Principles
 
 0. **KISS. Keep it simple stupid**: Implementation has to be simple and extensible, no over-engineering.
