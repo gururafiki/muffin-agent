@@ -41,8 +41,10 @@ fires only when both complete.  Shared context is injected into each
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Send
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import RetryPolicy, Send
 
 from muffin_agent.agents.investment import (
     comparison_node,
@@ -88,13 +90,25 @@ async def _analyze_ticker(
     return {"theses": [result.get("thesis", {})]}
 
 
-def build_equity_screening_graph() -> StateGraph:
-    """Build and compile the equity screening graph."""
+def build_equity_screening_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> CompiledStateGraph:
+    """Build and compile the equity screening graph.
+
+    Args:
+        checkpointer: Optional checkpoint saver for state persistence.
+            The inner per-ticker subgraph (``build_investment_analysis_graph``)
+            is compiled without a checkpointer — only the outer screening
+            graph gets one.
+    """
     graph: StateGraph = StateGraph(ScreeningState)
 
-    graph.add_node("idea_sourcing", idea_sourcing_node)
-    graph.add_node("market_regime", market_regime_node)
-    graph.add_node("sector_analysis", sector_analysis_node)
+    retry = RetryPolicy(max_attempts=2, initial_interval=5.0)
+    graph.add_node("idea_sourcing", idea_sourcing_node, retry_policy=retry)
+    graph.add_node("market_regime", market_regime_node, retry_policy=retry)
+    graph.add_node(
+        "sector_analysis", sector_analysis_node, retry_policy=retry
+    )
     graph.add_node("context_ready", lambda s: {})
     graph.add_node("analyze_ticker", _analyze_ticker)
     graph.add_node("comparison", comparison_node)
@@ -108,4 +122,4 @@ def build_equity_screening_graph() -> StateGraph:
     graph.add_edge("analyze_ticker", "comparison")
     graph.add_edge("comparison", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

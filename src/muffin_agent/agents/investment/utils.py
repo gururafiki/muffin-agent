@@ -5,11 +5,21 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+import httpx
 from langchain_core.runnables import RunnableConfig
 
 from muffin_agent.config import Configuration
 
 logger = logging.getLogger(__name__)
+
+# Transient errors that should propagate so LangGraph RetryPolicy can retry
+# the node. All other exceptions are caught and produce a fallback dict.
+TRANSIENT_ERRORS = (
+    ConnectionError,
+    TimeoutError,
+    httpx.NetworkError,
+    httpx.TimeoutException,
+)
 
 
 async def run_deep_agent_node(
@@ -75,6 +85,11 @@ async def run_deep_agent_node(
 
         return {state_key: structured.model_dump()}
 
+    except TRANSIENT_ERRORS:
+        logger.warning(
+            "Transient error in '%s', propagating for retry", state_key
+        )
+        raise
     except Exception:
         logger.exception("Investment node '%s' failed", state_key)
         return {

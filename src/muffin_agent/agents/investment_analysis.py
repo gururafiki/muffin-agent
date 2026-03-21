@@ -25,7 +25,10 @@ LangGraph fires a node only when all its incoming edges have data, so barrier
 synchronisation is implicit — no extra code required.
 """
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import RetryPolicy
 
 from muffin_agent.agents.investment import (
     company_analysis_node,
@@ -38,18 +41,41 @@ from muffin_agent.agents.investment import (
 )
 from muffin_agent.agents.investment.state import TickerAnalysisState
 
+_RETRY = RetryPolicy(max_attempts=2, initial_interval=5.0)
+"""Retry once on transient errors (network, rate limits).
 
-def build_investment_analysis_graph() -> StateGraph:
-    """Build and compile the per-ticker investment analysis graph."""
+Only effective for exceptions that ``run_deep_agent_node`` propagates
+(see ``TRANSIENT_ERRORS`` in ``investment.utils``).
+"""
+
+
+def build_investment_analysis_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> CompiledStateGraph:
+    """Build and compile the per-ticker investment analysis graph.
+
+    Args:
+        checkpointer: Optional checkpoint saver for state persistence.
+            When deployed on LangGraph Platform the server injects a
+            ``PostgresSaver`` automatically via ``DATABASE_URI`` — pass
+            ``None`` in that context.  For CLI usage pass
+            ``InMemorySaver()`` or ``SqliteSaver`` to enable
+            resume-from-failure.
+    """
     graph: StateGraph = StateGraph(TickerAnalysisState)
 
     # ── Nodes ─────────────────────────────────────────────────────────────────
-    graph.add_node("market_regime", market_regime_node)
-    graph.add_node("sector_analysis", sector_analysis_node)
-    graph.add_node("company_analysis", company_analysis_node)
-    graph.add_node("forecasting", forecasting_node)
-    graph.add_node("risk_assessment", risk_assessment_node)
-    graph.add_node("valuation", valuation_node)
+    graph.add_node("market_regime", market_regime_node, retry_policy=_RETRY)
+    graph.add_node("sector_analysis", sector_analysis_node, retry_policy=_RETRY)
+    graph.add_node(
+        "company_analysis", company_analysis_node, retry_policy=_RETRY
+    )
+    graph.add_node("forecasting", forecasting_node, retry_policy=_RETRY)
+    graph.add_node(
+        "risk_assessment", risk_assessment_node, retry_policy=_RETRY
+    )
+    graph.add_node("valuation", valuation_node, retry_policy=_RETRY)
+    # thesis_synthesis is pure reasoning (no MCP) — no retry needed
     graph.add_node("thesis_synthesis", thesis_synthesis_node)
 
     # ── Group 1: all start in parallel ───────────────────────────────────────
@@ -76,4 +102,4 @@ def build_investment_analysis_graph() -> StateGraph:
     graph.add_edge("valuation", "thesis_synthesis")
     graph.add_edge("thesis_synthesis", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
