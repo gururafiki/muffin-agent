@@ -4,6 +4,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from deepagents import CompiledSubAgent
 from pydantic import ValidationError
 
 from muffin_agent.agents.investment.sector_analysis import (
@@ -105,6 +106,7 @@ _VALID_SECTOR_DICT = {
             "period": "2024-2026",
         }
     ],
+    "confidence": 0.85,
     "limitations": [],
 }
 
@@ -133,7 +135,7 @@ class TestPromptTemplate:
 
     def test_contains_workflow_steps(self):
         result = render_template("investment/sector_analysis.jinja")
-        for step in ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]:
+        for step in ["Step 1", "Step 2", "Validate Data", "Step 4", "Step 5"]:
             assert step in result
 
     def test_contains_step_labels(self):
@@ -189,11 +191,11 @@ class TestPromptTemplate:
     def test_sandbox_mandatory_marker(self):
         result = render_template("investment/sector_analysis.jinja")
         assert "MANDATORY" in result
-        assert "execute_python" in result
+        assert "compute_sector_relative_performance" in result
 
     def test_sandbox_computations_named(self):
         result = render_template("investment/sector_analysis.jinja")
-        assert "sector_1m_rel_pct" in result
+        assert "compute_sector_relative_performance" in result
         assert "pe_vs_sp500_pct" in result
         assert "peer_dispersion_pct" in result
 
@@ -489,7 +491,7 @@ class TestCreateSectorAnalysisAgent:
     """Verify agent factory wires subagents and response_format correctly."""
 
     @pytest.mark.asyncio
-    async def test_creates_five_subagents(self):
+    async def test_creates_six_subagents(self):
         config = MagicMock()
         config.get_llm.return_value = MagicMock()
 
@@ -508,6 +510,12 @@ class TestCreateSectorAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
+                ".create_equity_estimates_data_collection_agent",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "muffin_agent.agents.investment.sector_analysis"
                 ".create_news_data_collection_agent",
                 new_callable=AsyncMock,
                 return_value=MagicMock(),
@@ -520,9 +528,13 @@ class TestCreateSectorAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis.create_deep_agent"
@@ -532,7 +544,7 @@ class TestCreateSectorAnalysisAgent:
             await create_sector_analysis_agent(config)
 
             call_kwargs = mock_create.call_args.kwargs
-            assert len(call_kwargs["subagents"]) == 5
+            assert len(call_kwargs["subagents"]) == 6  # 5 data + 1 validation
 
     @pytest.mark.asyncio
     async def test_subagent_names_in_order(self):
@@ -554,6 +566,12 @@ class TestCreateSectorAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
+                ".create_equity_estimates_data_collection_agent",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "muffin_agent.agents.investment.sector_analysis"
                 ".create_news_data_collection_agent",
                 new_callable=AsyncMock,
                 return_value=MagicMock(),
@@ -566,9 +584,13 @@ class TestCreateSectorAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis.create_deep_agent"
@@ -582,6 +604,7 @@ class TestCreateSectorAnalysisAgent:
             assert names == [
                 "etf-index",
                 "discovery-screening",
+                "equity-estimates",
                 "news",
                 "regulatory-filings",
                 "data-validation",
@@ -607,6 +630,12 @@ class TestCreateSectorAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
+                ".create_equity_estimates_data_collection_agent",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "muffin_agent.agents.investment.sector_analysis"
                 ".create_news_data_collection_agent",
                 new_callable=AsyncMock,
                 return_value=MagicMock(),
@@ -619,9 +648,13 @@ class TestCreateSectorAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis.create_deep_agent"
@@ -655,6 +688,12 @@ class TestCreateSectorAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
+                ".create_equity_estimates_data_collection_agent",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "muffin_agent.agents.investment.sector_analysis"
                 ".create_news_data_collection_agent",
                 new_callable=AsyncMock,
                 return_value=MagicMock(),
@@ -667,9 +706,13 @@ class TestCreateSectorAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis.create_deep_agent"

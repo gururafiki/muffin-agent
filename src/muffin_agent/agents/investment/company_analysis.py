@@ -1,6 +1,5 @@
 """Stage 4-5: Company Analysis — Business Quality & Fundamental Deep Dive."""
 
-import json
 from typing import Any, Literal
 
 from deepagents import CompiledSubAgent, create_deep_agent
@@ -16,10 +15,22 @@ from muffin_agent.agents.data_collection import (
     create_news_data_collection_agent,
     create_regulatory_filings_data_collection_agent,
 )
-from muffin_agent.agents.data_validation import create_data_validation_agent
+from muffin_agent.agents.investment.schemas import DataSource
+from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
 from muffin_agent.sandbox import get_backend
+from muffin_agent.tools.credit_risk import (
+    compute_altman_z_score,
+    compute_interest_coverage,
+    compute_net_debt_to_ebitda,
+)
+from muffin_agent.tools.profitability import (
+    compute_fcf_conversion,
+    compute_revenue_cagr,
+    compute_roic,
+)
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -141,10 +152,10 @@ class FinancialQuality(BaseModel):
 
 
 class FinancialHistory(BaseModel):
-    """5-year financial time series for downstream forecasting_node modeling."""
+    """Up to 10-year financial time series for downstream forecasting_node modeling."""
 
     years: list[int]
-    """Fiscal years in ascending order, e.g. [2019, 2020, 2021, 2022, 2023]."""
+    """Fiscal years in ascending order, e.g. [2014, ..., 2023]."""
 
     revenue: list[float | None]
     """Annual revenue in reporting currency (same order as years)."""
@@ -154,6 +165,13 @@ class FinancialHistory(BaseModel):
 
     ebit: list[float | None]
     """Annual operating income / EBIT (same order as years)."""
+
+    ebitda: list[float | None]
+    """Annual EBITDA = EBIT + D&A (same order as years).
+
+    Computed in sandbox from income statement EBIT plus depreciation &
+    amortisation from the cash flow statement.  Used by ``forecasting_node``
+    for EBITDA margin calibration."""
 
     net_income: list[float | None]
     """Annual net income (same order as years)."""
@@ -170,6 +188,17 @@ class FinancialHistory(BaseModel):
     cash_and_equivalents: list[float | None]
     """Cash and short-term investments at fiscal year-end (same order as years)."""
 
+    working_capital: list[float | None]
+    """Net working capital = current assets - current liabilities (same order as years).
+
+    Used by ``forecasting_node`` Block F for NWC/revenue ratio calibration."""
+
+    total_assets: list[float | None]
+    """Total assets at fiscal year-end (same order as years)."""
+
+    shareholders_equity: list[float | None]
+    """Total shareholders' equity at fiscal year-end (same order as years)."""
+
     currency: str
     """Reporting currency ISO code, e.g. 'USD', 'EUR'."""
 
@@ -177,14 +206,6 @@ class FinancialHistory(BaseModel):
     """3-4 sentences synthesising the key financial trends visible in the time series:
     revenue growth trajectory, margin evolution, FCF conversion quality, and
     leverage direction.  Used by forecasting_node as qualitative context."""
-
-
-class DataSource(BaseModel):
-    """Record of data collected from one subagent."""
-
-    subagent: str
-    data_retrieved: str
-    period: str
 
 
 class CompanyAnalysisOutput(BaseModel):
@@ -238,6 +259,12 @@ class CompanyAnalysisOutput(BaseModel):
     durability, key financial quality signal, and the triage gate outcome with
     the primary reason."""
 
+    confidence: float = Field(ge=0.0, le=1.0)
+    """Overall assessment confidence 0.0–1.0.
+
+    Start at 1.0; reduce by ~0.15 per missing primary subagent result,
+    ~0.10 per major data gap within a source."""
+
     data_sources: list[DataSource] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     """Data gaps (e.g. ESG score unavailable, <5 years of financial history)
@@ -267,7 +294,7 @@ async def _build_company_analysis_subagents(
     discovery_screening_agent = await create_discovery_screening_data_collection_agent(
         config
     )
-    validation_agent = await create_data_validation_agent(config)
+    validation_subagent = await build_validation_subagent(config)
 
     return [
         CompiledSubAgent(
@@ -344,19 +371,7 @@ async def _build_company_analysis_subagents(
             ),
             runnable=discovery_screening_agent,
         ),
-        CompiledSubAgent(
-            name="data-validation",
-            description=(
-                "Validates collected data against a criterion. Checks "
-                "sufficiency, relevance, temporal validity, and consistency. "
-                "Returns per-dimension scores (0-1), overall confidence/"
-                "relevance scores, identified gaps, and a recommendation "
-                "(proceed/collect_more_data/insufficient_data). Use after "
-                "data collection, before analysis. Pass the criterion, "
-                "analysis date, and all collected data in the task instruction."
-            ),
-            runnable=validation_agent,
-        ),
+        validation_subagent,
     ]
 
 
@@ -388,6 +403,14 @@ async def create_company_analysis_agent(config: Configuration):
         model=llm,
         system_prompt=prompt,
         subagents=subagents,
+        tools=[
+            compute_roic,
+            compute_fcf_conversion,
+            compute_net_debt_to_ebitda,
+            compute_interest_coverage,
+            compute_revenue_cagr,
+            compute_altman_z_score,
+        ],
         backend=get_backend,
         response_format=AutoStrategy(schema=CompanyAnalysisOutput),
     )
@@ -420,29 +443,10 @@ async def company_analysis_node(
         error dict ``{"error": ..., "raw_output": ...}`` if the agent fails
         to return structured output.
     """
-    configuration = Configuration.from_runnable_config(config)
-    agent = await create_company_analysis_agent(configuration)
-
-    context = {
-        k: state[k]  # type: ignore[literal-required]
-        for k in CompanyAnalysisInputState.__annotations__
-        if state.get(k)  # type: ignore[union-attr]
-    }
-    result = await agent.ainvoke({"input": json.dumps(context)})
-
-    structured: CompanyAnalysisOutput | None = (
-        result.get("structured_response") if isinstance(result, dict) else None
+    return await run_deep_agent_node(
+        state=state,
+        config=config,
+        agent_factory=create_company_analysis_agent,
+        input_state_type=CompanyAnalysisInputState,
+        state_key="company_analysis",
     )
-    if structured is None:
-        return {
-            "company_analysis": {
-                "error": "Agent did not produce structured output",
-                "raw_output": (
-                    result.get("output", "")
-                    if isinstance(result, dict)
-                    else str(result)
-                ),
-            }
-        }
-
-    return {"company_analysis": structured.model_dump()}

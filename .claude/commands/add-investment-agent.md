@@ -212,18 +212,20 @@ Use write_todos to track progress.
 
 ### Step 2 — Collect Data
   - One section per data subagent with specific fetch instructions
-  - **Sandbox (execute_python) — MANDATORY after all subagents return**
-    List all numeric computations with named Python variable outputs.
+  - **Computations — MANDATORY after all subagents return**
+    Call dedicated financial tools for standard calculations.
+    Use `execute` (sandbox) only for ad-hoc computations not covered by the tools.
+    List tool calls and sandbox code blocks with named variable outputs.
     Reference these variable names in Step 4.
   - Error handling: "If a subagent fails, do not retry with identical parameters."
 
-### Step 3 — Validate Data
-  - Delegate to data-validation subagent
+### Validate Data
+  - Delegate to data-validation subagent (uses shared `_validation_step.jinja` partial)
   - Act on result: proceed / collect_more_data (at most once) / insufficient_data
 
 ### Step 4 — [Classify / Evaluate / Score]
   - For each dimension: Chain-of-Thought reasoning (data points → scale anchors → label + score)
-  - Reference the named sandbox variables from Step 2
+  - Reference the named tool/sandbox outputs from the data collection step
   - **Grounding constraint**: every claim must cite a specific data point with value and source
   - Adverse regime / gate guidance: what to flag when thresholds are breached
 
@@ -240,7 +242,7 @@ Use write_todos to track progress.
 
 **Prompt writing rules:**
 - Prompt length: 400–700 words for focused steps; up to 900 for complex multi-dimension steps
-- Use `execute_python` sandbox for ALL numeric computations — never in reasoning text
+- Use dedicated financial tools (from `tools/`) for standard calculations; use `execute` (sandbox) only for ad-hoc computations not covered by the tools. Never perform arithmetic in reasoning text.
 - The ticker-conditional logic belongs in Step 1 and Step 4 of the prompt, not in Python code
 - Apply guardrails from `.claude/skills/financial-prompt-engineering/` (hallucination prevention,
   temporal anchoring, no-fabrication clause, confidence calibration, data degradation)
@@ -368,6 +370,13 @@ async def _build_{name}_subagents(config: Configuration) -> list[CompiledSubAgen
 # ── Agent factory ─────────────────────────────────────────────────────────────
 
 
+from muffin_agent.tools.{domain} import (
+    {tool_1},
+    {tool_2},
+    # ... import only tools this agent needs
+)
+
+
 async def create_{name}_agent(config: Configuration):
     """Build the {name} deep agent.
 
@@ -381,12 +390,20 @@ async def create_{name}_agent(config: Configuration):
         model=llm,
         system_prompt=prompt,
         subagents=subagents,
+        tools=[
+            {tool_1},
+            {tool_2},
+            # ... only tools relevant to this agent
+        ],
         backend=get_backend,
         response_format=AutoStrategy(schema={Name}Output),
     )
 
 
 # ── Node ──────────────────────────────────────────────────────────────────────
+
+
+from muffin_agent.agents.investment.utils import run_deep_agent_node
 
 
 async def {name}_node(
@@ -397,39 +414,22 @@ async def {name}_node(
     [Node docstring: what it does, parallel/sequential position in the graph,
     which state keys it reads ({Name}InputState), which state key it writes.]
     """
-    configuration = Configuration.from_runnable_config(config)
-    agent = await create_{name}_agent(configuration)
-
-    context = {
-        k: state[k]  # type: ignore[literal-required]
-        for k in {Name}InputState.__annotations__
-        if state.get(k)  # type: ignore[union-attr]
-    }
-    result = await agent.ainvoke({"input": json.dumps(context)})
-
-    structured: {Name}Output | None = (
-        result.get("structured_response") if isinstance(result, dict) else None
+    return await run_deep_agent_node(
+        state=state,
+        config=config,
+        agent_factory=create_{name}_agent,
+        input_state_type={Name}InputState,
+        state_key="{state_key}",
+        error_fallback={...},  # step-specific fallback fields
     )
-    if structured is None:
-        return {
-            "{state_key}": {
-                "error": "Agent did not produce structured output",
-                "raw_output": (
-                    result.get("output", "")
-                    if isinstance(result, dict)
-                    else str(result)
-                ),
-            }
-        }
-
-    return {"{state_key}": structured.model_dump()}
 ```
 
 **Implementation rules:**
-- `json` import is required (for `json.dumps`)
 - Use `create_deep_agent`, not `create_react_agent` or `create_agent`
-- Always pass `backend=get_backend` — the sandbox is mandatory for numeric computations
+- Always pass `tools=[...]` with the relevant financial tools from `muffin_agent.tools`
+- Always pass `backend=get_backend` — the sandbox is needed for ad-hoc computations (financial history arrays, custom logic)
 - Always pass `response_format=AutoStrategy(schema={Name}Output)`
+- Use `run_deep_agent_node()` from `muffin_agent.agents.investment.utils` instead of inlining the node pattern — it handles context building, invocation, structured output extraction, and error fallback with exception logging
 - The error fallback dict must include at minimum `"error"` and `"raw_output"` keys
 - The state key written (`{state_key}`) must match the field name in `state.py`
 - Section separator comments `# ── Section ──...` must span to column 79
@@ -473,7 +473,7 @@ class TestPromptTemplate:
 
     def test_contains_workflow_steps(self):
         result = render_template("investment/{name}.jinja")
-        for step in ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]:
+        for step in ["Step 1", "Step 2", "Validate Data", "Step 4", "Step 5"]:
             assert step in result
 
     def test_contains_output_schema_keys(self):
@@ -486,9 +486,9 @@ class TestPromptTemplate:
         result = render_template("investment/{name}.jinja")
         assert "NEVER" in result  # no-fabrication clause
 
-    def test_sandbox_mandatory_marker(self):
+    def test_computation_mandatory_marker(self):
         result = render_template("investment/{name}.jinja")
-        assert "MANDATORY" in result  # execute_python sandbox marker
+        assert "MANDATORY" in result  # computation tools marker
 
     def test_reflection_step_present(self):
         result = render_template("investment/{name}.jinja")

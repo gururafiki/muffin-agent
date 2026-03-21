@@ -24,6 +24,26 @@ from .data_collection import (
 )
 from .data_validation import create_data_validation_agent
 
+_VALIDATION_DESCRIPTION = (
+    "Validates collected data against a criterion. Checks "
+    "sufficiency, relevance, temporal validity, and consistency. "
+    "Returns per-dimension scores (0-1), overall confidence/"
+    "relevance scores, identified gaps, and a recommendation "
+    "(proceed/collect_more_data/insufficient_data). Use after "
+    "data collection, before analysis. Pass the criterion, "
+    "analysis date, and all collected data in the task instruction."
+)
+
+
+async def build_validation_subagent(config: Configuration) -> CompiledSubAgent:
+    """Create the data-validation subagent used across all investment stages."""
+    validation_agent = await create_data_validation_agent(config)
+    return CompiledSubAgent(
+        name="data-validation",
+        description=_VALIDATION_DESCRIPTION,
+        runnable=validation_agent,
+    )
+
 
 async def build_analysis_subagents(config: Configuration) -> list[CompiledSubAgent]:
     """Create the standard set of 14 analysis subagents.
@@ -50,7 +70,7 @@ async def build_analysis_subagents(config: Configuration) -> list[CompiledSubAge
     regulatory_filings_agent = await create_regulatory_filings_data_collection_agent(
         config
     )
-    validation_agent = await create_data_validation_agent(config)
+    validation_subagent = await build_validation_subagent(config)
 
     return [
         CompiledSubAgent(
@@ -217,17 +237,5 @@ async def build_analysis_subagents(config: Configuration) -> list[CompiledSubAge
             ),
             runnable=fama_french_agent,
         ),
-        CompiledSubAgent(
-            name="data-validation",
-            description=(
-                "Validates collected data against a criterion. Checks "
-                "sufficiency, relevance, temporal validity, and consistency. "
-                "Returns per-dimension scores (0-1), overall confidence/"
-                "relevance scores, identified gaps, and a recommendation "
-                "(proceed/collect_more_data/insufficient_data). Use after "
-                "data collection, before analysis. Pass the criterion, "
-                "analysis date, and all collected data in the task instruction."
-            ),
-            runnable=validation_agent,
-        ),
+        validation_subagent,
     ]

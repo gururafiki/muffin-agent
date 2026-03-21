@@ -4,6 +4,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from deepagents import CompiledSubAgent
 from pydantic import ValidationError
 
 from muffin_agent.agents.investment.market_regime import (
@@ -174,13 +175,13 @@ class TestPromptTemplate:
     def test_template_sandbox_is_mandatory(self):
         result = render_template("investment/market_regime.jinja")
         assert "MANDATORY" in result
-        assert "execute_python" in result
+        assert "compute_yield_curve_metrics" in result
 
     def test_template_contains_sandbox_computations(self):
         result = render_template("investment/market_regime.jinja")
         assert "slope_10y2y_bps" in result
         assert "cpi_3m_annualised_pct" in result
-        assert "ff_zscores" in result
+        assert "compute_factor_zscore" in result
         assert "policy_rate_distance_bps" in result
         assert "ig_oas_pctile" in result
         assert "copper_mom_pct" in result
@@ -475,9 +476,13 @@ class TestCreateMarketRegimeAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.market_regime"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=mock_validation,
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=mock_validation,
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.market_regime.create_deep_agent"
@@ -557,9 +562,13 @@ class TestCreateMarketRegimeAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.market_regime"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.market_regime.create_deep_agent"

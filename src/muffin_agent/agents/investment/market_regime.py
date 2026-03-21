@@ -1,6 +1,5 @@
 """Stage 2: Market Regime & Top-Down Context."""
 
-import json
 from typing import Any, Literal
 
 from deepagents import CompiledSubAgent, create_deep_agent
@@ -16,10 +15,18 @@ from muffin_agent.agents.data_collection import (
     create_fama_french_data_collection_agent,
     create_fixed_income_data_collection_agent,
 )
-from muffin_agent.agents.data_validation import create_data_validation_agent
+from muffin_agent.agents.investment.schemas import DataSource
+from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
 from muffin_agent.sandbox import get_backend
+from muffin_agent.tools.macro import (
+    compute_factor_zscore,
+    compute_vix_regime,
+    compute_yield_curve_metrics,
+)
+from muffin_agent.tools.sector import compute_sector_relative_performance
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -134,14 +141,6 @@ class TickerImpact(BaseModel):
     specific_tailwinds: list[str]
 
 
-class DataSource(BaseModel):
-    """Record of data collected from one subagent."""
-
-    subagent: str
-    data_retrieved: str
-    period: str
-
-
 class MarketRegimeOutput(BaseModel):
     """Structured output produced by the market regime deep agent."""
 
@@ -190,7 +189,7 @@ async def _build_macro_subagents(config: Configuration) -> list[CompiledSubAgent
         await create_currency_commodities_data_collection_agent(config)
     )
     etf_index_agent = await create_etf_index_data_collection_agent(config)
-    validation_agent = await create_data_validation_agent(config)
+    validation_subagent = await build_validation_subagent(config)
 
     return [
         CompiledSubAgent(
@@ -245,19 +244,7 @@ async def _build_macro_subagents(config: Configuration) -> list[CompiledSubAgent
             ),
             runnable=etf_index_agent,
         ),
-        CompiledSubAgent(
-            name="data-validation",
-            description=(
-                "Validates collected data against a criterion. Checks "
-                "sufficiency, relevance, temporal validity, and consistency. "
-                "Returns per-dimension scores (0-1), overall confidence/"
-                "relevance scores, identified gaps, and a recommendation "
-                "(proceed/collect_more_data/insufficient_data). Use after "
-                "data collection, before analysis. Pass the criterion, "
-                "analysis date, and all collected data in the task instruction."
-            ),
-            runnable=validation_agent,
-        ),
+        validation_subagent,
     ]
 
 
@@ -289,6 +276,12 @@ async def create_market_regime_agent(config: Configuration):
         model=llm,
         system_prompt=prompt,
         subagents=subagents,
+        tools=[
+            compute_yield_curve_metrics,
+            compute_factor_zscore,
+            compute_vix_regime,
+            compute_sector_relative_performance,
+        ],
         backend=get_backend,
         response_format=AutoStrategy(schema=MarketRegimeOutput),
     )
@@ -327,30 +320,11 @@ async def market_regime_node(
         dict ``{"regime_label": "unknown", "error": ..., "raw_output": ...}``
         if the agent fails to return structured output.
     """
-    configuration = Configuration.from_runnable_config(config)
-    agent = await create_market_regime_agent(configuration)
-
-    context = {
-        k: state[k]  # type: ignore[literal-required]
-        for k in MarketRegimeInputState.__annotations__
-        if state.get(k)  # type: ignore[union-attr]
-    }
-    result = await agent.ainvoke({"input": json.dumps(context)})
-
-    structured: MarketRegimeOutput | None = (
-        result.get("structured_response") if isinstance(result, dict) else None
+    return await run_deep_agent_node(
+        state=state,
+        config=config,
+        agent_factory=create_market_regime_agent,
+        input_state_type=MarketRegimeInputState,
+        state_key="market_regime",
+        error_fallback={"regime_label": "unknown"},
     )
-    if structured is None:
-        return {
-            "market_regime": {
-                "regime_label": "unknown",
-                "error": "Agent did not produce structured output",
-                "raw_output": (
-                    result.get("output", "")
-                    if isinstance(result, dict)
-                    else str(result)
-                ),
-            }
-        }
-
-    return {"market_regime": structured.model_dump()}

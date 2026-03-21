@@ -1,6 +1,5 @@
 """Stage 6: Forecasting & Scenario Modeling."""
 
-import json
 from typing import Any, Literal
 
 from deepagents import CompiledSubAgent, create_deep_agent
@@ -15,10 +14,20 @@ from muffin_agent.agents.data_collection import (
     create_equity_estimates_data_collection_agent,
     create_equity_fundamentals_data_collection_agent,
 )
-from muffin_agent.agents.data_validation import create_data_validation_agent
+from muffin_agent.agents.investment.schemas import DataSource
+from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
 from muffin_agent.sandbox import get_backend
+from muffin_agent.tools.profitability import (
+    compute_accruals_ratio,
+    compute_revenue_cagr,
+)
+from muffin_agent.tools.projections import (
+    compute_sensitivity,
+    project_three_year_financials,
+)
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -93,6 +102,26 @@ class YearlyProjection(BaseModel):
 
     fcf_margin_pct: float | None = None
     """FCF / revenue (%)."""
+
+    # ── Balance sheet projections ──
+
+    net_debt: float | None = None
+    """Net debt = total debt - cash; null if balance sheet baseline unavailable."""
+
+    total_debt: float | None = None
+    """Total debt in reporting currency."""
+
+    cash: float | None = None
+    """Cash and equivalents in reporting currency."""
+
+    working_capital: float | None = None
+    """Net working capital = current assets - current liabilities."""
+
+    total_assets: float | None = None
+    """Total assets in reporting currency."""
+
+    shareholders_equity: float | None = None
+    """Total shareholders' equity in reporting currency."""
 
 
 class Scenario(BaseModel):
@@ -194,14 +223,6 @@ class SensitivityDriver(BaseModel):
     """% change in Year+1 FCF from this assumption change."""
 
 
-class DataSource(BaseModel):
-    """Record of data retrieved from one subagent."""
-
-    subagent: str
-    data_retrieved: str
-    period: str
-
-
 class ForecastOutput(BaseModel):
     """Structured output produced by the forecasting deep agent."""
 
@@ -253,6 +274,12 @@ class ForecastOutput(BaseModel):
     intensity), data quality, and the single event most likely to shift the
     base case materially."""
 
+    confidence: float = Field(ge=0.0, le=1.0)
+    """Overall model confidence 0.0–1.0.
+
+    Start at 1.0; reduce by ~0.15 per missing primary subagent result,
+    ~0.10 per major data gap (e.g. no consensus data, no financial_history)."""
+
     data_sources: list[DataSource] = Field(default_factory=list)
     """One entry per subagent consulted: name, what was retrieved, period."""
 
@@ -281,7 +308,7 @@ async def _build_forecasting_subagents(config: Configuration) -> list[CompiledSu
     currency_commodities_agent = (
         await create_currency_commodities_data_collection_agent(config)
     )
-    validation_agent = await create_data_validation_agent(config)
+    validation_subagent = await build_validation_subagent(config)
 
     return [
         CompiledSubAgent(
@@ -340,41 +367,61 @@ async def _build_forecasting_subagents(config: Configuration) -> list[CompiledSu
             ),
             runnable=currency_commodities_agent,
         ),
-        CompiledSubAgent(
-            name="data-validation",
-            description=(
-                "Validates collected data against a criterion. Checks "
-                "sufficiency, relevance, temporal validity, and consistency. "
-                "Returns per-dimension scores (0-1), overall confidence/"
-                "relevance scores, identified gaps, and a recommendation "
-                "(proceed/collect_more_data/insufficient_data). Use after "
-                "data collection, before analysis. Pass the criterion, "
-                "analysis date, and all collected data in the task instruction."
-            ),
-            runnable=validation_agent,
-        ),
+        validation_subagent,
     ]
 
 
 # ── Agent factory ─────────────────────────────────────────────────────────────
 
 
-async def create_forecasting_agent(config: Configuration):
+_PROBABILITY_ANCHORS: dict[str, tuple[float, float, float]] = {
+    "pass": (0.60, 0.25, 0.15),
+    "watch": (0.50, 0.25, 0.25),
+    "fail": (0.40, 0.25, 0.35),
+}
+"""company_signal → (base, bull, bear) probability anchors."""
+
+
+async def create_forecasting_agent(
+    config: Configuration,
+    company_signal: str | None = None,
+):
     """Build the forecasting deep agent.
 
     Create a deep agent that builds a 3-year forward financial model with
     bull, base, and bear scenarios anchored to analyst consensus.  Uses a
     sandbox backend for all numeric computations (historical calibration,
     scenario projection arithmetic, sensitivity table, accruals ratio).
+
+    Args:
+        config: Application configuration.
+        company_signal: Triage gate signal from company_analysis_node
+            ('pass', 'watch', or 'fail').  Used to set scenario probability
+            anchors in the prompt template.  Defaults to 'pass' if absent.
     """
     subagents = await _build_forecasting_subagents(config)
-    prompt = render_template("investment/forecasting.jinja")
+    base_p, bull_p, bear_p = _PROBABILITY_ANCHORS.get(
+        company_signal or "pass", _PROBABILITY_ANCHORS["pass"]
+    )
+    prompt = render_template(
+        "investment/forecasting.jinja",
+        base_probability=base_p,
+        bull_probability=bull_p,
+        bear_probability=bear_p,
+        company_signal=company_signal or "pass",
+    )
     llm = config.get_llm()
 
     return create_deep_agent(
         model=llm,
         system_prompt=prompt,
         subagents=subagents,
+        tools=[
+            project_three_year_financials,
+            compute_sensitivity,
+            compute_accruals_ratio,
+            compute_revenue_cagr,
+        ],
         backend=get_backend,
         response_format=AutoStrategy(schema=ForecastOutput),
     )
@@ -400,29 +447,19 @@ async def forecasting_node(
     ``company_analysis.company_signal`` — forecasting data is valuable for
     both long and short investment theses.
     """
-    configuration = Configuration.from_runnable_config(config)
-    agent = await create_forecasting_agent(configuration)
-
-    context = {
-        k: state[k]  # type: ignore[literal-required]
-        for k in ForecastingInputState.__annotations__
-        if state.get(k)  # type: ignore[union-attr]
-    }
-    result = await agent.ainvoke({"input": json.dumps(context)})
-
-    structured: ForecastOutput | None = (
-        result.get("structured_response") if isinstance(result, dict) else None
+    company_signal = (
+        state.get("company_analysis", {}).get("company_signal")
+        if isinstance(state.get("company_analysis"), dict)
+        else None
     )
-    if structured is None:
-        return {
-            "forecast": {
-                "error": "Agent did not produce structured output",
-                "raw_output": (
-                    result.get("output", "")
-                    if isinstance(result, dict)
-                    else str(result)
-                ),
-            }
-        }
 
-    return {"forecast": structured.model_dump()}
+    async def _factory(cfg: Configuration):  # noqa: E501
+        return await create_forecasting_agent(cfg, company_signal=company_signal)
+
+    return await run_deep_agent_node(
+        state=state,
+        config=config,
+        agent_factory=_factory,
+        input_state_type=ForecastingInputState,
+        state_key="forecast",
+    )
