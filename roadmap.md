@@ -116,12 +116,13 @@
     - [ ] Step 4 — Business, Moat, Management & ESG Triage Agent
 - [ ] Ticker Valuation and forecasting (Steps 5-6 from [docs/investment-process.md](docs/investment-process.md))
     - Do valuations based on fundamentals
-    - Create projections and scenarious
+    - [x] Step 6 — Forecasting & Scenario Modeling Agent: builds 3-year bull/base/bear forward model anchored to analyst consensus; 4 data subagents (equity-estimates, equity-fundamentals, economy-macro, currency-commodities) + data-validation; sandbox computes historical calibration, scenario projections, sensitivity table, accruals ratio; probability anchors keyed to company_signal (pass=60/25/15, watch=50/25/25, fail=40/25/35); structured output via `AutoStrategy(schema=ForecastOutput)`.
+    - [ ] Step 7 — Valuation & Relative Value Agent
 - [ ] Relative value (Steps 7 from [docs/investment-process.md](docs/investment-process.md))
     - Peer comparison
     - **TODO**
 - **TODO**
-- [ ] Analysis check (Steps 6 from [docs/investment-process.md](docs/investment-process.md))
+- [ ] Analysis check (Steps 8-9 from [docs/investment-process.md](docs/investment-process.md))
 
 ## Phase 3
 

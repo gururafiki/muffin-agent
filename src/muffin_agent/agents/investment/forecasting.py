@@ -1,62 +1,428 @@
 """Stage 6: Forecasting & Scenario Modeling."""
 
-from typing import Any
+import json
+from typing import Any, Literal
 
+from deepagents import CompiledSubAgent, create_deep_agent
+from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
-from muffin_agent.agents.investment.state import TickerAnalysisState
+from muffin_agent.agents.data_collection import (
+    create_currency_commodities_data_collection_agent,
+    create_economy_macro_data_collection_agent,
+    create_equity_estimates_data_collection_agent,
+    create_equity_fundamentals_data_collection_agent,
+)
+from muffin_agent.agents.data_validation import create_data_validation_agent
+from muffin_agent.config import Configuration
+from muffin_agent.prompts import render_template
+from muffin_agent.sandbox import get_backend
+
+# ── Input state schema ─────────────────────────────────────────────────────────
+
+
+class ForecastingInputState(TypedDict, total=False):
+    """Input state schema for ``forecasting_node``.
+
+    Documents which state fields the node reads.  All fields optional; the node
+    supports multiple context modes depending on which upstream steps have run.
+
+    Context modes:
+        (a) Full pipeline  — ticker + query + company_analysis + market_regime
+            Standard Group 2 run after all Group 1 nodes complete.  Uses
+            ``company_analysis.financial_history`` as the historical baseline
+            and ``market_regime`` macro context for scenario assumptions.
+        (b) Ticker + query — agent collects all historical financials fresh
+            from equity-fundamentals without relying on prior pipeline state.
+        (c) Query only     — thematic forward model without a specific ticker;
+            equity-estimates and equity-fundamentals are skipped or generic.
+    """
+
+    ticker: str
+    query: str
+    company_analysis: dict[str, Any]
+    """Output of ``company_analysis_node``.
+
+    Must contain ``financial_history`` (5-year time series), ``company_signal``
+    (used for scenario probability anchoring), ``financial_quality``, and
+    ``key_risks``.
+    """
+
+    market_regime: dict[str, Any]
+    """Output of ``market_regime_node``.
+
+    Provides macro assumptions: GDP growth label, monetary policy stance,
+    inflation regime, and ``key_risks`` for bear-case grounding.
+    """
+
+
+# ── Output schema ─────────────────────────────────────────────────────────────
+
+
+class YearlyProjection(BaseModel):
+    """Financial projections for a single forward year."""
+
+    year: int
+    """Calendar year, e.g. 2026."""
+
+    revenue: float | None = None
+    """Projected revenue in reporting currency; null if baseline unavailable."""
+
+    revenue_growth_pct: float | None = None
+    """Year-over-year revenue growth rate (%)."""
+
+    ebitda: float | None = None
+    """Projected EBITDA in reporting currency."""
+
+    ebitda_margin_pct: float | None = None
+    """EBITDA / revenue (%)."""
+
+    ebit: float | None = None
+    """Projected EBIT (EBITDA minus D&A) in reporting currency."""
+
+    ebit_margin_pct: float | None = None
+    """EBIT / revenue (%)."""
+
+    eps: float | None = None
+    """Diluted EPS in reporting currency; null if diluted share count unavailable."""
+
+    fcf: float | None = None
+    """Free cash flow = net income + D&A - capex in reporting currency."""
+
+    fcf_margin_pct: float | None = None
+    """FCF / revenue (%)."""
+
+
+class Scenario(BaseModel):
+    """A single forward-looking scenario (bull, base, or bear)."""
+
+    label: Literal["bull", "base", "bear"]
+    """Scenario type."""
+
+    probability: float
+    """Analyst-assigned probability (0.0–1.0).
+
+    The three scenario probabilities should sum to approximately 1.0 (±0.02).
+    Anchored defaults by ``company_signal``:
+    - ``pass``  → base=0.60, bull=0.25, bear=0.15
+    - ``watch`` → base=0.50, bull=0.25, bear=0.25
+    - ``fail``  → base=0.40, bull=0.25, bear=0.35
+    """
+
+    revenue_cagr_3y_pct: float | None = None
+    """3-year revenue CAGR vs the LTM baseline (%)."""
+
+    ebitda_margin_exit_pct: float | None = None
+    """EBITDA margin in Year+3 (the exit-year margin for terminal value work)."""
+
+    eps_cagr_3y_pct: float | None = None
+    """3-year EPS CAGR vs LTM (%; null if diluted shares unavailable)."""
+
+    key_assumptions: list[str]
+    """3-5 specific driver assumptions that define this scenario.
+
+    Each item should be quantified where possible, e.g.
+    'Revenue CAGR +12% driven by AI product attach rate expansion'.
+    """
+
+    probability_rationale: str
+    """1-2 sentences explaining why the probability matches or deviates from
+    the ``company_signal``-based anchor."""
+
+    narrative: str
+    """2-3 sentences on the primary macro and company-level drivers that
+    distinguish this scenario from the base case."""
+
+    projections: list[YearlyProjection]
+    """Forward projections for Year+1, Year+2, Year+3 (in that order)."""
+
+
+class ConsensusAnchor(BaseModel):
+    """Analyst consensus data used to anchor the base-case scenario."""
+
+    as_of_date: str
+    """Date the consensus data was retrieved (YYYY-MM-DD)."""
+
+    num_analysts: int | None = None
+    """Number of analysts contributing to the consensus."""
+
+    eps_year1: float | None = None
+    """Consensus mean EPS estimate for Year+1."""
+
+    eps_year2: float | None = None
+    """Consensus mean EPS estimate for Year+2."""
+
+    revenue_year1: float | None = None
+    """Consensus mean revenue estimate for Year+1 in reporting currency."""
+
+    ebitda_year1: float | None = None
+    """Consensus mean EBITDA estimate for Year+1 in reporting currency."""
+
+    price_target_mean: float | None = None
+    """Mean analyst 12-month price target."""
+
+    price_target_low: float | None = None
+    """Lowest analyst price target."""
+
+    price_target_high: float | None = None
+    """Highest analyst price target."""
+
+    revision_trend_3m: Literal["upward", "flat", "downward"]
+    """Direction of consensus EPS revisions over the past 3 months.
+
+    'upward' = >+5% change; 'downward' = <-5% change; 'flat' = within ±5%.
+    """
+
+    surprise_history: str
+    """2-3 sentences on the company's historical EPS beat/miss pattern,
+    including typical beat magnitude and cadence (e.g. 'beats in 7 of last
+    8 quarters by an average of 4%; one miss in Q3 2023 due to FX headwinds')."""
+
+
+class SensitivityDriver(BaseModel):
+    """Impact of a single assumption change on Year+1 EPS and FCF."""
+
+    driver: str
+    """Description of the assumption change, e.g. 'Revenue growth +1pp vs base'."""
+
+    eps_impact_pct: float | None = None
+    """% change in Year+1 EPS from this assumption change; null if EPS unavailable."""
+
+    fcf_impact_pct: float | None = None
+    """% change in Year+1 FCF from this assumption change."""
+
+
+class DataSource(BaseModel):
+    """Record of data retrieved from one subagent."""
+
+    subagent: str
+    data_retrieved: str
+    period: str
+
+
+class ForecastOutput(BaseModel):
+    """Structured output produced by the forecasting deep agent."""
+
+    ticker: str
+    """Equity ticker symbol analysed."""
+
+    company_name: str
+    """Full legal company name."""
+
+    currency: str
+    """Reporting currency ISO code (e.g. 'USD', 'EUR')."""
+
+    forecast_as_of_date: str
+    """Date the forecast was produced (YYYY-MM-DD)."""
+
+    base_case: Scenario
+    """Base-case scenario: consensus-anchored, mean-reverting margins."""
+
+    bull_case: Scenario
+    """Bull-case scenario: named upside catalysts with quantified assumptions."""
+
+    bear_case: Scenario
+    """Bear-case scenario: named downside risks with quantified assumptions."""
+
+    consensus_anchoring: ConsensusAnchor
+    """Analyst consensus data used to calibrate the base case."""
+
+    revision_momentum: Literal["upward", "flat", "downward"]
+    """Top-level consensus EPS revision direction over the past 3 months.
+
+    Mirrors ``consensus_anchoring.revision_trend_3m`` for quick downstream
+    access by ``valuation_node`` and ``thesis_synthesis_node``.
+    """
+
+    sensitivity_table: list[SensitivityDriver] = Field(default_factory=list)
+    """3-5 key assumption sensitivities with Year+1 EPS and FCF impacts."""
+
+    earnings_quality_flags: list[str] = Field(default_factory=list)
+    """Earnings quality concerns derived from sandbox computations.
+
+    Examples: 'High accruals ratio (0.18) — earnings may not be fully
+    cash-backed', 'EPS growth partially driven by share buybacks',
+    'Low FCF conversion (52%) — earnings quality concern'.
+    Empty list if no quality concerns identified.
+    """
+
+    modeling_notes: str
+    """2-3 sentences on: key modeling assumptions (tax rate, D&A rate, capex
+    intensity), data quality, and the single event most likely to shift the
+    base case materially."""
+
+    data_sources: list[DataSource] = Field(default_factory=list)
+    """One entry per subagent consulted: name, what was retrieved, period."""
+
+    limitations: list[str] = Field(default_factory=list)
+    """Data gaps that reduce model confidence.
+
+    Examples: 'EPS projections omitted — diluted share count unavailable',
+    'No consensus data for this ticker (likely small-cap)',
+    'company_analysis.financial_history absent — historical calibration
+    based solely on equity-fundamentals (3 years available)'.
+    """
+
+
+# ── Subagent builder ──────────────────────────────────────────────────────────
+
+
+async def _build_forecasting_subagents(config: Configuration) -> list[CompiledSubAgent]:
+    """Build the focused subagent set for forecasting & scenario modeling.
+
+    Return 4 data collection subagents + 1 data validation subagent.
+    Excludes macro/market-structure subagents not relevant to forward modeling.
+    """
+    estimates_agent = await create_equity_estimates_data_collection_agent(config)
+    fundamentals_agent = await create_equity_fundamentals_data_collection_agent(config)
+    macro_agent = await create_economy_macro_data_collection_agent(config)
+    currency_commodities_agent = (
+        await create_currency_commodities_data_collection_agent(config)
+    )
+    validation_agent = await create_data_validation_agent(config)
+
+    return [
+        CompiledSubAgent(
+            name="equity-estimates",
+            description=(
+                "Retrieves analyst estimates and forward-looking data: "
+                "consensus EPS/revenue/EBITDA estimates for Year+1 and Year+2, "
+                "price targets (mean, high, low), forward P/E and EV/EBITDA, "
+                "forward sales, analyst rating breakdown (buy/hold/sell), and "
+                "estimate revision history (historical consensus EPS over time "
+                "for computing 3-month revision momentum). Primary source for "
+                "consensus anchoring, revision_trend_3m, and surprise_history."
+            ),
+            runnable=estimates_agent,
+        ),
+        CompiledSubAgent(
+            name="equity-fundamentals",
+            description=(
+                "Retrieves fundamental financial data needed for model "
+                "calibration: income statement (diluted shares outstanding, "
+                "depreciation & amortisation, effective tax rate, historical "
+                "EPS), cash flow statement (capital expenditures, operating "
+                "cash flow, total assets for accruals ratio). Use to obtain "
+                "diluted share count (required for EPS projections) and "
+                "to validate or extend the financial_history from "
+                "company_analysis. Also provides historical_eps for "
+                "multi-year EPS calibration."
+            ),
+            runnable=fundamentals_agent,
+        ),
+        CompiledSubAgent(
+            name="economy-macro",
+            description=(
+                "Retrieves macroeconomic data: GDP growth forecast (1-2 year "
+                "horizon) as a top-down revenue growth anchor, current 10Y "
+                "Treasury rate as a WACC proxy, CPI trend for pricing power "
+                "context, and interest rate path for capital structure "
+                "assumptions. Use to calibrate macro-sensitive revenue growth "
+                "assumptions and to apply a macroeconomic cross-check on the "
+                "base-case revenue CAGR."
+            ),
+            runnable=macro_agent,
+        ),
+        CompiledSubAgent(
+            name="currency-commodities",
+            description=(
+                "Retrieves currency, commodity, and crypto data: FX rates "
+                "and history (major/emerging pairs), commodity spot prices "
+                "(WTI, Brent, gold, copper, natural gas), EIA energy outlooks, "
+                "and crypto price history. Use for FX exposure assessment, "
+                "commodity input cost analysis, energy sector context, and "
+                "Risk dimension scoring (commodity/FX headwinds). In "
+                "forecasting context: quantify FX translation impact on "
+                "multi-national revenue and estimate commodity cost assumptions "
+                "for the bear-case margin compression scenario."
+            ),
+            runnable=currency_commodities_agent,
+        ),
+        CompiledSubAgent(
+            name="data-validation",
+            description=(
+                "Validates collected data against a criterion. Checks "
+                "sufficiency, relevance, temporal validity, and consistency. "
+                "Returns per-dimension scores (0-1), overall confidence/"
+                "relevance scores, identified gaps, and a recommendation "
+                "(proceed/collect_more_data/insufficient_data). Use after "
+                "data collection, before analysis. Pass the criterion, "
+                "analysis date, and all collected data in the task instruction."
+            ),
+            runnable=validation_agent,
+        ),
+    ]
+
+
+# ── Agent factory ─────────────────────────────────────────────────────────────
+
+
+async def create_forecasting_agent(config: Configuration):
+    """Build the forecasting deep agent.
+
+    Create a deep agent that builds a 3-year forward financial model with
+    bull, base, and bear scenarios anchored to analyst consensus.  Uses a
+    sandbox backend for all numeric computations (historical calibration,
+    scenario projection arithmetic, sensitivity table, accruals ratio).
+    """
+    subagents = await _build_forecasting_subagents(config)
+    prompt = render_template("forecasting.jinja")
+    llm = config.get_llm()
+
+    return create_deep_agent(
+        model=llm,
+        system_prompt=prompt,
+        subagents=subagents,
+        backend=get_backend,
+        response_format=AutoStrategy(schema=ForecastOutput),
+    )
+
+
+# ── Node ──────────────────────────────────────────────────────────────────────
 
 
 async def forecasting_node(
-    state: TickerAnalysisState, config: RunnableConfig
+    state: ForecastingInputState, config: RunnableConfig
 ) -> dict[str, Any]:
     """Stage 6: Forecasting & Scenario Modeling.
 
-    Builds a forward 3-statement financial model anchored to analyst consensus
-    and historical trends from ``company_analysis``.  Produces bull / base /
-    bear scenarios with explicit revenue, margin, and EPS assumptions.
+    Builds a 3-year forward financial model with bull / base / bear scenarios
+    anchored to analyst consensus and calibrated against the 5-year historical
+    financial time series from ``company_analysis_node``.
 
-    Runs in **parallel** with ``risk_assessment_node`` (Group 2) after Group 1
-    completes.  This node is gated by ``company_analysis`` (needs historical
-    financials) and ``market_regime`` (needs macro assumptions for WACC and
-    top-down revenue growth anchors).
+    Runs in **parallel** with ``risk_assessment_node`` (Group 2) after all
+    Group 1 nodes complete.  Reads ``ForecastingInputState`` fields (ticker,
+    query, company_analysis, market_regime) and writes ``forecast`` to state.
 
-    Inputs (from state):
-        ticker: Equity ticker symbol.
-        query: Investment mandate.
-        company_analysis: Historical 3-statement data and quality assessment.
-        market_regime: Macro assumptions (GDP growth, rates, inflation).
-
-    Outputs (state update):
-        forecast: dict containing, e.g.:
-            - base_case: dict — revenue, EBITDA, EPS, FCF for next 3 years
-            - bull_case: dict — optimistic scenario with key driver changes
-            - bear_case: dict — downside scenario with key risk triggers
-            - consensus_anchoring: dict — estimate revision trend, surprise history
-            - key_assumptions: list[dict] — sensitivity drivers (price/volume,
-              margins, capex, working capital)
-            - revision_momentum: str — upward / flat / downward
-            - earnings_quality_flags: list[str]
-
-    Planned agent type:
-        Deep agent (``create_deep_agent``) with 3 data collection subagents
-        and a ``SandboxFactory`` backend (for Python-based scenario modeling).
-
-    Data collection subagents:
-        - ``equity-estimates`` ⭐ primary (all 8 tools)
-            equity_estimates_consensus, equity_estimates_forward_ebitda,
-            equity_estimates_forward_eps, equity_estimates_forward_pe,
-            equity_estimates_forward_sales, equity_estimates_historical,
-            equity_estimates_price_target, equity_estimates_price_target_consensus
-        - ``equity-fundamentals``
-            equity_fundamental_income, equity_fundamental_cash,
-            equity_fundamental_balance, equity_fundamental_historical_eps
-            (historical baseline for model calibration)
-        - ``economy-macro``
-            economy_gdp_forecast, economy_cpi, economy_interest_rates
-            (macro inputs for revenue growth and WACC assumptions)
-        - ``currency-commodities``
-            commodity_short_term_energy_outlook, currency_price_historical
-            (FX / commodity cost assumptions for exposed companies)
+    The node runs the full modeling workflow regardless of
+    ``company_analysis.company_signal`` — forecasting data is valuable for
+    both long and short investment theses.
     """
-    raise NotImplementedError("forecasting_node not yet implemented")
+    configuration = Configuration.from_runnable_config(config)
+    agent = await create_forecasting_agent(configuration)
+
+    context = {
+        k: state[k]  # type: ignore[literal-required]
+        for k in ForecastingInputState.__annotations__
+        if state.get(k)  # type: ignore[union-attr]
+    }
+    result = await agent.ainvoke({"input": json.dumps(context)})
+
+    structured: ForecastOutput | None = (
+        result.get("structured_response") if isinstance(result, dict) else None
+    )
+    if structured is None:
+        return {
+            "forecast": {
+                "error": "Agent did not produce structured output",
+                "raw_output": (
+                    result.get("output", "")
+                    if isinstance(result, dict)
+                    else str(result)
+                ),
+            }
+        }
+
+    return {"forecast": structured.model_dump()}
