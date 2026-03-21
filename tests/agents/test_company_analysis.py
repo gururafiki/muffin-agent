@@ -4,6 +4,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from deepagents import CompiledSubAgent
 from pydantic import ValidationError
 
 from muffin_agent.agents.investment.company_analysis import (
@@ -86,11 +87,15 @@ _VALID_COMPANY_DICT = {
         "revenue": [260.2e9, 274.5e9, 365.8e9, 394.3e9, 383.3e9],
         "gross_profit": [98.4e9, 104.9e9, 152.8e9, 170.8e9, 169.1e9],
         "ebit": [63.9e9, 66.3e9, 108.9e9, 119.4e9, 114.3e9],
+        "ebitda": [76.5e9, 77.3e9, 120.6e9, 130.5e9, 125.8e9],
         "net_income": [55.3e9, 57.4e9, 94.7e9, 99.8e9, 97.0e9],
         "fcf": [58.9e9, 73.4e9, 93.0e9, 111.4e9, 104.3e9],
         "capex": [10.5e9, 7.3e9, 11.1e9, 10.7e9, 10.9e9],
         "total_debt": [108.0e9, 112.4e9, 124.7e9, 120.1e9, 111.1e9],
         "cash_and_equivalents": [100.6e9, 90.9e9, 63.9e9, 48.3e9, 61.6e9],
+        "working_capital": [57.1e9, 38.3e9, 9.4e9, -18.5e9, -2.0e9],
+        "total_assets": [338.5e9, 323.9e9, 351.0e9, 352.8e9, 352.6e9],
+        "shareholders_equity": [90.5e9, 65.3e9, 63.1e9, 50.7e9, 62.1e9],
         "currency": "USD",
         "quality_narrative": (
             "Revenue grew at a 10.1% CAGR 2019-2022, decelerating to -2.8% in FY2023 "
@@ -112,6 +117,7 @@ _VALID_COMPANY_DICT = {
         "identified; key watch items are China concentration and App Store "
         "regulatory exposure."
     ),
+    "confidence": 0.85,
     "data_sources": [
         {
             "subagent": "equity-fundamentals",
@@ -156,7 +162,7 @@ class TestPromptTemplate:
 
     def test_contains_workflow_steps(self):
         result = render_template("investment/company_analysis.jinja")
-        for step in ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]:
+        for step in ["Step 1", "Step 2", "Validate Data", "Step 4", "Step 5"]:
             assert step in result
 
     def test_contains_step_labels(self):
@@ -221,14 +227,14 @@ class TestPromptTemplate:
     def test_sandbox_mandatory_marker(self):
         result = render_template("investment/company_analysis.jinja")
         assert "MANDATORY" in result
-        assert "execute_python" in result
+        assert "compute_roic" in result
 
     def test_sandbox_computation_variables_named(self):
         result = render_template("investment/company_analysis.jinja")
-        assert "roic_pct" in result
+        assert "compute_altman_z_score" in result
         assert "fcf_conversion_pct" in result
         assert "net_debt_to_ebitda" in result
-        assert "revenue_cagr_3y_pct" in result
+        assert "compute_revenue_cagr" in result
         assert "interest_coverage" in result
         assert "peer_roic_premium_pp" in result
 
@@ -577,9 +583,13 @@ class TestCreateCompanyAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis.create_deep_agent"
@@ -629,9 +639,13 @@ class TestCreateCompanyAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis.create_deep_agent"
@@ -689,9 +703,13 @@ class TestCreateCompanyAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis.create_deep_agent"
@@ -743,9 +761,13 @@ class TestCreateCompanyAnalysisAgent:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".create_data_validation_agent",
+                ".build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis.create_deep_agent"

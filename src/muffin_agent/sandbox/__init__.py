@@ -14,21 +14,18 @@ Provides three integration points:
    instance is needed.
 
 3. **execute_python** — LangChain async tool that discovers the sandbox for
-   the current thread and executes Python code in it. If no sandbox exists,
-   creates one automatically.
+   the current thread and executes Python code in it. Used for ad-hoc
+   calculations not covered by the financial tools in :mod:`muffin_agent.tools`.
 
 Usage::
 
     from muffin_agent.sandbox import get_backend, execute_python
 
-    # Deep agent: sandbox discovered/created lazily per conversation
+    # Deep agent with sandbox
     agent = create_deep_agent(
-        model=llm, backend=get_backend, ...
-    )
-
-    # Subagent with execute_python tool
-    agent = create_agent(
-        model=llm, tools=[execute_python], ...
+        model=llm,
+        backend=get_backend,
+        ...
     )
 
 Limitations:

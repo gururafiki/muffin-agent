@@ -1,0 +1,14 @@
+### Validate Data
+
+Delegate to the `data-validation` subagent. In your task instruction include:
+- Criterion: "{{ criterion }}"
+- Analysis date: today
+- All data collected so far, organised by source subagent
+{%- if extra_context %}
+- {{ extra_context }}
+{%- endif %}
+
+Act on the validation result:
+- **proceed**: continue to the next step
+- **collect_more_data**: return to data collection targeting the specific gaps identified. You may iterate at most once.
+- **insufficient_data**: note limitations explicitly and proceed with available data, reducing confidence accordingly

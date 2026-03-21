@@ -114,7 +114,7 @@ Used in both `TickerAnalysisState` (per-ticker analysis) and `ScreeningState` (s
 
 ### Sector Analysis Agent
 
-A deep agent (Step 3 of the investment process) that assesses the attractiveness of a sector/industry: competitive structure (Porter's Five Forces), cycle position, thematic tailwinds/headwinds, sector-relative valuation, regulatory/legislative backdrop, and alpha opportunity (peer return dispersion). Uses a **sector-focused subset** of 5 subagents — etf-index, discovery-screening, news, regulatory-filings, and data-validation — built by a private `_build_sector_subagents()` helper.
+A deep agent (Step 3 of the investment process) that assesses the attractiveness of a sector/industry: competitive structure (Porter's Five Forces), cycle position, thematic tailwinds/headwinds, sector-relative valuation, regulatory/legislative backdrop, and alpha opportunity (peer return dispersion). Uses a **sector-focused subset** of 6 subagents — etf-index, discovery-screening, equity-estimates, news, regulatory-filings, and data-validation — built by a private `_build_sector_subagents()` helper. The equity-estimates subagent provides earnings revision breadth (% of peers with upward vs downward EPS revisions) as a leading cycle position indicator.
 
 Supports the same three context modes as the market regime agent via `SectorAnalysisInputState`:
 
@@ -135,17 +135,49 @@ Follows a 5-step workflow: **Parse Context → Collect Sector Data → Validate 
 | Thematic Drivers | Structured list of themes with `direction` (tailwind/headwind/neutral) and `time_horizon` |
 | Sector Valuation | P/E and EV/EBITDA vs. S&P 500 (sandbox-computed) → `expensive` \| `fairly_valued` \| `cheap` |
 | Regulatory Backdrop | `low` \| `moderate` \| `elevated` \| `high` + specific legislative/enforcement items |
-| Alpha Opportunity | `high` \| `moderate` \| `low` based on peer return dispersion (sandbox-computed std dev) |
+| Alpha Opportunity | `high` \| `moderate` \| `low` based on peer return dispersion (`compute_peer_dispersion` tool) |
 
-**Sandbox computations** (all mandatory): sector relative performance vs. S&P 500 (1M/3M/12M), sector P/E premium/discount vs. S&P 500, peer return dispersion (std dev of peer YTD returns).
+**Financial tools**: `compute_sector_relative_performance` (called 3× for 1M/3M/12M horizons), `compute_peer_dispersion` (peer return std dev). Sandbox remains for P/E premium/discount calculation.
 
-**Structured output** is enforced via `response_format=AutoStrategy(schema=SectorViewOutput)`. Output includes: `sector`, `industry`, `cycle_position`, `competitive_assessment`, `thematic_drivers`, `sector_valuation`, `regulatory_backdrop`, `peer_tickers`, `alpha_opportunity`, `alpha_rationale`, `sector_signal` (favorable/neutral/cautious), `sector_summary`, `data_sources`, `limitations`.
+**Structured output** is enforced via `response_format=AutoStrategy(schema=SectorViewOutput)`. Output includes: `sector`, `industry`, `cycle_position`, `competitive_assessment`, `thematic_drivers`, `sector_valuation`, `regulatory_backdrop`, `peer_tickers`, `alpha_opportunity`, `alpha_rationale`, `sector_signal` (favorable/neutral/cautious), `sector_summary`, `confidence`, `data_sources`, `limitations`.
 
 Runs in parallel with `market_regime_node` and `company_analysis_node` (Group 1). Also used as a shared context node in `ScreeningState` before the per-ticker fan-out.
 
+### Company Analysis Agent
+
+A deep agent (Steps 4–5 of the investment process) covering Business/Moat/Management/ESG Triage and Financial Quality Deep Dive. Uses a **company-focused subset** of 6 subagents — equity-fundamentals, equity-ownership, regulatory-filings, news, discovery-screening, and data-validation — built by a private `_build_company_analysis_subagents()` helper.
+
+Supports two context modes via `CompanyAnalysisInputState`:
+
+| Mode | Fields | Behaviour |
+|------|--------|-----------|
+| Ticker | `ticker` + `query` | Standard per-ticker company analysis |
+| Query-only | `query` | Thematic quality screen without a specific ticker |
+
+Follows a 5-step workflow: **Parse Context → Collect Data → Validate → Assess Company (4 dimensions) → Reflect**.
+
+**Four assessment dimensions:**
+
+| Dimension | Output |
+|-----------|--------|
+| Competitive Moat | `width` (wide/narrow/none/negative), `sources` list, `trend`, `confidence` with peer ROIC premium |
+| Management Quality & Capital Allocation | `track_record`, `capital_allocation_quality`, `insider_alignment`, `key_concerns` |
+| ESG & Governance Triage | `esg_signal` (green/amber/red), `esg_flags` list |
+| Financial Quality | `quality_signal` (high/adequate/low/distressed), `trend` based on margin evolution |
+
+**Financial tools** (all mandatory): `compute_roic`, `compute_fcf_conversion`, `compute_net_debt_to_ebitda`, `compute_interest_coverage`, `compute_altman_z_score` (financial distress indicator: >2.99 safe, 1.81–2.99 grey zone, <1.81 distress), `compute_revenue_cagr` (3Y), margin trends. Peer ROIC premium computed via sandbox.
+
+**Financial history**: Builds up to 10 years of parallel time-series arrays (revenue, gross profit, EBIT, EBITDA, net income, FCF, capex, total debt, cash, working capital, total assets, shareholders' equity) for downstream `forecasting_node` calibration.
+
+Issues a **triage gate signal** (`company_signal`: pass/watch/fail) that determines whether the idea advances to forecasting and valuation, and anchors scenario probability weights in the forecasting model.
+
+**Structured output** is enforced via `response_format=AutoStrategy(schema=CompanyAnalysisOutput)`. Output includes: `ticker`, `company_name`, `business_description`, `moat_assessment`, `management_quality`, `esg_flags`, `esg_signal`, `financial_quality`, `capital_allocation_summary`, `key_risks`, `financial_history`, `company_signal`, `quality_summary`, `confidence`, `data_sources`, `limitations`.
+
+Runs in parallel with `market_regime_node` and `sector_analysis_node` (Group 1). Its output is the primary input for `forecasting_node` and `risk_assessment_node` (Group 2).
+
 ### Forecasting Agent
 
-A deep agent (Step 6 of the investment process) that builds a 3-year forward financial model with bull, base, and bear scenarios anchored to analyst consensus. Uses a **forecasting-focused subset** of 4 subagents — equity-estimates, equity-fundamentals, economy-macro, currency-commodities, and data-validation — built by a private `_build_forecasting_subagents()` helper.
+A deep agent (Step 6 of the investment process) that builds a 3-year forward **three-statement financial model** (income statement, cash flow, and balance sheet) with bull, base, and bear scenarios anchored to analyst consensus. Uses a **forecasting-focused subset** of 4 subagents — equity-estimates, equity-fundamentals, economy-macro, currency-commodities, and data-validation — built by a private `_build_forecasting_subagents()` helper.
 
 Supports three context modes via `ForecastingInputState`:
 
@@ -157,7 +189,7 @@ Supports three context modes via `ForecastingInputState`:
 
 Follows a 5-step workflow: **Parse Context → Collect Data → Validate → Build Scenarios → Reflect**.
 
-**Sandbox computations** (all mandatory): historical calibration (revenue CAGR, EBITDA margin average, FCF conversion, capex intensity from `financial_history`), consensus revision momentum (3M delta), accruals ratio for earnings quality, scenario projection arithmetic for all three scenarios, and sensitivity table (±1pp revenue/margin impact on EPS and FCF).
+**Financial tools** (all mandatory): `project_three_year_financials` (3-year income statement, FCF, and balance sheet projection per scenario — called 3× in parallel for bull/base/bear), `compute_sensitivity` (±1pp revenue/margin impact on EPS and FCF), `compute_accruals_ratio` (earnings quality), `compute_revenue_cagr` (historical calibration). Sandbox (`execute`) remains for historical array processing, consensus revision momentum, and balance sheet tie validation.
 
 **Three scenarios with explicit probability anchors:**
 
@@ -167,7 +199,7 @@ Follows a 5-step workflow: **Parse Context → Collect Data → Validate → Bui
 | `watch` | 0.50 | 0.25 | 0.25 | Increased bear weight for watch-listed companies |
 | `fail` | 0.40 | 0.25 | 0.35 | Full analysis still runs; useful for short theses |
 
-**Structured output** is enforced via `response_format=AutoStrategy(schema=ForecastOutput)`. Output includes: `base_case`, `bull_case`, `bear_case` (each with `list[YearlyProjection]` for Y+1/+2/+3 covering revenue, EBITDA, EBIT, EPS, FCF), `consensus_anchoring` (consensus EPS/revenue/EBITDA, price targets, revision_trend_3m, surprise_history), `revision_momentum`, `sensitivity_table`, `earnings_quality_flags`, `modeling_notes`, `data_sources`, `limitations`. EPS is null if diluted share count is unavailable.
+**Structured output** is enforced via `response_format=AutoStrategy(schema=ForecastOutput)`. Output includes: `base_case`, `bull_case`, `bear_case` (each with `list[YearlyProjection]` for Y+1/+2/+3 covering revenue, EBITDA, EBIT, EPS, FCF, and balance sheet items: net_debt, total_debt, cash, working_capital, total_assets, shareholders_equity), `consensus_anchoring` (consensus EPS/revenue/EBITDA, price targets, revision_trend_3m, surprise_history), `revision_momentum`, `sensitivity_table`, `earnings_quality_flags`, `modeling_notes`, `confidence`, `data_sources`, `limitations`. EPS is null if diluted share count is unavailable. Scenario probability anchors are pre-computed from `company_signal` and injected as Jinja2 template variables.
 
 Runs in parallel with `risk_assessment_node` (Group 2). Its output is the primary input for `valuation_node` (Group 3).
 
@@ -226,7 +258,7 @@ For full OpenBB MCP documentation, see the [official docs](https://docs.openbb.c
 
 ### Step 3: Start OpenSandbox
 
-Muffin Agent uses [OpenSandbox](https://github.com/alibaba/OpenSandbox) to execute Python code in isolated containers — financial calculations (DCF, WACC), dataframe analysis, and technical indicator computation.
+Muffin Agent uses [OpenSandbox](https://github.com/alibaba/OpenSandbox) to execute Python code in isolated containers — ad-hoc calculations, dataframe analysis, and technical indicator computation. Standard financial calculations (ROIC, projections, sensitivity, etc.) run in-process as LangChain tools for faster execution and better observability.
 
 The OpenSandbox server manages container lifecycle. Start it with Docker:
 

@@ -1,6 +1,5 @@
 """Stage 3: Sector / Industry & Thematic View."""
 
-import json
 from typing import Any, Literal
 
 from deepagents import CompiledSubAgent, create_deep_agent
@@ -11,14 +10,21 @@ from typing_extensions import TypedDict
 
 from muffin_agent.agents.data_collection import (
     create_discovery_screening_data_collection_agent,
+    create_equity_estimates_data_collection_agent,
     create_etf_index_data_collection_agent,
     create_news_data_collection_agent,
     create_regulatory_filings_data_collection_agent,
 )
-from muffin_agent.agents.data_validation import create_data_validation_agent
+from muffin_agent.agents.investment.schemas import DataSource
+from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
 from muffin_agent.sandbox import get_backend
+from muffin_agent.tools.sector import (
+    compute_peer_dispersion,
+    compute_sector_relative_performance,
+)
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -139,14 +145,6 @@ class RegulatoryBackdrop(BaseModel):
     """1-2 sentences on the net regulatory direction and its timing."""
 
 
-class DataSource(BaseModel):
-    """Record of data collected from one subagent."""
-
-    subagent: str
-    data_retrieved: str
-    period: str
-
-
 class SectorViewOutput(BaseModel):
     """Structured output produced by the sector analysis deep agent."""
 
@@ -181,6 +179,12 @@ class SectorViewOutput(BaseModel):
     """3-4 sentence narrative covering cycle stage, competitive dynamics, thematic
     backdrop, and alpha outlook."""
 
+    confidence: float = Field(ge=0.0, le=1.0)
+    """Overall assessment confidence 0.0–1.0.
+
+    Start at 1.0; reduce by ~0.15 per missing primary subagent result,
+    ~0.10 per major data gap within a source."""
+
     data_sources: list[DataSource] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     """Data gaps or uncertainties that reduce confidence in the assessment."""
@@ -201,11 +205,12 @@ async def _build_sector_subagents(config: Configuration) -> list[CompiledSubAgen
     discovery_screening_agent = await create_discovery_screening_data_collection_agent(
         config
     )
+    estimates_agent = await create_equity_estimates_data_collection_agent(config)
     news_agent = await create_news_data_collection_agent(config)
     regulatory_filings_agent = await create_regulatory_filings_data_collection_agent(
         config
     )
-    validation_agent = await create_data_validation_agent(config)
+    validation_subagent = await build_validation_subagent(config)
 
     return [
         CompiledSubAgent(
@@ -233,6 +238,17 @@ async def _build_sector_subagents(config: Configuration) -> list[CompiledSubAgen
             runnable=discovery_screening_agent,
         ),
         CompiledSubAgent(
+            name="equity-estimates",
+            description=(
+                "Retrieves analyst estimates data for sector cycle assessment: "
+                "consensus EPS/revenue estimates and revision history for key "
+                "sector peers. Use `equity_estimates_historical` to compute "
+                "earnings revision breadth (% of companies with upward vs "
+                "downward revisions) as a leading cycle position indicator."
+            ),
+            runnable=estimates_agent,
+        ),
+        CompiledSubAgent(
             name="news",
             description=(
                 "Retrieves news and sentiment data: `news_world` for sector-level "
@@ -254,19 +270,7 @@ async def _build_sector_subagents(config: Configuration) -> list[CompiledSubAgen
             ),
             runnable=regulatory_filings_agent,
         ),
-        CompiledSubAgent(
-            name="data-validation",
-            description=(
-                "Validates collected data against a criterion. Checks "
-                "sufficiency, relevance, temporal validity, and consistency. "
-                "Returns per-dimension scores (0-1), overall confidence/"
-                "relevance scores, identified gaps, and a recommendation "
-                "(proceed/collect_more_data/insufficient_data). Use after "
-                "data collection, before analysis. Pass the criterion, "
-                "analysis date, and all collected data in the task instruction."
-            ),
-            runnable=validation_agent,
-        ),
+        validation_subagent,
     ]
 
 
@@ -300,6 +304,10 @@ async def create_sector_analysis_agent(config: Configuration):
         model=llm,
         system_prompt=prompt,
         subagents=subagents,
+        tools=[
+            compute_sector_relative_performance,
+            compute_peer_dispersion,
+        ],
         backend=get_backend,
         response_format=AutoStrategy(schema=SectorViewOutput),
     )
@@ -338,30 +346,11 @@ async def sector_analysis_node(
         ``{"sector": "unknown", "error": ..., "raw_output": ...}`` if the
         agent fails to return structured output.
     """
-    configuration = Configuration.from_runnable_config(config)
-    agent = await create_sector_analysis_agent(configuration)
-
-    context = {
-        k: state[k]  # type: ignore[literal-required]
-        for k in SectorAnalysisInputState.__annotations__
-        if state.get(k)  # type: ignore[union-attr]
-    }
-    result = await agent.ainvoke({"input": json.dumps(context)})
-
-    structured: SectorViewOutput | None = (
-        result.get("structured_response") if isinstance(result, dict) else None
+    return await run_deep_agent_node(
+        state=state,
+        config=config,
+        agent_factory=create_sector_analysis_agent,
+        input_state_type=SectorAnalysisInputState,
+        state_key="sector_view",
+        error_fallback={"sector": "unknown"},
     )
-    if structured is None:
-        return {
-            "sector_view": {
-                "sector": "unknown",
-                "error": "Agent did not produce structured output",
-                "raw_output": (
-                    result.get("output", "")
-                    if isinstance(result, dict)
-                    else str(result)
-                ),
-            }
-        }
-
-    return {"sector_view": structured.model_dump()}

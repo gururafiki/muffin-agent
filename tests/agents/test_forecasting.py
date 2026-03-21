@@ -4,6 +4,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from deepagents import CompiledSubAgent
 from pydantic import ValidationError
 
 from muffin_agent.agents.investment.forecasting import (
@@ -215,6 +216,7 @@ _VALID_FORECAST_DICT = {
             "period": "FY2023-FY2025",
         },
     ],
+    "confidence": 0.90,
     "limitations": [],
 }
 
@@ -243,7 +245,7 @@ class TestPromptTemplate:
 
     def test_contains_workflow_steps(self):
         result = render_template("investment/forecasting.jinja")
-        for step in ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]:
+        for step in ["Step 1", "Step 2", "Validate Data", "Step 4", "Step 5"]:
             assert step in result
 
     def test_contains_step_labels(self):
@@ -286,7 +288,7 @@ class TestPromptTemplate:
     def test_sandbox_mandatory_marker(self):
         result = render_template("investment/forecasting.jinja")
         assert "MANDATORY" in result
-        assert "execute_python" in result
+        assert "project_three_year_financials" in result
 
     def test_sandbox_block_labels_present(self):
         result = render_template("investment/forecasting.jinja")
@@ -661,10 +663,13 @@ class TestCreateForecastingAgent:
                 return_value=MagicMock(),
             ),
             patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".create_data_validation_agent",
+                "muffin_agent.agents.investment.forecasting.build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting.create_deep_agent"
@@ -707,10 +712,13 @@ class TestCreateForecastingAgent:
                 return_value=MagicMock(),
             ),
             patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".create_data_validation_agent",
+                "muffin_agent.agents.investment.forecasting.build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting.create_deep_agent"
@@ -760,10 +768,13 @@ class TestCreateForecastingAgent:
                 return_value=MagicMock(),
             ),
             patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".create_data_validation_agent",
+                "muffin_agent.agents.investment.forecasting.build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting.create_deep_agent"
@@ -808,10 +819,13 @@ class TestCreateForecastingAgent:
                 return_value=MagicMock(),
             ),
             patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".create_data_validation_agent",
+                "muffin_agent.agents.investment.forecasting.build_validation_subagent",
                 new_callable=AsyncMock,
-                return_value=MagicMock(),
+                return_value=CompiledSubAgent(
+                    name="data-validation",
+                    description="mock validation",
+                    runnable=MagicMock(),
+                ),
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting.create_deep_agent"
