@@ -36,7 +36,7 @@ MCP_TOOLS = [
 async def create_etf_index_data_collection_agent(config: Configuration):
     """Build the ETF and index data ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("etf_index.jinja")
+    prompt = render_template("data_collection/etf_index.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

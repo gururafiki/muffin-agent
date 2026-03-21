@@ -57,7 +57,7 @@ MCP_TOOLS = [
 async def create_economy_macro_data_collection_agent(config: Configuration):
     """Build the economy and macro ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("economy_macro.jinja")
+    prompt = render_template("data_collection/economy_macro.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

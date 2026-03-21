@@ -81,16 +81,16 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_template_renders(self):
-        result = render_template("etf_index.jinja")
+        result = render_template("data_collection/etf_index.jinja")
         assert "etf" in result.lower()
         assert len(result) > 100
 
     def test_template_contains_tool_names(self):
-        result = render_template("etf_index.jinja")
+        result = render_template("data_collection/etf_index.jinja")
         assert "etf_equity_exposure" in result
         assert "index_sp500_multiples" in result
         assert "etf_search" in result
 
     def test_template_contains_reverse_lookup_note(self):
-        result = render_template("etf_index.jinja")
+        result = render_template("data_collection/etf_index.jinja")
         assert "stock ticker" in result.lower()

@@ -42,7 +42,7 @@ MCP_TOOLS = [
 async def create_equity_fundamentals_data_collection_agent(config: Configuration):
     """Build the equity fundamentals ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("equity_fundamentals.jinja")
+    prompt = render_template("data_collection/equity_fundamentals.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

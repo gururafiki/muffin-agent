@@ -54,7 +54,7 @@ MCP_TOOLS = [
 async def create_{name}_data_collection_agent(config: Configuration):
     """Build the {name} ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("{name}.jinja")
+    prompt = render_template("data_collection/{name}.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,
@@ -72,7 +72,7 @@ async def create_{name}_data_collection_agent(config: Configuration):
 
 ---
 
-### Step 3 — Create `src/muffin_agent/prompts/{name}.jinja`
+### Step 3 — Create `src/muffin_agent/prompts/data_collection/{name}.jinja`
 
 Write a plain-text system prompt (no Jinja2 variables needed). Structure:
 
@@ -282,7 +282,7 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_{name}_template_renders(self):
-        result = render_template("{name}.jinja")
+        result = render_template("data_collection/{name}.jinja")
         assert "{name}" in result.lower()
         assert len(result) > 100
 ```

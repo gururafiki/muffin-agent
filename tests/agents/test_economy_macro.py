@@ -87,6 +87,6 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_economy_macro_template_renders(self):
-        result = render_template("economy_macro.jinja")
+        result = render_template("data_collection/economy_macro.jinja")
         assert "economy" in result.lower()
         assert len(result) > 100

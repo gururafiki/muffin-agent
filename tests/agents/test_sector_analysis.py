@@ -117,11 +117,11 @@ class TestPromptTemplate:
     """Verify prompt renders and contains required structural elements."""
 
     def test_renders(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert len(result) > 200
 
     def test_contains_subagent_table(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         for name in [
             "etf-index",
             "discovery-screening",
@@ -132,12 +132,12 @@ class TestPromptTemplate:
             assert name in result
 
     def test_contains_workflow_steps(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         for step in ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]:
             assert step in result
 
     def test_contains_step_labels(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "Parse Context" in result
         assert "Collect" in result
         assert "Validate" in result
@@ -145,7 +145,7 @@ class TestPromptTemplate:
         assert "Reflect" in result
 
     def test_contains_five_forces(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "rivalry" in result.lower()
         assert "barriers" in result.lower()
         assert "supplier" in result.lower()
@@ -153,7 +153,7 @@ class TestPromptTemplate:
         assert "substitute" in result.lower()
 
     def test_contains_cycle_position_labels(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "early_expansion" in result
         assert "mid_expansion" in result
         assert "late_cycle" in result
@@ -161,17 +161,17 @@ class TestPromptTemplate:
         assert "recovery" in result
 
     def test_contains_sector_signal_labels(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "favorable" in result
         assert "cautious" in result
 
     def test_contains_alpha_opportunity_labels(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "alpha_opportunity" in result
         assert "dispersion" in result.lower()
 
     def test_contains_output_schema_keys(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         for field in [
             "sector_signal",
             "sector_summary",
@@ -183,37 +183,37 @@ class TestPromptTemplate:
             assert field in result
 
     def test_grounding_constraint_present(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "NEVER" in result
 
     def test_sandbox_mandatory_marker(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "MANDATORY" in result
         assert "execute_python" in result
 
     def test_sandbox_computations_named(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "sector_1m_rel_pct" in result
         assert "pe_vs_sp500_pct" in result
         assert "peer_dispersion_pct" in result
 
     def test_reflection_step_present(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "consistency" in result.lower() or "reflect" in result.lower()
 
     def test_validation_loop_present(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "data-validation" in result
         assert "proceed" in result
         assert "collect_more_data" in result
         assert "insufficient_data" in result
 
     def test_structured_output_tool_instruction(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "structured output tool" in result
 
     def test_no_fabrication_clause(self):
-        result = render_template("sector_analysis.jinja")
+        result = render_template("investment/sector_analysis.jinja")
         assert "fabricate" in result.lower() or "fabricat" in result.lower()
 
 

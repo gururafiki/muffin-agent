@@ -23,7 +23,7 @@ MCP_TOOLS = [
 async def create_fama_french_data_collection_agent(config: Configuration):
     """Build the Fama-French factor data ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("fama_french.jinja")
+    prompt = render_template("data_collection/fama_french.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,

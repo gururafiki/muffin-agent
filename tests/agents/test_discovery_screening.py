@@ -79,16 +79,16 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_template_renders(self):
-        result = render_template("discovery_screening.jinja")
+        result = render_template("data_collection/discovery_screening.jinja")
         assert "discovery" in result.lower() or "screening" in result.lower()
         assert len(result) > 100
 
     def test_template_contains_tool_names(self):
-        result = render_template("discovery_screening.jinja")
+        result = render_template("data_collection/discovery_screening.jinja")
         assert "equity_screener" in result
         assert "equity_compare_peers" in result
         assert "equity_profile" in result
 
     def test_template_notes_symbol_required_tools(self):
-        result = render_template("discovery_screening.jinja")
+        result = render_template("data_collection/discovery_screening.jinja")
         assert "ticker" in result.lower()

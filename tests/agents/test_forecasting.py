@@ -227,11 +227,11 @@ class TestPromptTemplate:
     """Verify prompt renders and contains required structural elements."""
 
     def test_renders(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert len(result) > 200
 
     def test_contains_all_subagent_names(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         for name in [
             "equity-estimates",
             "equity-fundamentals",
@@ -242,32 +242,32 @@ class TestPromptTemplate:
             assert name in result
 
     def test_contains_workflow_steps(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         for step in ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]:
             assert step in result
 
     def test_contains_step_labels(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "Parse Context" in result
         assert "Collect" in result
         assert "Validate" in result
         assert "Reflect" in result
 
     def test_contains_scenario_labels(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "base" in result.lower()
         assert "bull" in result.lower()
         assert "bear" in result.lower()
 
     def test_contains_probability_anchors(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "company_signal" in result
         assert "0.60" in result or "60" in result
         assert "0.25" in result or "25" in result
         assert "0.15" in result or "15" in result
 
     def test_contains_key_output_fields(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         for field in [
             "base_case",
             "bull_case",
@@ -280,16 +280,16 @@ class TestPromptTemplate:
             assert field in result
 
     def test_grounding_constraint_present(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "NEVER" in result
 
     def test_sandbox_mandatory_marker(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "MANDATORY" in result
         assert "execute_python" in result
 
     def test_sandbox_block_labels_present(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "Block A" in result
         assert "Block B" in result
         assert "Block C" in result
@@ -297,35 +297,35 @@ class TestPromptTemplate:
         assert "Block E" in result
 
     def test_consensus_calibration_instruction_present(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "15%" in result or "±15%" in result
 
     def test_reflection_step_present(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "consistency" in result.lower() or "reflect" in result.lower()
 
     def test_validation_loop_present(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "data-validation" in result
         assert "proceed" in result
         assert "collect_more_data" in result
         assert "insufficient_data" in result
 
     def test_structured_output_tool_instruction(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "structured output tool" in result
 
     def test_no_fabrication_clause(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "fabricate" in result.lower() or "NEVER estimate" in result
 
     def test_eps_null_handling_mentioned(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         # Guidance that eps may be null if shares unavailable
         assert "null" in result.lower() or "None" in result
 
     def test_revision_momentum_formula_present(self):
-        result = render_template("forecasting.jinja")
+        result = render_template("investment/forecasting.jinja")
         assert "revision" in result.lower()
         assert "upward" in result
         assert "downward" in result

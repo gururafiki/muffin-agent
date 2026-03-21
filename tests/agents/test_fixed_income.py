@@ -87,6 +87,6 @@ class TestPromptTemplate:
     """Test prompt template rendering."""
 
     def test_fixed_income_template_renders(self):
-        result = render_template("fixed_income.jinja")
+        result = render_template("data_collection/fixed_income.jinja")
         assert "fixed" in result.lower()
         assert len(result) > 100

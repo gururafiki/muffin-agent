@@ -27,7 +27,7 @@ MCP_TOOLS = [
 async def create_equity_ownership_data_collection_agent(config: Configuration):
     """Build the equity ownership & short interest ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    prompt = render_template("equity_ownership.jinja")
+    prompt = render_template("data_collection/equity_ownership.jinja")
     llm = config.get_llm()
     return create_agent(
         model=llm,
