@@ -1,6 +1,5 @@
 """Shared utilities for data collection agents."""
 
-import json
 import operator
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, NotRequired
@@ -13,6 +12,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.types import Command
 
 from ...config import Configuration
+from ..middleware import cache_key
 
 # Error substrings that indicate permanent failures (no point retrying).
 PERMANENT_ERROR_PATTERNS = (
@@ -35,9 +35,12 @@ def _is_permanent_error(error_msg: str) -> bool:
 
 
 def _cache_key(tool_call: dict) -> str:
-    """Create a hashable key from tool name and sorted args."""
-    args_json = json.dumps(tool_call.get("args", {}), sort_keys=True)
-    return f"{tool_call['name']}:{args_json}"
+    """Create a hashable key from tool name and sorted args.
+
+    .. deprecated::
+        Use :func:`muffin_agent.agents.middleware.cache_key` instead.
+    """
+    return cache_key(tool_call)
 
 
 class ToolErrorState(AgentState):

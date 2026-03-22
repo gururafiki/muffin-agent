@@ -8,6 +8,7 @@ from langchain.agents import create_agent
 
 from ...config import Configuration
 from ...prompts import render_template
+from ..middleware import ToolResultCacheMiddleware
 from .utils import ToolErrorHandler, get_tools
 
 MCP_TOOLS = [
@@ -34,5 +35,5 @@ async def create_currency_commodities_data_collection_agent(
         model=llm,
         tools=tools,
         system_prompt=prompt,
-        middleware=[ToolErrorHandler()],
+        middleware=[ToolErrorHandler(), ToolResultCacheMiddleware()],
     )

@@ -9,6 +9,7 @@ from langchain.agents import create_agent
 from ...config import Configuration
 from ...prompts import render_template
 from ...sandbox.tools import execute_python
+from ..middleware import ToolResultCacheMiddleware
 from .utils import ToolErrorHandler, get_tools
 
 MCP_TOOLS = [
@@ -29,5 +30,5 @@ async def create_equity_price_data_collection_agent(config: Configuration):
         model=llm,
         tools=tools,
         system_prompt=prompt,
-        middleware=[ToolErrorHandler()],
+        middleware=[ToolErrorHandler(), ToolResultCacheMiddleware()],
     )

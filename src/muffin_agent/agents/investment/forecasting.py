@@ -16,6 +16,7 @@ from muffin_agent.agents.data_collection import (
 )
 from muffin_agent.agents.investment.schemas import DataSource
 from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.middleware import ToolResultCacheMiddleware
 from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
@@ -421,6 +422,16 @@ async def create_forecasting_agent(
             compute_sensitivity,
             compute_accruals_ratio,
             compute_revenue_cagr,
+        ],
+        middleware=[
+            ToolResultCacheMiddleware(
+                cacheable_tools=frozenset({
+                    "project_three_year_financials",
+                    "compute_sensitivity",
+                    "compute_accruals_ratio",
+                    "compute_revenue_cagr",
+                })
+            ),
         ],
         backend=get_backend,
         response_format=AutoStrategy(schema=ForecastOutput),

@@ -17,6 +17,7 @@ from muffin_agent.agents.data_collection import (
 )
 from muffin_agent.agents.investment.schemas import DataSource
 from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.middleware import ToolResultCacheMiddleware
 from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
@@ -410,6 +411,18 @@ async def create_company_analysis_agent(config: Configuration):
             compute_interest_coverage,
             compute_revenue_cagr,
             compute_altman_z_score,
+        ],
+        middleware=[
+            ToolResultCacheMiddleware(
+                cacheable_tools=frozenset({
+                    "compute_roic",
+                    "compute_fcf_conversion",
+                    "compute_net_debt_to_ebitda",
+                    "compute_interest_coverage",
+                    "compute_revenue_cagr",
+                    "compute_altman_z_score",
+                })
+            ),
         ],
         backend=get_backend,
         response_format=AutoStrategy(schema=CompanyAnalysisOutput),
