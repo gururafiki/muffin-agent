@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from muffin_cli.output import StreamPrinter
 
@@ -653,6 +654,18 @@ def evaluate(
     asyncio.run(_stream_evaluate(ticker, query))
 
 
+def _get_checkpointer() -> BaseCheckpointSaver:
+    """Create a SQLite checkpointer backed by ``~/.muffin/checkpoints.db``."""
+    import sqlite3
+    from pathlib import Path
+
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
+    db_path = Path.home() / ".muffin" / "checkpoints.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return SqliteSaver(sqlite3.connect(str(db_path)))
+
+
 async def _run_analyze(ticker: str, query: str | None) -> None:
     """Run the full analysis pipeline for a single ticker and print final thesis."""
     import json
@@ -663,7 +676,7 @@ async def _run_analyze(ticker: str, query: str | None) -> None:
     from muffin_agent.utils.observability import setup_tracing
 
     callbacks = setup_tracing(session_id=ticker)
-    graph = build_investment_analysis_graph()
+    graph = build_investment_analysis_graph(checkpointer=_get_checkpointer())
 
     mandate = query or f"Produce a complete investment analysis for {ticker}"
 
@@ -710,7 +723,7 @@ async def _run_screen(query: str, max_tickers: int) -> None:
 
     session_id = f"screen-{query[:40].replace(' ', '-')}"
     callbacks = setup_tracing(session_id=session_id)
-    graph = build_equity_screening_graph()
+    graph = build_equity_screening_graph(checkpointer=_get_checkpointer())
 
     result = await graph.ainvoke(
         {"query": query, "tickers": [], "theses": []},

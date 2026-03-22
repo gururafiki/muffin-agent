@@ -25,7 +25,9 @@ LangGraph fires a node only when all its incoming edges have data, so barrier
 synchronisation is implicit — no extra code required.
 """
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from muffin_agent.agents.investment import (
     company_analysis_node,
@@ -39,7 +41,9 @@ from muffin_agent.agents.investment import (
 from muffin_agent.agents.investment.state import TickerAnalysisState
 
 
-def build_investment_analysis_graph() -> StateGraph:
+def build_investment_analysis_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> CompiledStateGraph:
     """Build and compile the per-ticker investment analysis graph."""
     graph: StateGraph = StateGraph(TickerAnalysisState)
 
@@ -76,4 +80,4 @@ def build_investment_analysis_graph() -> StateGraph:
     graph.add_edge("valuation", "thesis_synthesis")
     graph.add_edge("thesis_synthesis", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
