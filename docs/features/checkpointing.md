@@ -71,6 +71,7 @@ async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as saver:
 |------|--------|
 | `src/muffin_agent/agents/investment_analysis.py` | `checkpointer` param on `build_investment_analysis_graph()` |
 | `src/muffin_agent/agents/equity_screening.py` | `checkpointer` param on `build_equity_screening_graph()` |
+| `src/muffin_cli/main.py` | Wire `SqliteSaver` in `_run_analyze` and `_run_screen` |
 | `tests/agents/test_investment_utils.py` | Tests for graph compilation with and without checkpointer |
 
 ## Configuration
@@ -92,8 +93,21 @@ Tests verify:
 - Graph compiles successfully with `InMemorySaver()`
 - Existing tests pass unchanged (backward compatible)
 
+## CLI Integration
+
+Both `muffin analyze` and `muffin screen` commands wire up a `SqliteSaver` checkpointer backed by `~/.muffin/checkpoints.db`. State is persisted to disk across runs automatically.
+
+```python
+# What the CLI does internally:
+from langgraph.checkpoint.sqlite import SqliteSaver
+
+db_path = Path.home() / ".muffin" / "checkpoints.db"
+checkpointer = SqliteSaver(sqlite3.connect(str(db_path)))
+graph = build_investment_analysis_graph(checkpointer=checkpointer)
+```
+
 ## Limitations & Future Work
 
-- **No automatic resume in CLI**: The CLI entrypoint does not yet wire up a checkpointer or detect incomplete runs. This is infrastructure only — the CLI integration is a future task.
+- **No automatic resume in CLI**: The CLI persists state but does not yet detect incomplete runs or offer a `--resume` flag. Users must manually invoke with `None` input to resume from a checkpoint.
 - **In-memory only tested**: SQLite and Postgres checkpointers are not tested in the unit test suite (would require database fixtures).
 - **No subgraph checkpointing**: Inner per-ticker subgraphs in the screening graph do not checkpoint individually. A failure mid-ticker requires re-running that ticker from scratch (though outer state is preserved).

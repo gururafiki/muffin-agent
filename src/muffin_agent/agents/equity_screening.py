@@ -41,7 +41,9 @@ fires only when both complete.  Shared context is injected into each
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
 from muffin_agent.agents.investment import (
@@ -88,7 +90,9 @@ async def _analyze_ticker(
     return {"theses": [result.get("thesis", {})]}
 
 
-def build_equity_screening_graph() -> StateGraph:
+def build_equity_screening_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> CompiledStateGraph:
     """Build and compile the equity screening graph."""
     graph: StateGraph = StateGraph(ScreeningState)
 
@@ -108,4 +112,4 @@ def build_equity_screening_graph() -> StateGraph:
     graph.add_edge("analyze_ticker", "comparison")
     graph.add_edge("comparison", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
