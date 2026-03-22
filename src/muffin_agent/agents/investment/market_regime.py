@@ -1,8 +1,11 @@
 """Stage 2: Market Regime & Top-Down Context."""
 
+from pathlib import Path
 from typing import Any, Literal
 
 from deepagents import CompiledSubAgent, create_deep_agent
+from deepagents.backends.composite import CompositeBackend
+from deepagents.backends.filesystem import FilesystemBackend
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
@@ -28,6 +31,9 @@ from muffin_agent.tools.macro import (
     compute_yield_curve_metrics,
 )
 from muffin_agent.tools.sector import compute_sector_relative_performance
+
+_SKILLS_ROOT = Path(__file__).resolve().parent.parent.parent / "skills"
+"""Absolute path to ``src/muffin_agent/skills/``."""
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -273,6 +279,16 @@ async def create_market_regime_agent(config: Configuration):
     prompt = render_template("investment/market_regime.jinja")
     llm = config.get_llm()
 
+    def _composite_backend(runtime):
+        sandbox = get_backend(runtime)
+        skills_fs = FilesystemBackend(
+            root_dir=_SKILLS_ROOT, virtual_mode=True
+        )
+        return CompositeBackend(
+            default=sandbox,
+            routes={"/skills/": skills_fs},
+        )
+
     return create_deep_agent(
         model=llm,
         system_prompt=prompt,
@@ -293,7 +309,8 @@ async def create_market_regime_agent(config: Configuration):
                 })
             ),
         ],
-        backend=get_backend,
+        skills=["/skills/investment/market-regime/"],
+        backend=_composite_backend,
         response_format=AutoStrategy(schema=MarketRegimeOutput),
     )
 

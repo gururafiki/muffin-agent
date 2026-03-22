@@ -163,14 +163,11 @@ class TestPromptTemplate:
         assert "Internal consistency" in result
         assert "Factor consistency" in result
 
-    def test_template_contains_factor_guidance(self):
+    def test_template_references_skills(self):
         result = render_template("investment/market_regime.jinja")
-        assert "tailwind" in result
-        assert "headwind" in result
-        assert "Value" in result
-        assert "Quality" in result
-        assert "Momentum" in result
-        assert "Size" in result
+        assert "yield-curve-analysis" in result
+        assert "factor-regime" in result
+        assert "regime-synthesis" in result
 
     def test_template_sandbox_is_mandatory(self):
         result = render_template("investment/market_regime.jinja")
@@ -186,10 +183,10 @@ class TestPromptTemplate:
         assert "ig_oas_pctile" in result
         assert "copper_mom_pct" in result
 
-    def test_template_contains_adverse_regime_guidance(self):
-        result = render_template("investment/market_regime.jinja")
-        assert "adverse regime" in result.lower()
-        assert "idiosyncratic alpha" in result
+    def test_template_is_shorter_than_full(self):
+        trimmed = render_template("investment/market_regime.jinja")
+        full = render_template("investment/market_regime_full.jinja")
+        assert len(trimmed) < len(full)
 
     def test_template_contains_investment_process_framing(self):
         result = render_template("investment/market_regime.jinja")
@@ -524,8 +521,8 @@ class TestCreateMarketRegimeAgent:
             assert response_format.schema is MarketRegimeOutput
 
     @pytest.mark.asyncio
-    async def test_uses_backend(self):
-        """Verify that get_backend is passed as sandbox backend."""
+    async def test_uses_composite_backend_with_skills(self):
+        """Verify composite backend and skills path are passed."""
         config = MagicMock()
         config.get_llm.return_value = MagicMock()
 
@@ -573,9 +570,6 @@ class TestCreateMarketRegimeAgent:
             patch(
                 "muffin_agent.agents.investment.market_regime.create_deep_agent"
             ) as mock_create,
-            patch(
-                "muffin_agent.agents.investment.market_regime.get_backend"
-            ) as mock_backend,
         ):
             mock_create.return_value = MagicMock()
 
@@ -586,7 +580,12 @@ class TestCreateMarketRegimeAgent:
             await create_market_regime_agent(config)
 
             call_kwargs = mock_create.call_args
-            assert call_kwargs.kwargs["backend"] is mock_backend
+            # Backend is now a composite factory (callable), not get_backend directly
+            assert callable(call_kwargs.kwargs["backend"])
+            # Skills path is passed
+            assert call_kwargs.kwargs["skills"] == [
+                "/skills/investment/market-regime/"
+            ]
 
 
 # ── market_regime_node tests ───────────────────────────────────────────────────

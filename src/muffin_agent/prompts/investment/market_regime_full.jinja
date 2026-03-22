@@ -135,20 +135,68 @@ scoring each dimension:
 
 Classify each of the 4 dimensions using ONLY validated data. For each dimension, follow Chain-of-Thought reasoning: list the relevant data points, state the scale anchors, then assign the label and score.
 
-**Before scoring**, read the following skills for detailed rubrics:
-1. **yield-curve-analysis** — interpretation tables for yield curve shape, slope, credit spreads, real yields, and policy rate distance
-2. **factor-regime** — Z-score thresholds and factor tilt logic (value, quality, momentum, size)
-3. **regime-synthesis** — scoring anchors for all 4 dimensions, regime label construction, and positioning guidance
+#### Dimension 1: Growth / Activity Cycle
 
-Score these 4 dimensions:
-- **Growth / Activity Cycle** — labels: `expanding` | `slowing` | `contracting` | `recovering`; score 0.0 (contraction) to 1.0 (expansion)
-- **Inflation / Price Regime** — labels: `high_rising` | `elevated_stable` | `moderate` | `low_falling` | `deflationary`; score 0.0 (deflation) to 1.0 (severe inflation)
-- **Monetary Policy Stance** — labels: `aggressively_tightening` | `tightening` | `neutral` | `easing` | `aggressively_easing`; score 0.0 (easing) to 1.0 (tightening)
-- **Liquidity / Risk Appetite** — labels: `risk_on` | `cautiously_risk_on` | `neutral` | `risk_off` | `crisis`; score 0.0 (crisis) to 1.0 (risk-on)
+**Score scale**: 1.0 = strong expansion (GDP >3% annualised, PMI >55, CLI rising) → 0.5 = neutral/stalling → 0.0 = deep contraction (GDP <-2%, PMI <45, CLI falling sharply)
 
-After scoring, synthesise a regime label, factor tilts, and positioning guidance per the regime-synthesis skill.
+**Labels** (choose one): `expanding` | `slowing` | `contracting` | `recovering`
 
-If a ticker was provided in the task, assess its regime sensitivity (favorable / neutral / adverse) with specific risks and tailwinds.
+Key indicators: real GDP QoQ annualised, CLI trend, PMI level, unemployment rate direction, payrolls trend
+
+#### Dimension 2: Inflation / Price Regime
+
+**Score scale**: 1.0 = severe inflation (CPI >8% YoY, accelerating) → 0.5 = moderate/on-target (~2-3%) → 0.0 = deflation (<0%)
+
+**Labels** (choose one): `high_rising` | `elevated_stable` | `moderate` | `low_falling` | `deflationary`
+
+Key indicators: headline CPI YoY, core CPI YoY, PCE trend, TIPS breakevens, oil/commodity prices
+
+#### Dimension 3: Monetary Policy Stance
+
+**Score scale**: 1.0 = aggressively tightening (hiking >100bps, QT in progress) → 0.5 = neutral (on hold) → 0.0 = aggressively easing (cutting >100bps, QE active)
+
+**Labels** (choose one): `aggressively_tightening` | `tightening` | `neutral` | `easing` | `aggressively_easing`
+
+Key indicators: EFFR level and direction, FOMC tone (hawkish/dovish), yield curve slope (inverted = past tightening absorbed), balance sheet policy
+
+#### Dimension 4: Liquidity / Risk Appetite
+
+**Score scale**: 1.0 = extreme risk-on (credit spreads near cycle lows, strong equity rally, dollar weak) → 0.5 = neutral → 0.0 = crisis/risk-off (spreads blowing out, gold surging, dollar surging, equity rout)
+
+**Labels** (choose one): `risk_on` | `cautiously_risk_on` | `neutral` | `risk_off` | `crisis`
+
+Key indicators: VIX level and regime, IG/HY credit spreads level and trend, gold price direction, dollar trend, equity index multiple (expensive = risk-on), market Mkt-RF factor recent return
+
+#### Regime Synthesis
+
+After scoring all 4 dimensions, synthesise into:
+
+1. **Regime label**: A plain-English phrase combining the most salient dimensions. Examples:
+   - "Late-cycle expansion, hawkish Fed, credit spreads tightening" → `"Goldilocks late-cycle"`
+   - Growth slowing + inflation elevated + Fed on hold → `"Stagflationary slowdown"`
+   - Growth contracting + easing + risk-off → `"Recession / Fed pivot"`
+   - Use 3–6 words; avoid jargon the prompt already defines.
+
+2. **Factor tilts**: For each factor, assess tailwind / neutral / headwind based on the regime. Use Fama-French data to confirm or challenge your prior:
+   - **Value (HML)**: tends to be a tailwind in reflationary / value rotation regimes; headwind in growth/risk-off environments
+   - **Quality (RMW profitability)**: tends to be defensive, tailwind in risk-off / late-cycle; headwind when cyclicals rip
+   - **Momentum (MOM)**: follows trend; assess if current regime is momentum-friendly (trending markets) or choppy
+   - **Size (SMB)**: small caps outperform early-cycle / risk-on; underperform in risk-off / credit stress
+
+3. **Positioning guidance**: Translate regime into concrete, regime-calibrated guidance:
+   - **Beta range**: calibrate to regime severity — tighter in risk-off/late-cycle (e.g.,
+     0.6–0.8), wider in early-cycle risk-on (e.g., 0.9–1.2)
+   - **Gross/net exposure**: guidance relative to neutral. If regime is **adverse**
+     (liquidity = `risk_off` / `crisis`, OR growth = `contracting`), explicitly state:
+     *"Adverse regime — require idiosyncratic alpha justification before adding risk.
+     Recommended net exposure cap: [X]%, beta cap: [Y]."*
+   - **Sector tilts**: 1–2 favoured and 1–2 avoided sectors grounded in the regime label
+   - **Style tilts**: e.g., "quality over growth; value vs. growth neutral"
+
+4. **Ticker-specific impact** (only if ticker was provided in the task):
+   - Identify ticker's sector and style from etf-index data collected in Step 2
+   - Assess whether the current regime is a net tailwind, neutral, or headwind for THIS stock
+   - List 2–3 specific regime risks and 2–3 specific regime tailwinds for this ticker
 
 **Grounding constraint**: Every claim must reference a specific data point with a value and source. If you cannot cite data, flag it as unsupported.
 
