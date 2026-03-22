@@ -162,6 +162,7 @@
 - [ ] Agent self-improvement
 - [ ] Add an agent to analyze stock price gainers and reason why they have grown to incorporate this knowledge later
 - [x] For structure outputs explore response_format for agents — implemented in Market Regime Agent via `AutoStrategy(schema=MarketRegimeOutput)`
+- [ ] For cross-run memory - ask user to define it before run, so use defines style they need, depth of analysis, etc and later it's used for all interactions with agent
 
 ### Unbiasing agents
 - [ ] When defining data needs for criterion - agent shouldn't know about subagents available, to make sure that data needs are unbaiased
