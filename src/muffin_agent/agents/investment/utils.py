@@ -3,6 +3,7 @@
 import json
 import logging
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -12,6 +13,39 @@ from muffin_agent.agents.investment.validators import get_validator
 from muffin_agent.config import Configuration
 
 logger = logging.getLogger(__name__)
+
+_AGENTS_MD = Path(__file__).resolve().parent / "AGENTS.md"
+"""Path to the shared cross-run memory file for investment agents."""
+
+
+def load_agent_memory() -> str:
+    """Load cross-run memory from ``AGENTS.md``.
+
+    Returns the file contents, or an empty string if the file is missing
+    or contains only the seed template (no real observations yet).
+    """
+    try:
+        content = _AGENTS_MD.read_text()
+    except FileNotFoundError:
+        return ""
+
+    # Skip injection if the file has no real entries (only seed template)
+    for section in ("## Observations", "## Sector Trends", "## Model Calibration"):
+        idx = content.find(section)
+        if idx == -1:
+            continue
+        # Find the next section or end of file
+        next_section = content.find("\n## ", idx + len(section))
+        end = next_section if next_section != -1 else len(content)
+        block = content[idx + len(section) : end]
+        # Strip HTML comments and whitespace
+        stripped = block.replace("<!-- ", "").replace(" -->", "")
+        seed_prefixes = ("Append ", "Notes on ", "Format:")
+        for line in stripped.strip().splitlines():
+            line = line.strip()
+            if line and not any(line.startswith(p) for p in seed_prefixes):
+                return content  # Has real content
+    return ""
 
 # Transient errors that should propagate so LangGraph RetryPolicy can retry
 # the node. All other exceptions are caught and produce a fallback dict.

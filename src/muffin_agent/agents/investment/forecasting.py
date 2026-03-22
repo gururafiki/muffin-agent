@@ -15,7 +15,7 @@ from muffin_agent.agents.data_collection import (
     create_equity_fundamentals_data_collection_agent,
 )
 from muffin_agent.agents.investment.schemas import DataSource
-from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.investment.utils import load_agent_memory, run_deep_agent_node
 from muffin_agent.agents.middleware import ToolResultCacheMiddleware
 from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
@@ -410,6 +410,7 @@ async def create_forecasting_agent(
         bull_probability=bull_p,
         bear_probability=bear_p,
         company_signal=company_signal or "pass",
+        memory=load_agent_memory(),
     )
     llm = config.get_llm()
 

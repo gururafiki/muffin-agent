@@ -19,7 +19,7 @@ from muffin_agent.agents.data_collection import (
     create_fixed_income_data_collection_agent,
 )
 from muffin_agent.agents.investment.schemas import DataSource
-from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.investment.utils import load_agent_memory, run_deep_agent_node
 from muffin_agent.agents.middleware import ToolResultCacheMiddleware
 from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
@@ -276,7 +276,8 @@ async def create_market_regime_agent(config: Configuration):
     instead of free-form text.
     """
     subagents = await _build_macro_subagents(config)
-    prompt = render_template("investment/market_regime.jinja")
+    memory = load_agent_memory()
+    prompt = render_template("investment/market_regime.jinja", memory=memory)
     llm = config.get_llm()
 
     def _composite_backend(runtime):
