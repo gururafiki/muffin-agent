@@ -5,6 +5,7 @@ from typing import Any, Literal
 from deepagents import CompiledSubAgent, create_deep_agent
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
+from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -17,6 +18,7 @@ from muffin_agent.agents.data_collection import (
 )
 from muffin_agent.agents.investment.schemas import DataSource
 from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.middleware import ToolResultCacheMiddleware
 from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
@@ -277,7 +279,10 @@ async def _build_sector_subagents(config: Configuration) -> list[CompiledSubAgen
 # ── Agent factory ─────────────────────────────────────────────────────────────
 
 
-async def create_sector_analysis_agent(config: Configuration):
+async def create_sector_analysis_agent(
+    config: Configuration,
+    store: BaseStore | None = None,
+):
     """Build the sector analysis deep agent.
 
     Create a deep agent that identifies the sector/industry for a ticker (or
@@ -309,6 +314,15 @@ async def create_sector_analysis_agent(config: Configuration):
             compute_peer_dispersion,
         ],
         backend=get_backend,
+        store=store,
+        middleware=[
+            ToolResultCacheMiddleware(
+                cacheable_tools=frozenset({
+                    "compute_sector_relative_performance",
+                    "compute_peer_dispersion",
+                }),
+            ),
+        ],
         response_format=AutoStrategy(schema=SectorViewOutput),
     )
 
@@ -317,7 +331,10 @@ async def create_sector_analysis_agent(config: Configuration):
 
 
 async def sector_analysis_node(
-    state: SectorAnalysisInputState, config: RunnableConfig
+    state: SectorAnalysisInputState,
+    config: RunnableConfig,
+    *,
+    store: BaseStore | None = None,
 ) -> dict[str, Any]:
     """Stage 3: Sector / Industry & Thematic View.
 
@@ -353,4 +370,5 @@ async def sector_analysis_node(
         input_state_type=SectorAnalysisInputState,
         state_key="sector_view",
         error_fallback={"sector": "unknown"},
+        store=store,
     )

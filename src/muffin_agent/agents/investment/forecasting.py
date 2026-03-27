@@ -5,6 +5,7 @@ from typing import Any, Literal
 from deepagents import CompiledSubAgent, create_deep_agent
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
+from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -16,6 +17,7 @@ from muffin_agent.agents.data_collection import (
 )
 from muffin_agent.agents.investment.schemas import DataSource
 from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.middleware import ToolResultCacheMiddleware
 from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
@@ -385,6 +387,7 @@ _PROBABILITY_ANCHORS: dict[str, tuple[float, float, float]] = {
 async def create_forecasting_agent(
     config: Configuration,
     company_signal: str | None = None,
+    store: BaseStore | None = None,
 ):
     """Build the forecasting deep agent.
 
@@ -398,6 +401,7 @@ async def create_forecasting_agent(
         company_signal: Triage gate signal from company_analysis_node
             ('pass', 'watch', or 'fail').  Used to set scenario probability
             anchors in the prompt template.  Defaults to 'pass' if absent.
+        store: Shared ``BaseStore`` for cross-agent tool result caching.
     """
     subagents = await _build_forecasting_subagents(config)
     base_p, bull_p, bear_p = _PROBABILITY_ANCHORS.get(
@@ -423,6 +427,17 @@ async def create_forecasting_agent(
             compute_revenue_cagr,
         ],
         backend=get_backend,
+        store=store,
+        middleware=[
+            ToolResultCacheMiddleware(
+                cacheable_tools=frozenset({
+                    "project_three_year_financials",
+                    "compute_sensitivity",
+                    "compute_accruals_ratio",
+                    "compute_revenue_cagr",
+                }),
+            ),
+        ],
         response_format=AutoStrategy(schema=ForecastOutput),
     )
 
@@ -431,7 +446,10 @@ async def create_forecasting_agent(
 
 
 async def forecasting_node(
-    state: ForecastingInputState, config: RunnableConfig
+    state: ForecastingInputState,
+    config: RunnableConfig,
+    *,
+    store: BaseStore | None = None,
 ) -> dict[str, Any]:
     """Stage 6: Forecasting & Scenario Modeling.
 
@@ -453,8 +471,10 @@ async def forecasting_node(
         else None
     )
 
-    async def _factory(cfg: Configuration):  # noqa: E501
-        return await create_forecasting_agent(cfg, company_signal=company_signal)
+    async def _factory(cfg: Configuration, **_kw):
+        return await create_forecasting_agent(
+            cfg, company_signal=company_signal, store=store,
+        )
 
     return await run_deep_agent_node(
         state=state,
@@ -462,4 +482,5 @@ async def forecasting_node(
         agent_factory=_factory,
         input_state_type=ForecastingInputState,
         state_key="forecast",
+        store=store,
     )

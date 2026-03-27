@@ -1,7 +1,5 @@
 """Unit tests for macro tools (yield curve, factor Z-scores, VIX regime)."""
 
-import json
-
 import pytest
 
 from muffin_agent.tools.macro import (
@@ -37,9 +35,8 @@ class TestFactorZscoreTool:
                 "std_60m": 0.02,
             }
         )
-        parsed = json.loads(result)
-        assert parsed["factor_name"] == "HML"
-        assert parsed["z_score"] == pytest.approx(2.5)
+        assert result["factor_name"] == "HML"
+        assert result["z_score"] == pytest.approx(2.5)
 
     def test_zero_std(self):
         result = compute_factor_zscore.invoke(
@@ -50,8 +47,13 @@ class TestFactorZscoreTool:
                 "std_60m": 0.0,
             }
         )
-        parsed = json.loads(result)
-        assert parsed["z_score"] is None
+        assert result["z_score"] is None
+
+    def test_output_schema_in_extras(self):
+        schema = compute_factor_zscore.extras["output_schema"]
+        assert "properties" in schema
+        assert "factor_name" in schema["properties"]
+        assert "z_score" in schema["properties"]
 
 
 @pytest.mark.unit
@@ -66,16 +68,19 @@ class TestYieldCurveMetricsTool:
                 "effr": 5.25,
             }
         )
-        parsed = json.loads(result)
-        assert parsed["slope_10y2y_bps"] == pytest.approx(25.0)
-        assert parsed["slope_10y3m_bps"] == pytest.approx(-75.0)
-        assert parsed["real_yield_10y_bps"] == pytest.approx(195.0)
-        assert parsed["policy_rate_distance_bps"] == pytest.approx(275.0)
+        assert result["slope_10y2y_bps"] == pytest.approx(25.0)
+        assert result["slope_10y3m_bps"] == pytest.approx(-75.0)
+        assert result["real_yield_10y_bps"] == pytest.approx(195.0)
+        assert result["policy_rate_distance_bps"] == pytest.approx(275.0)
 
     def test_partial(self):
         result = compute_yield_curve_metrics.invoke(
             {"yield_10y": 4.25, "yield_2y": 4.0}
         )
-        parsed = json.loads(result)
-        assert parsed["slope_10y2y_bps"] == pytest.approx(25.0)
-        assert parsed["slope_10y3m_bps"] is None
+        assert result["slope_10y2y_bps"] == pytest.approx(25.0)
+        assert result["slope_10y3m_bps"] is None
+
+    def test_output_schema_in_extras(self):
+        schema = compute_yield_curve_metrics.extras["output_schema"]
+        assert "properties" in schema
+        assert "slope_10y2y_bps" in schema["properties"]

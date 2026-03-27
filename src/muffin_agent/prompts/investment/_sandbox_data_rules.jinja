@@ -1,0 +1,21 @@
+## Using Collected Data in Sandbox
+
+Your subagents cache MCP tool results to an in-memory store shared across all agents.
+
+1. **Discover available data**: Call `discover_cached_data` (no arguments) to get a JSON array
+   of all cached results with metadata: tool name, original arguments, timestamp, content size,
+   and store key. Use this before collecting data to avoid duplicate fetches.
+2. **Understand data structure**: Call `get_tool_output_schema` with a tool name
+   (e.g. "equity_price_historical") to get the JSON Schema describing the output format.
+   Works for both MCP tools and Python computation tools.
+3. **Write data to sandbox**: Call `write_tool_output_to_backend` with the `tool_name` and
+   `args_hash` from the discovery output to materialize cached data as a sandbox file.
+   The tool returns the file path for loading in code.
+4. **Load and process data** — reference the file path from step 3:
+   ```python
+   import json
+   with open("/data/cache/equity_price_historical/abc123.json") as f:
+       prices = json.load(f)
+   ```
+5. **Do NOT embed large datasets in tool arguments.** Always use the discover → write → load workflow.
+6. **Save computation results**: Write outputs to `/data/computed/{name}.json` for downstream agents.

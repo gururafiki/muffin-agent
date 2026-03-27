@@ -2,12 +2,37 @@
 
 from __future__ import annotations
 
-import json
+from typing import Any
 
 from langchain_core.tools import tool
+from pydantic import BaseModel
 
 
-@tool(parse_docstring=True)
+class YearlyProjection(BaseModel):
+    """Output schema for a single year in project_three_year_financials."""
+
+    year: int
+    revenue: float
+    revenue_growth_pct: float
+    ebitda: float
+    ebitda_margin_pct: float
+    ebit: float
+    ebit_margin_pct: float | None
+    eps: float | None
+    fcf: float
+    fcf_margin_pct: float | None
+    total_debt: float
+    cash: float
+    net_debt: float
+    working_capital: float
+    total_assets: float
+    shareholders_equity: float
+
+
+@tool(
+    parse_docstring=True,
+    extras={"output_schema": YearlyProjection.model_json_schema()},
+)
 def project_three_year_financials(
     baseline_revenue: float,
     base_year: int,
@@ -31,7 +56,7 @@ def project_three_year_financials(
     net_borrowing: float = 0.0,
     dividends: float = 0.0,
     buybacks: float = 0.0,
-) -> str:
+) -> list[dict[str, Any]]:
     """Project 3-year income statement, FCF, and balance sheet for one scenario.
 
     Call once per scenario (bull, base, bear).  All 3 calls can be issued
@@ -62,10 +87,10 @@ def project_three_year_financials(
         buybacks: Annual share repurchase spend.
 
     Returns:
-        JSON string: list of 3 yearly projections, each with income
-        statement (revenue, ebitda, ebit, eps, fcf, margins) and
-        balance sheet (total_debt, cash, net_debt, working_capital,
-        total_assets, shareholders_equity).
+        List of 3 yearly projections, each with income statement
+        (revenue, ebitda, ebit, eps, fcf, margins) and balance sheet
+        (total_debt, cash, net_debt, working_capital, total_assets,
+        shareholders_equity).
     """
     rev_growth_rates = [rev_growth_y1, rev_growth_y2, rev_growth_y3]
     ebitda_margins = [ebitda_margin_y1, ebitda_margin_y2, ebitda_margin_y3]
@@ -133,17 +158,28 @@ def project_three_year_financials(
             "shareholders_equity": equity,
         })
 
-    return json.dumps(projections)
+    return [YearlyProjection(**p).model_dump() for p in projections]
 
 
-@tool(parse_docstring=True)
+class SensitivityMetrics(BaseModel):
+    """Output schema for compute_sensitivity."""
+
+    delta_eps_per_rev_1pp: float | None
+    delta_eps_per_margin_1pp: float | None
+    delta_fcf_per_capex_10pct: float | None
+
+
+@tool(
+    parse_docstring=True,
+    extras={"output_schema": SensitivityMetrics.model_json_schema()},
+)
 def compute_sensitivity(
     baseline_revenue: float,
     ebit_margin: float,
     tax_rate: float,
     diluted_shares: float,
     capex: float,
-) -> str:
+) -> dict[str, float | None]:
     """Compute EPS and FCF sensitivity to assumption changes.
 
     Measure how much EPS changes per +1pp revenue growth, per +1pp
@@ -157,22 +193,22 @@ def compute_sensitivity(
         capex: Annual capital expenditure.
 
     Returns:
-        JSON string with keys: delta_eps_per_rev_1pp,
+        Dict with keys: delta_eps_per_rev_1pp,
         delta_eps_per_margin_1pp, delta_fcf_per_capex_10pct.
     """
     if not diluted_shares or not baseline_revenue:
-        return json.dumps({
-            "delta_eps_per_rev_1pp": None,
-            "delta_eps_per_margin_1pp": None,
-            "delta_fcf_per_capex_10pct": None,
-        })
-    return json.dumps({
-        "delta_eps_per_rev_1pp": (
+        return SensitivityMetrics(
+            delta_eps_per_rev_1pp=None,
+            delta_eps_per_margin_1pp=None,
+            delta_fcf_per_capex_10pct=None,
+        ).model_dump()
+    return SensitivityMetrics(
+        delta_eps_per_rev_1pp=(
             ebit_margin * baseline_revenue * 0.01 * (1 - tax_rate)
             / diluted_shares
         ),
-        "delta_eps_per_margin_1pp": (
+        delta_eps_per_margin_1pp=(
             baseline_revenue * 0.01 * (1 - tax_rate) / diluted_shares
         ),
-        "delta_fcf_per_capex_10pct": capex * 0.10,
-    })
+        delta_fcf_per_capex_10pct=capex * 0.10,
+    ).model_dump()

@@ -5,6 +5,7 @@ import operator
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, NotRequired
 
+from deepagents.middleware.filesystem import FilesystemMiddleware
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain.tools.tool_node import ToolCallRequest
@@ -13,6 +14,8 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.types import Command
 
 from ...config import Configuration
+from ...sandbox import get_backend
+from ..middleware import ToolResultCacheMiddleware
 
 # Error substrings that indicate permanent failures (no point retrying).
 PERMANENT_ERROR_PATTERNS = (
@@ -57,6 +60,21 @@ async def get_tools(
     allowed = set(allowed_tools)
     mcp_tools = [t for t in all_tools if t.name in allowed]
     return mcp_tools + (custom_tools or [])
+
+
+def data_collection_middleware(cacheable_tools: list[str]) -> list:
+    """Build the standard middleware stack for data collection agents.
+
+    Order: ToolErrorHandler (outer) → FilesystemMiddleware →
+    ToolResultCacheMiddleware (inner).
+    """
+    return [
+        ToolErrorHandler(),
+        FilesystemMiddleware(backend=get_backend),
+        ToolResultCacheMiddleware(
+            cacheable_tools=frozenset(cacheable_tools),
+        ),
+    ]
 
 
 class ToolErrorHandler(AgentMiddleware["ToolErrorState"]):

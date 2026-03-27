@@ -148,6 +148,7 @@
 - [ ] Explore agents from https://github.com/virattt/ai-hedge-fund
 
 ### Other improvements
+- [ ] Rework tool results cache. Use ToolRuntime.store (share InMemoryStore across all agents). Add tool: `write_tool_output_to_backend` that will write tool output to backend from store for further manipulations. Within middleware check if tool output is already in cache (store) and if it's return it instead of reading it from sandbox. Update prompts to teach them about new tool and workflow to manipulate with data: check cached tool output using `discover_cached_data` -> use tool to get output schema -> use `write_tool_output_to_backend` to save output in backend -> execute custom code to manipulate with output.
 - [ ] Explore `langchain.agents.middleware.context_editing.ContextEditingMiddleware` and `langchain.agents.middleware.summarization.SummarizationMiddleware`:
     - [ ] Clean failed tools and just summarize what agent shouldn't do based on failure messages
     - [ ] Extract from news important in the current context information only (e.g. extract sentiment, evaluate how article may affect ticket short/long-term, etc)
