@@ -1,7 +1,5 @@
 """Unit tests for projection tools (3-year financials, sensitivity)."""
 
-import json
-
 import pytest
 
 from muffin_agent.tools.projections import (
@@ -22,10 +20,14 @@ class TestSensitivityTool:
                 "capex": 1e8,
             }
         )
-        parsed = json.loads(result)
-        assert parsed["delta_eps_per_rev_1pp"] is not None
-        assert parsed["delta_eps_per_margin_1pp"] is not None
-        assert parsed["delta_fcf_per_capex_10pct"] == pytest.approx(1e7)
+        assert result["delta_eps_per_rev_1pp"] is not None
+        assert result["delta_eps_per_margin_1pp"] is not None
+        assert result["delta_fcf_per_capex_10pct"] == pytest.approx(1e7)
+
+    def test_output_schema_in_extras(self):
+        schema = compute_sensitivity.extras["output_schema"]
+        assert "properties" in schema
+        assert "delta_eps_per_rev_1pp" in schema["properties"]
 
 
 @pytest.mark.unit
@@ -54,20 +56,19 @@ class TestProjectThreeYearFinancialsTool:
                 "diluted_shares": 10.0,
             }
         )
-        parsed = json.loads(result)
-        assert len(parsed) == 3
-        assert parsed[0]["year"] == 2025
-        assert parsed[1]["year"] == 2026
-        assert parsed[2]["year"] == 2027
+        assert len(result) == 3
+        assert result[0]["year"] == 2025
+        assert result[1]["year"] == 2026
+        assert result[2]["year"] == 2027
         # Verify income fields
-        assert parsed[0]["revenue"] == pytest.approx(110.0)
-        assert parsed[0]["ebitda"] == pytest.approx(33.0)
-        assert parsed[0]["eps"] is not None
+        assert result[0]["revenue"] == pytest.approx(110.0)
+        assert result[0]["ebitda"] == pytest.approx(33.0)
+        assert result[0]["eps"] is not None
         # Verify balance sheet fields
-        assert "total_debt" in parsed[0]
-        assert "cash" in parsed[0]
-        assert "shareholders_equity" in parsed[0]
-        assert "total_assets" in parsed[0]
+        assert "total_debt" in result[0]
+        assert "cash" in result[0]
+        assert "shareholders_equity" in result[0]
+        assert "total_assets" in result[0]
 
     def test_no_shares(self):
         result = project_three_year_financials.invoke(
@@ -92,8 +93,7 @@ class TestProjectThreeYearFinancialsTool:
                 "nwc_pct_rev": 0.12,
             }
         )
-        parsed = json.loads(result)
-        assert parsed[0]["eps"] is None
+        assert result[0]["eps"] is None
 
     def test_with_dividends_buybacks(self):
         result = project_three_year_financials.invoke(
@@ -121,7 +121,12 @@ class TestProjectThreeYearFinancialsTool:
                 "buybacks": 3.0,
             }
         )
-        parsed = json.loads(result)
         # Dividends and buybacks should reduce cash and equity
         # equity + net_income - divs - buybacks
-        assert parsed[0]["shareholders_equity"] < 80.0 + 20
+        assert result[0]["shareholders_equity"] < 80.0 + 20
+
+    def test_output_schema_in_extras(self):
+        schema = project_three_year_financials.extras["output_schema"]
+        assert "properties" in schema
+        assert "year" in schema["properties"]
+        assert "revenue" in schema["properties"]

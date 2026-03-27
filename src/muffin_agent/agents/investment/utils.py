@@ -6,6 +6,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.store.base import BaseStore
 
 from muffin_agent.config import Configuration
 
@@ -15,10 +16,11 @@ logger = logging.getLogger(__name__)
 async def run_deep_agent_node(
     state: dict[str, Any],
     config: RunnableConfig,
-    agent_factory: Callable[[Configuration], Coroutine[Any, Any, Any]],
+    agent_factory: Callable[..., Coroutine[Any, Any, Any]],
     input_state_type: type,
     state_key: str,
     error_fallback: dict[str, Any] | None = None,
+    store: BaseStore | None = None,
 ) -> dict[str, Any]:
     """Run a deep agent and extract its structured output into a state update.
 
@@ -33,12 +35,13 @@ async def run_deep_agent_node(
     Args:
         state: The current LangGraph state dict.
         config: LangGraph ``RunnableConfig`` (carries thread_id, configurable, etc.).
-        agent_factory: Async callable ``(Configuration) -> deep_agent``.
+        agent_factory: Async callable ``(Configuration, store=...) -> deep_agent``.
         input_state_type: TypedDict class whose ``__annotations__`` keys are read
             from *state* to build the agent's input context.
         state_key: Key under which to write the result in the returned state update.
         error_fallback: Extra fields merged into the error dict on failure.
             For example ``{"regime_label": "unknown"}`` for market_regime_node.
+        store: Shared ``BaseStore`` for cross-agent tool result caching.
 
     Returns:
         A single-key dict ``{state_key: <structured output or error dict>}``.
@@ -47,7 +50,7 @@ async def run_deep_agent_node(
 
     try:
         configuration = Configuration.from_runnable_config(config)
-        agent = await agent_factory(configuration)
+        agent = await agent_factory(configuration, store=store)
 
         context = {
             k: state[k]

@@ -36,12 +36,20 @@ Limitations:
 
 from .backend import OpenSandboxBackend
 from .factory import aget_sandbox, get_backend, get_sandbox
-from .tools import execute_python
+from .tools import (
+    discover_cached_data,
+    execute_python,
+    get_tool_output_schema,
+    write_tool_output_to_backend,
+)
 
 __all__ = [
     "OpenSandboxBackend",
     "aget_sandbox",
+    "discover_cached_data",
     "execute_python",
     "get_backend",
     "get_sandbox",
+    "get_tool_output_schema",
+    "write_tool_output_to_backend",
 ]

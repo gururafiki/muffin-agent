@@ -38,12 +38,14 @@ fires only when both complete.  Shared context is injected into each
 ``TickerAnalysisState`` when the ``Send`` objects are emitted.
 """
 
+from functools import partial
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.store.base import BaseStore
 from langgraph.types import Send
 
 from muffin_agent.agents.investment import (
@@ -77,28 +79,25 @@ def _fan_out_tickers(state: ScreeningState) -> list[Send]:
     ]
 
 
-async def _analyze_ticker(
-    state: TickerAnalysisState, config: RunnableConfig
-) -> dict[str, Any]:
-    """Run the full investment analysis pipeline for one ticker.
-
-    Invoked once per ticker by the fan-out.  Appends the completed thesis into
-    ``ScreeningState.theses`` via the ``operator.add`` reducer.
-    """
-    analysis_graph = build_investment_analysis_graph()
-    result: TickerAnalysisState = await analysis_graph.ainvoke(state, config)
-    return {"theses": [result.get("thesis", {})]}
-
-
 def build_equity_screening_graph(
     checkpointer: BaseCheckpointSaver | None = None,
+    store: BaseStore | None = None,
 ) -> CompiledStateGraph:
     """Build and compile the equity screening graph."""
+
+    async def _analyze_ticker(
+        state: TickerAnalysisState, config: RunnableConfig
+    ) -> dict[str, Any]:
+        """Run the full investment analysis pipeline for one ticker."""
+        analysis_graph = build_investment_analysis_graph(store=store)
+        result: TickerAnalysisState = await analysis_graph.ainvoke(state, config)
+        return {"theses": [result.get("thesis", {})]}
+
     graph: StateGraph = StateGraph(ScreeningState)
 
     graph.add_node("idea_sourcing", idea_sourcing_node)
-    graph.add_node("market_regime", market_regime_node)
-    graph.add_node("sector_analysis", sector_analysis_node)
+    graph.add_node("market_regime", partial(market_regime_node, store=store))
+    graph.add_node("sector_analysis", partial(sector_analysis_node, store=store))
     graph.add_node("context_ready", lambda s: {})
     graph.add_node("analyze_ticker", _analyze_ticker)
     graph.add_node("comparison", comparison_node)
@@ -112,4 +111,4 @@ def build_equity_screening_graph(
     graph.add_edge("analyze_ticker", "comparison")
     graph.add_edge("comparison", END)
 
-    return graph.compile(checkpointer=checkpointer)
+    return graph.compile(checkpointer=checkpointer, store=store)

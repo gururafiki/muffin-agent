@@ -9,7 +9,7 @@ from langchain.agents import create_agent
 
 from ...config import Configuration
 from ...prompts import render_template
-from .utils import ToolErrorHandler, get_tools
+from .utils import data_collection_middleware, get_tools
 
 MCP_TOOLS = [
     "equity_ownership_form_13f",
@@ -33,5 +33,5 @@ async def create_equity_ownership_data_collection_agent(config: Configuration):
         model=llm,
         tools=tools,
         system_prompt=prompt,
-        middleware=[ToolErrorHandler()],
+        middleware=data_collection_middleware(MCP_TOOLS),
     )

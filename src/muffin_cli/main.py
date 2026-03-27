@@ -671,12 +671,16 @@ async def _run_analyze(ticker: str, query: str | None) -> None:
     import json
 
     from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
 
     from muffin_agent.agents import build_investment_analysis_graph
     from muffin_agent.utils.observability import setup_tracing
 
     callbacks = setup_tracing(session_id=ticker)
-    graph = build_investment_analysis_graph(checkpointer=_get_checkpointer())
+    store = InMemoryStore()
+    graph = build_investment_analysis_graph(
+        checkpointer=_get_checkpointer(), store=store,
+    )
 
     mandate = query or f"Produce a complete investment analysis for {ticker}"
 
@@ -717,13 +721,17 @@ async def _run_screen(query: str, max_tickers: int) -> None:
     import json
 
     from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
 
     from muffin_agent.agents import build_equity_screening_graph
     from muffin_agent.utils.observability import setup_tracing
 
     session_id = f"screen-{query[:40].replace(' ', '-')}"
     callbacks = setup_tracing(session_id=session_id)
-    graph = build_equity_screening_graph(checkpointer=_get_checkpointer())
+    store = InMemoryStore()
+    graph = build_equity_screening_graph(
+        checkpointer=_get_checkpointer(), store=store,
+    )
 
     result = await graph.ainvoke(
         {"query": query, "tickers": [], "theses": []},

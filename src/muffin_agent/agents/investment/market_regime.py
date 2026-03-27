@@ -5,6 +5,7 @@ from typing import Any, Literal
 from deepagents import CompiledSubAgent, create_deep_agent
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
+from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -17,6 +18,7 @@ from muffin_agent.agents.data_collection import (
 )
 from muffin_agent.agents.investment.schemas import DataSource
 from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.middleware import ToolResultCacheMiddleware
 from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
@@ -251,7 +253,10 @@ async def _build_macro_subagents(config: Configuration) -> list[CompiledSubAgent
 # ── Agent factory ─────────────────────────────────────────────────────────────
 
 
-async def create_market_regime_agent(config: Configuration):
+async def create_market_regime_agent(
+    config: Configuration,
+    store: BaseStore | None = None,
+):
     """Build the market regime deep agent.
 
     Create a deep agent that collects macro and fixed-income data, validates
@@ -283,6 +288,17 @@ async def create_market_regime_agent(config: Configuration):
             compute_sector_relative_performance,
         ],
         backend=get_backend,
+        store=store,
+        middleware=[
+            ToolResultCacheMiddleware(
+                cacheable_tools=frozenset({
+                    "compute_yield_curve_metrics",
+                    "compute_factor_zscore",
+                    "compute_vix_regime",
+                    "compute_sector_relative_performance",
+                }),
+            ),
+        ],
         response_format=AutoStrategy(schema=MarketRegimeOutput),
     )
 
@@ -291,7 +307,10 @@ async def create_market_regime_agent(config: Configuration):
 
 
 async def market_regime_node(
-    state: MarketRegimeInputState, config: RunnableConfig
+    state: MarketRegimeInputState,
+    config: RunnableConfig,
+    *,
+    store: BaseStore | None = None,
 ) -> dict[str, Any]:
     """Stage 2: Market Regime & Top-Down Context.
 
@@ -327,4 +346,5 @@ async def market_regime_node(
         input_state_type=MarketRegimeInputState,
         state_key="market_regime",
         error_fallback={"regime_label": "unknown"},
+        store=store,
     )

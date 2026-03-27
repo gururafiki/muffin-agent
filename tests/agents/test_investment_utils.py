@@ -3,6 +3,7 @@
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.store.memory import InMemoryStore
 
 from muffin_agent.agents.equity_screening import build_equity_screening_graph
 from muffin_agent.agents.investment_analysis import build_investment_analysis_graph
@@ -29,6 +30,16 @@ class TestBuildInvestmentAnalysisGraph:
         graph = build_investment_analysis_graph(checkpointer=saver)
         assert graph.checkpointer is saver
 
+    def test_compiles_with_store(self):
+        store = InMemoryStore()
+        graph = build_investment_analysis_graph(store=store)
+        assert isinstance(graph, CompiledStateGraph)
+        assert graph.store is store
+
+    def test_default_store_is_none(self):
+        graph = build_investment_analysis_graph()
+        assert graph.store is None
+
 
 @pytest.mark.unit
 class TestBuildEquityScreeningGraph:
@@ -50,3 +61,13 @@ class TestBuildEquityScreeningGraph:
         saver = InMemorySaver()
         graph = build_equity_screening_graph(checkpointer=saver)
         assert graph.checkpointer is saver
+
+    def test_compiles_with_store(self):
+        store = InMemoryStore()
+        graph = build_equity_screening_graph(store=store)
+        assert isinstance(graph, CompiledStateGraph)
+        assert graph.store is store
+
+    def test_default_store_is_none(self):
+        graph = build_equity_screening_graph()
+        assert graph.store is None

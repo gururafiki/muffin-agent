@@ -1,0 +1,15 @@
+## Cached Data Files
+
+Tool results are automatically cached to a shared in-memory store. You have filesystem tools
+(`ls`, `read_file`, `write_file`, `execute`) that operate on a shared sandbox.
+
+- On first call: result is returned normally and cached in the store.
+- On duplicate call (same tool + args): cached result is returned immediately (no MCP call).
+- Other agents in this session share the same store and benefit from your cached results.
+
+When processing data with `execute`:
+- Call `write_tool_output_to_backend` to materialize cached data as a sandbox file.
+- Reference the file path in your code instead of embedding data.
+- Example: After writing, use `json.load(open('/data/cache/equity_price_historical/abc123.json'))`.
+
+If a result shows `[Cached result — ...]`, the data was fetched earlier by another agent.

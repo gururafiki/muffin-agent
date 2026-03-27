@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
-import json
+from typing import Any
 
 from langchain_core.tools import tool
+from pydantic import BaseModel
 
 
-@tool(parse_docstring=True)
+class YieldCurveMetrics(BaseModel):
+    """Output schema for compute_yield_curve_metrics."""
+
+    slope_10y2y_bps: float | None
+    slope_10y3m_bps: float | None
+    real_yield_10y_bps: float | None
+    policy_rate_distance_bps: float | None
+
+
+@tool(
+    parse_docstring=True,
+    extras={"output_schema": YieldCurveMetrics.model_json_schema()},
+)
 def compute_yield_curve_metrics(
     yield_10y: float | None = None,
     yield_2y: float | None = None,
@@ -15,7 +28,7 @@ def compute_yield_curve_metrics(
     tips_breakeven_10y: float | None = None,
     effr: float | None = None,
     neutral_rate: float = 2.5,
-) -> str:
+) -> dict[str, float | None]:
     """Compute yield curve slope and monetary policy metrics.
 
     All input yields in percent (e.g. 4.25 for 4.25%).
@@ -30,7 +43,7 @@ def compute_yield_curve_metrics(
         neutral_rate: Estimated neutral policy rate (%). Default 2.5.
 
     Returns:
-        JSON string with keys: slope_10y2y_bps, slope_10y3m_bps,
+        Dict with keys: slope_10y2y_bps, slope_10y3m_bps,
         real_yield_10y_bps, policy_rate_distance_bps.
     """
     slope_10y2y = (
@@ -49,21 +62,31 @@ def compute_yield_curve_metrics(
         else None
     )
     policy_dist = (effr - neutral_rate) * 100 if effr is not None else None
-    return json.dumps({
-        "slope_10y2y_bps": slope_10y2y,
-        "slope_10y3m_bps": slope_10y3m,
-        "real_yield_10y_bps": real_yield,
-        "policy_rate_distance_bps": policy_dist,
-    })
+    return YieldCurveMetrics(
+        slope_10y2y_bps=slope_10y2y,
+        slope_10y3m_bps=slope_10y3m,
+        real_yield_10y_bps=real_yield,
+        policy_rate_distance_bps=policy_dist,
+    ).model_dump()
 
 
-@tool(parse_docstring=True)
+class FactorZScore(BaseModel):
+    """Output schema for compute_factor_zscore."""
+
+    factor_name: str
+    z_score: float | None
+
+
+@tool(
+    parse_docstring=True,
+    extras={"output_schema": FactorZScore.model_json_schema()},
+)
 def compute_factor_zscore(
     factor_name: str,
     trailing_12m: float,
     mean_60m: float,
     std_60m: float,
-) -> str:
+) -> dict[str, Any]:
     """Compute Z-score for a single Fama-French factor.
 
     Z = (trailing_12m - mean_60m) / std_60m.  |Z| > 1.5 indicates an
@@ -80,12 +103,12 @@ def compute_factor_zscore(
             Must be positive.
 
     Returns:
-        JSON string with factor_name and z_score (null if std is zero).
+        Dict with factor_name and z_score (None if std is zero).
     """
     z: float | None = None
     if std_60m > 0:
         z = (trailing_12m - mean_60m) / std_60m
-    return json.dumps({"factor_name": factor_name, "z_score": z})
+    return FactorZScore(factor_name=factor_name, z_score=z).model_dump()
 
 
 @tool(parse_docstring=True)

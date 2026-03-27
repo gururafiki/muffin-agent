@@ -25,9 +25,12 @@ LangGraph fires a node only when all its incoming edges have data, so barrier
 synchronisation is implicit — no extra code required.
 """
 
+from functools import partial
+
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.store.base import BaseStore
 
 from muffin_agent.agents.investment import (
     company_analysis_node,
@@ -43,15 +46,16 @@ from muffin_agent.agents.investment.state import TickerAnalysisState
 
 def build_investment_analysis_graph(
     checkpointer: BaseCheckpointSaver | None = None,
+    store: BaseStore | None = None,
 ) -> CompiledStateGraph:
     """Build and compile the per-ticker investment analysis graph."""
     graph: StateGraph = StateGraph(TickerAnalysisState)
 
     # ── Nodes ─────────────────────────────────────────────────────────────────
-    graph.add_node("market_regime", market_regime_node)
-    graph.add_node("sector_analysis", sector_analysis_node)
-    graph.add_node("company_analysis", company_analysis_node)
-    graph.add_node("forecasting", forecasting_node)
+    graph.add_node("market_regime", partial(market_regime_node, store=store))
+    graph.add_node("sector_analysis", partial(sector_analysis_node, store=store))
+    graph.add_node("company_analysis", partial(company_analysis_node, store=store))
+    graph.add_node("forecasting", partial(forecasting_node, store=store))
     graph.add_node("risk_assessment", risk_assessment_node)
     graph.add_node("valuation", valuation_node)
     graph.add_node("thesis_synthesis", thesis_synthesis_node)
@@ -80,4 +84,4 @@ def build_investment_analysis_graph(
     graph.add_edge("valuation", "thesis_synthesis")
     graph.add_edge("thesis_synthesis", END)
 
-    return graph.compile(checkpointer=checkpointer)
+    return graph.compile(checkpointer=checkpointer, store=store)

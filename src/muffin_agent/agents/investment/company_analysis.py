@@ -5,6 +5,7 @@ from typing import Any, Literal
 from deepagents import CompiledSubAgent, create_deep_agent
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
+from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -17,6 +18,7 @@ from muffin_agent.agents.data_collection import (
 )
 from muffin_agent.agents.investment.schemas import DataSource
 from muffin_agent.agents.investment.utils import run_deep_agent_node
+from muffin_agent.agents.middleware import ToolResultCacheMiddleware
 from muffin_agent.agents.subagents import build_validation_subagent
 from muffin_agent.config import Configuration
 from muffin_agent.prompts import render_template
@@ -378,7 +380,10 @@ async def _build_company_analysis_subagents(
 # ── Agent factory ─────────────────────────────────────────────────────────────
 
 
-async def create_company_analysis_agent(config: Configuration):
+async def create_company_analysis_agent(
+    config: Configuration,
+    store: BaseStore | None = None,
+):
     """Build the company analysis deep agent.
 
     Create a deep agent that assesses business quality across four dimensions
@@ -412,6 +417,19 @@ async def create_company_analysis_agent(config: Configuration):
             compute_altman_z_score,
         ],
         backend=get_backend,
+        store=store,
+        middleware=[
+            ToolResultCacheMiddleware(
+                cacheable_tools=frozenset({
+                    "compute_roic",
+                    "compute_fcf_conversion",
+                    "compute_net_debt_to_ebitda",
+                    "compute_interest_coverage",
+                    "compute_revenue_cagr",
+                    "compute_altman_z_score",
+                }),
+            ),
+        ],
         response_format=AutoStrategy(schema=CompanyAnalysisOutput),
     )
 
@@ -420,7 +438,10 @@ async def create_company_analysis_agent(config: Configuration):
 
 
 async def company_analysis_node(
-    state: CompanyAnalysisInputState, config: RunnableConfig
+    state: CompanyAnalysisInputState,
+    config: RunnableConfig,
+    *,
+    store: BaseStore | None = None,
 ) -> dict[str, Any]:
     """Stage 4-5: Company Analysis — Business Quality & Fundamental Deep Dive.
 
@@ -449,4 +470,5 @@ async def company_analysis_node(
         agent_factory=create_company_analysis_agent,
         input_state_type=CompanyAnalysisInputState,
         state_key="company_analysis",
+        store=store,
     )
