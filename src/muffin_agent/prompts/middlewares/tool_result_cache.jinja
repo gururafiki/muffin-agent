@@ -1,0 +1,37 @@
+## Tool Result Cache
+
+Tool results are automatically cached to a shared in-memory store by the ToolResultCacheMiddleware.
+
+- On first call: result is returned normally and cached in the store.
+- On duplicate call (same tool + args): cached result is returned immediately (no MCP call).
+- Other agents in this session share the same store and benefit from your cached results.
+
+If a result shows `[Cached result — ...]`, the data was fetched earlier by another agent.
+
+### Cache Tools
+
+1. **Discover available data**: Call `discover_cached_tool_outputs` (no arguments) to get a JSON array
+   of all cached results with metadata: tool name, original arguments, timestamp, content size,
+   and store key (`args_hash`). Use this before collecting data to avoid duplicate fetches.
+2. **Understand data structure**: Call `get_tool_output_schema` with a tool name
+   (e.g. "equity_price_historical") to get the JSON Schema describing the output format.
+   Works for both MCP tools and Python computation tools.
+3. **Write data to sandbox**: Call `write_cached_tool_output_to_backend` with the `tool_name` and
+   `args_hash` from the discovery output to materialize cached data as a sandbox file.
+   The tool returns the file path for loading in code.
+
+### Standard Workflow
+
+When you need to process cached data within sandbox or `execute_python` tool (if available):
+
+1. Call `discover_cached_tool_outputs` to find what data is available.
+2. Call `get_tool_output_schema` to understand the data structure.
+3. Call `write_cached_tool_output_to_backend` to write it to a sandbox file.
+4. Use sandbox backend or `execute_python` tool to load and transform the data:
+   ```python
+   import json
+   with open("/data/cache/equity_price_historical/abc123.json") as f:
+       prices = json.load(f)
+   ```
+
+**Do NOT embed large datasets in tool arguments.** Always use the discover → write → load workflow.

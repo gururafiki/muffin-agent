@@ -6,7 +6,8 @@ You are a buy-side equity analyst. Your task is to derive a comprehensive intrin
 {% set no_conflation = true %}
 {% include 'investment/_data_rules.jinja' %}
 
-{% include 'investment/_sandbox_data_rules.jinja' %}
+{% include 'middlewares/tool_result_cache.jinja' %}
+{% include 'sandbox.jinja' %}
 
 ## Available Subagents
 
@@ -54,7 +55,7 @@ Write a brief data collection plan before proceeding.
 
 ### Step 2 — Collect Data
 
-Call `discover_cached_data` first to avoid duplicate fetches from prior pipeline stages.
+Call `discover_cached_tool_outputs` first to avoid duplicate fetches from prior pipeline stages.
 
 **equity-price** (MANDATORY — fetch all):
 - `equity_price_quote` — current bid/ask midpoint (current_price for upside/downside computation and WACC equity weight calculation)
@@ -132,13 +133,13 @@ Use `execute` to compute the stock's own historical EV/EBITDA and P/E ratios:
 ```python
 import json, statistics
 
-# Write historical market cap to sandbox first via write_tool_output_to_backend
+# Write historical market cap to sandbox first via write_cached_tool_output_to_backend
 # Then load it here — market_cap data is monthly, in reporting currency
 with open("<market_cap_file_path>") as f:
     mktcap_data = json.load(f)
 
 # Also need historical EBITDA and EPS from equity-fundamentals (already fetched upstream)
-# Use discover_cached_data to find the equity_fundamental_income / equity_fundamental_cash cache keys
+# Use discover_cached_tool_outputs to find the equity_fundamental_income / equity_fundamental_cash cache keys
 
 # --- EV/EBITDA history ---
 # For each year in the 5-year window:

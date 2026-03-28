@@ -18,7 +18,7 @@ Previously, only `ToolErrorHandler` deduplicated — and only for **permanently 
 
 1. **Store as shared cache**: All agents in a graph share the same `InMemoryStore` (passed via `graph.compile(store=store)` → `create_deep_agent(store=store)`). Results cached by `economy-macro` in `market_regime` are visible to `economy-macro` in `forecasting`.
 2. **No instance mutation after `__init__`**: Per Deep Agents middleware docs, mutating `self.x` in middleware hooks leads to race conditions with concurrent tool calls. All state is in the shared store.
-3. **Sandbox materialization on demand**: Cached data lives in-memory (fast reads). When agents need to process data with `execute_python`, they call `write_tool_output_to_backend` to materialize specific entries to sandbox files.
+3. **Sandbox materialization on demand**: Cached data lives in-memory (fast reads). When agents need to process data with `execute_python`, they call `write_cached_tool_output_to_backend` to materialize specific entries to sandbox files.
 
 ## How It Works
 
@@ -139,23 +139,23 @@ CLI: store = InMemoryStore()
             → ToolResultCacheMiddleware reads request.runtime.store
 ```
 
-### `discover_cached_data` tool
+### `discover_cached_tool_outputs` tool
 
-`ToolResultCacheMiddleware` automatically registers a `discover_cached_data` tool via its `tools` attribute. The tool queries the store for all namespaces under `("cache",)` and returns a JSON array of metadata entries. Agents call this before collecting data to see what is already available.
+`ToolResultCacheMiddleware` automatically registers a `discover_cached_tool_outputs` tool via its `tools` attribute. The tool queries the store for all namespaces under `("cache",)` and returns a JSON array of metadata entries. Agents call this before collecting data to see what is already available.
 
 The tool is NOT included in `cacheable_tools` — it always executes fresh to return current cache state.
 
-### `write_tool_output_to_backend` tool
+### `write_cached_tool_output_to_backend` tool
 
-Also auto-registered. Reads a cached entry from the store and writes its content to a sandbox file for use by `execute_python`. Takes `tool_name` and `args_hash` from `discover_cached_data` output, plus an optional custom `file_path`.
+Also auto-registered. Reads a cached entry from the store and writes its content to a sandbox file for use by `execute_python`. Takes `tool_name` and `args_hash` from `discover_cached_tool_outputs` output, plus an optional custom `file_path`.
 
-**Agent workflow**: `discover_cached_data` → `get_tool_output_schema` → `write_tool_output_to_backend` → `execute_python`
+**Agent workflow**: `discover_cached_tool_outputs` → `get_tool_output_schema` → `write_cached_tool_output_to_backend` → `execute_python`
 
 ### `get_tool_output_schema` tool
 
 Also auto-registered. Agents call it with a tool name to get the JSON Schema describing the tool's output format:
 
-- **Python tools**: Auto-scans all modules in `muffin_agent.tools` for `BaseTool` instances with `extras["output_schema"]`. Tools define output schemas via co-located Pydantic models and `@tool(extras={"output_schema": Model.model_json_schema()})`.
+- **Python tools**: Auto-scans all modules in configurable `tool_schema_packages` (default: `["muffin_agent.tools"]`, configured via `ToolResultCacheConfiguration`) for `BaseTool` instances with `extras["output_schema"]`. Tools define output schemas via co-located Pydantic models and `@tool(extras={"output_schema": Model.model_json_schema()})`.
 - **MCP tools**: Creates a temporary session via `langchain_mcp_adapters.sessions.create_session`, calls `session.list_tools()` with pagination, and returns the `outputSchema` field from the matching MCP `Tool` object.
 
 Python tools are checked first (fast, in-memory). MCP fallback only runs if no Python tool matches.
@@ -164,8 +164,8 @@ Python tools are checked first (fast, in-memory). MCP fallback only runs if no P
 
 Agents receive instructions about cached data via Jinja2 partials:
 
-- **Data collection**: `{% include 'data_collection/_data_file_rules.jinja' %}` — explains store-based caching and how to materialize data to sandbox files.
-- **Investment**: `{% include 'investment/_sandbox_data_rules.jinja' %}` — explains the discover → schema → write → execute workflow.
+- **Data collection**: `{% include 'middlewares/tool_result_cache.jinja' %}` — explains store-based caching, the 3 middleware tools, and the standard discover → schema → write → load workflow.
+- **Investment**: `{% include 'middlewares/tool_result_cache.jinja' %}` + `{% include 'sandbox.jinja' %}` — cache workflow plus sandbox execution and store↔sandbox bridge tools.
 
 ## Files
 
@@ -173,7 +173,7 @@ Agents receive instructions about cached data via Jinja2 partials:
 |------|--------|
 | `src/muffin_agent/middlewares/tool_result_cache/middleware.py` | `ToolResultCacheMiddleware` (store-based), `get_args_hash()`, `is_error_content()` |
 | `src/muffin_agent/agents/data_collection/utils.py` | `data_collection_middleware()` helper |
-| `src/muffin_agent/middlewares/tool_result_cache/tools.py` | `discover_cached_data`, `write_tool_output_to_backend`, `get_tool_output_schema` tools |
+| `src/muffin_agent/middlewares/tool_result_cache/tools.py` | `discover_cached_tool_outputs`, `write_cached_tool_output_to_backend`, `get_tool_output_schema` tools |
 | `src/muffin_agent/sandbox/__init__.py` | Exports `execute_python`, `get_backend`, `get_sandbox`, `aget_sandbox` |
 | `src/muffin_agent/agents/investment/utils.py` | `run_deep_agent_node()` with `store` param |
 | 4 investment agent files | Add `store` param, pass to `create_deep_agent` |
@@ -181,8 +181,8 @@ Agents receive instructions about cached data via Jinja2 partials:
 | `src/muffin_agent/agents/equity_screening.py` | `build_equity_screening_graph(store=store)` |
 | `src/muffin_cli/main.py` | Create `InMemoryStore()` and pass to graph builders |
 | 13 data collection agent files | Use `data_collection_middleware(MCP_TOOLS)` |
-| `src/muffin_agent/prompts/data_collection/_data_file_rules.jinja` | Store-based caching instructions |
-| `src/muffin_agent/prompts/investment/_sandbox_data_rules.jinja` | Discover → schema → write → execute workflow |
+| `src/muffin_agent/prompts/middlewares/tool_result_cache.jinja` | Cache workflow instructions (all agents) |
+| `src/muffin_agent/prompts/sandbox.jinja` | Sandbox execution + store↔sandbox bridge (investment agents) |
 | `tests/middlewares/tool_result_cache/test_middleware.py` | 17 tests (store-based cache) |
 | `tests/middlewares/tool_result_cache/test_tools.py` | `discover_cached_data`, `write_tool_output_to_backend`, `get_tool_output_schema` tests |
 | `tests/agents/test_investment_utils.py` | Graph builder store tests |
@@ -204,8 +204,8 @@ Tests verify:
 - Command results from handler pass through uncached
 - No store (None) passes through without caching
 - Store value contains required metadata fields
-- `discover_cached_data` returns JSON from store, handles empty/no store
-- `write_tool_output_to_backend` writes to sandbox, handles not found/no store/custom path
+- `discover_cached_tool_outputs` returns JSON from store, handles empty/no store
+- `write_cached_tool_output_to_backend` writes to sandbox, handles not found/no store/custom path
 - `get_tool_output_schema` returns Python tool schema, MCP schema, and not-found message
 - Graph builders accept and wire store parameter
 
