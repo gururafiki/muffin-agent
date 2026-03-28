@@ -203,6 +203,24 @@ Follows a 5-step workflow: **Parse Context → Collect Data → Validate → Bui
 
 Runs in parallel with `risk_assessment_node` (Group 2). Its output is the primary input for `valuation_node` (Group 3).
 
+### Risk & Downside / Stress Testing Agent (Step 8)
+
+A deep agent (Step 8 of the investment process) that quantifies idiosyncratic and systematic risk, derives stress scenarios, and produces an ex-ante stop level. Uses a **risk-focused subset** of 7 subagents — equity-price, options, fama-french, equity-ownership, fixed-income, economy-macro, and data-validation — built by a private `_build_risk_assessment_subagents()` helper.
+
+**Five-step workflow**: (1) **Plan** — scope subagent calls and tool invocations from ticker/context; (2) **Collect** — run subagents in parallel via `SubAgentMiddleware`; (3) **Validate** — data sufficiency check (data-validation subagent); (4) **Analyse** — sandbox computes price return series, then four parallel blocks: Block A (4 parametric tools: `compute_beta`, `compute_var_cvar`, `compute_sharpe_sortino`, `compute_max_drawdown`), Block B (FF5+UMD 6-factor OLS regression via `execute_python`), Block C (IV term structure extraction), Block D (short interest crowding classification); (5) **Reflect** — self-critique and confidence calibration.
+
+**Stress scenarios** are hybrid: 2 fixed historical analogs (GFC 2008, market −56%; COVID crash 2020, market −34%), 3 regime-derived from `market_regime.key_risks`, and 1 idiosyncratic. Each scenario reports estimated stock return and dollar impact per share.
+
+**Four deterministic tools** in `tools/risk.py` (all Python stdlib, no scipy):
+- `compute_beta` — OLS beta, annualised Jensen's alpha, R² vs. market benchmark
+- `compute_var_cvar` — parametric 95% VaR and CVaR scaled to any horizon (uses `statistics.NormalDist`)
+- `compute_sharpe_sortino` — annualised Sharpe and Sortino ratios; daily/weekly frequency
+- `compute_max_drawdown` — peak-to-trough drawdown from a price series
+
+**Structured output** is enforced via `response_format=AutoStrategy(schema=RiskAssessmentOutput)`. Output includes: beta, annualized_vol_pct, max_drawdown_1y_pct, var_95_1m_pct, cvar_95_1m_pct, sharpe_ratio, sortino_ratio, `factor_loadings` (FF5+UMD betas, alpha, R², regression_period), `implied_volatility` (IV 30/60/90d + 25d put/call skew + term_slope), `short_interest` (short_interest_pct, days_to_cover, short_volume_ratio, crowding_signal), `stress_scenarios` (list of 6), ex_ante_stop_level, stop_methodology, `risk_signal` (acceptable / elevated / unacceptable), risk_flags, confidence, data_sources, limitations.
+
+Runs in parallel with `forecasting_node` (Group 2).
+
 ### Design Principles
 
 0. **KISS. Keep it simple stupid**: Implementation has to be simple and extensible, no over-engineering.

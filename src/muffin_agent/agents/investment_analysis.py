@@ -56,7 +56,7 @@ def build_investment_analysis_graph(
     graph.add_node("sector_analysis", partial(sector_analysis_node, store=store))
     graph.add_node("company_analysis", partial(company_analysis_node, store=store))
     graph.add_node("forecasting", partial(forecasting_node, store=store))
-    graph.add_node("risk_assessment", risk_assessment_node)
+    graph.add_node("risk_assessment", partial(risk_assessment_node, store=store))
     graph.add_node("valuation", valuation_node)
     graph.add_node("thesis_synthesis", thesis_synthesis_node)
 
