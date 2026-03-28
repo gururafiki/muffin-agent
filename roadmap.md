@@ -92,13 +92,6 @@
     - synthesizes results of evaluated criteria and provides final verdict;
     - reflects on evaluation results and based on reflection results push back on analysis to add more criteria or re-synthesize report if needed.
 
-## Valuation agents
-- [ ] DCF valuation Agent
-- [ ] Explore other valuation methodologies
-    - Comparables
-    - Precedent txns
-    - SOTP
-
 ## Core workflow
 - [ ] Idea Sourcing & Screening: Defines investment idea (Step 1 from [docs/investment-process.md](docs/investment-process.md))
     - [ ] Macro screeners:
@@ -117,10 +110,7 @@
 - [ ] Ticker Valuation and forecasting (Steps 5-6 from [docs/investment-process.md](docs/investment-process.md))
     - Do valuations based on fundamentals
     - [x] Step 6 — Forecasting & Scenario Modeling Agent: builds 3-year bull/base/bear forward model anchored to analyst consensus; 4 data subagents (equity-estimates, equity-fundamentals, economy-macro, currency-commodities) + data-validation; sandbox computes historical calibration, scenario projections, sensitivity table, accruals ratio; probability anchors keyed to company_signal (pass=60/25/15, watch=50/25/25, fail=40/25/35); structured output via `AutoStrategy(schema=ForecastOutput)`.
-    - [ ] Step 7 — Valuation & Relative Value Agent
-- [ ] Relative value (Steps 7 from [docs/investment-process.md](docs/investment-process.md))
-    - Peer comparison
-    - **TODO**
+    - [x] Step 7 — Valuation & Relative Value Agent: computes intrinsic value via blended DCF (exit-multiple + Gordon Growth), EV/EBITDA/P/E/FCF-yield multiples, and scenario-weighted NAV; 4 deterministic tools (compute_wacc, compute_dcf, compute_multiples_value, compute_scenario_weighted_value); 5-year own-history relative value vs. peer_median and market_median; 5 data subagents (equity-price, equity-estimates, etf-index, discovery-screening, fixed-income) + data-validation; valuation_signal (cheap/fairly_valued/expensive); runs sequentially after Group 2 barrier; output consumed by thesis_synthesis_node.
 - **TODO**
 - [ ] Analysis check (Steps 8-9 from [docs/investment-process.md](docs/investment-process.md))
     - [x] Step 8 — Risk & Downside / Stress Testing Agent: quantifies idiosyncratic and systematic risk via 4 deterministic tools (compute_beta, compute_var_cvar, compute_sharpe_sortino, compute_max_drawdown); FF5+UMD 6-factor OLS regression via sandbox; IV term structure (30/60/90d + 25d skew); short interest crowding classification; 6 stress scenarios (2 fixed historical: GFC 2008, COVID 2020; 3 regime-derived; 1 idiosyncratic); ex-ante stop level; risk_signal (acceptable/elevated/unacceptable); 7 data subagents (equity-price, options, fama-french, equity-ownership, fixed-income, economy-macro, data-validation).
