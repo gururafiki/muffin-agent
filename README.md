@@ -221,6 +221,34 @@ A deep agent (Step 8 of the investment process) that quantifies idiosyncratic an
 
 Runs in parallel with `forecasting_node` (Group 2).
 
+### Valuation & Relative Value Agent
+
+A deep agent (Step 7 of the investment process) that computes intrinsic value via multiple methods, benchmarks against peers and history, and assigns a `valuation_signal`. Uses a **valuation-focused subset** of 5 subagents — equity-price, equity-estimates, etf-index, discovery-screening, fixed-income, and data-validation — built by a private `_build_valuation_subagents()` helper.
+
+Follows a 5-step workflow: **Parse Context → Collect Data → Compute Valuations → Synthesize → Reflect**.
+
+**Five compute blocks:**
+
+| Block | Tools / Method | Purpose |
+|-------|---------------|---------|
+| A | `compute_wacc` | CAPM cost of equity (rf + β × ERP); WACC with debt tax shield |
+| B | `compute_dcf` ×3 | Blended DCF: exit-multiple + Gordon Growth terminal value, averaged when both available; separate bull/base/bear runs |
+| C | `compute_multiples_value` ×3 | EV/EBITDA, P/E, and FCF-yield implied prices |
+| D | Sandbox | 5-year own-historical P/E and EV/EBITDA average vs. current |
+| E | `compute_scenario_weighted_value` | Probability-weighted NAV, upside/downside %, risk-reward ratio |
+
+**Four deterministic tools** in `tools/valuation.py`:
+- `compute_wacc` — CAPM ke = rf + β × ERP; WACC = equity_weight × ke + debt_weight × kd × (1−t); validates weight sum ≈ 1.0
+- `compute_dcf` — discounts 3 FCF years + blended terminal value; `methodology`: `blended` | `exit_multiple` | `gordon_growth`
+- `compute_multiples_value` — enterprise value implied price via EV/EBITDA and P/E; FCF-yield intrinsic value
+- `compute_scenario_weighted_value` — probability-weighted NAV, upside/downside %, risk-reward ratio
+
+**Reflect step** validates: DCF vs. multiples within ±50%, analyst PT vs. model within ±30%, WACC in 6–15% range, scenario probabilities sum to 100%.
+
+**Structured output** is enforced via `response_format=AutoStrategy(schema=ValuationOutput)`. Output includes: `current_price`, `dcf_value` (bull/base/bear NAV + blended base + methodology + wacc_used), `ev_ebitda_value`, `pe_value`, `fcf_yield_value`, `analyst_target_median`, `probability_weighted_nav`, `upside_base`, `upside_bull`, `downside_bear`, `risk_reward_ratio`, `relative_value` list (ev_ebitda + pe each with stock_current, peer_median, market_median, premium_discount_pct, historical_5y_avg, vs_own_history), `wacc`, `valuation_signal` (cheap/fairly_valued/expensive), `key_valuation_drivers`, `confidence`, `data_sources`, `limitations`.
+
+Runs **sequentially** after Group 2 barrier (forecasting + risk_assessment); output consumed by `thesis_synthesis_node`.
+
 ### Design Principles
 
 0. **KISS. Keep it simple stupid**: Implementation has to be simple and extensible, no over-engineering.
