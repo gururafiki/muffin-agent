@@ -18,9 +18,9 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from .tools import (
-    discover_cached_data,
+    discover_cached_tool_outputs,
     get_tool_output_schema,
-    write_tool_output_to_backend,
+    write_cached_tool_output_to_backend,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,9 +59,9 @@ class ToolResultCacheMiddleware(AgentMiddleware):
         """Initialize with an optional tool whitelist."""
         self._cacheable_tools = cacheable_tools
         self.tools = [
-            discover_cached_data,
+            discover_cached_tool_outputs,
             get_tool_output_schema,
-            write_tool_output_to_backend,
+            write_cached_tool_output_to_backend,
         ]
 
     async def awrap_tool_call(

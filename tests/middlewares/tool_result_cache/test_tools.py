@@ -1,4 +1,4 @@
-"""Unit tests for sandbox tools."""
+"""Unit tests for tool result cache tools."""
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -59,16 +59,18 @@ def _make_runtime(store=None):
 
 
 # ---------------------------------------------------------------------------
-# discover_cached_data tests
+# discover_cached_tool_outputs tests
 # ---------------------------------------------------------------------------
 
 
 async def _invoke_discover(store=None):
-    """Call discover_cached_data's underlying coroutine directly."""
-    from muffin_agent.middlewares.tool_result_cache.tools import discover_cached_data
+    """Call discover_cached_tool_outputs's underlying coroutine directly."""
+    from muffin_agent.middlewares.tool_result_cache.tools import (
+        discover_cached_tool_outputs,
+    )
 
     runtime = _make_runtime(store=store)
-    return await discover_cached_data.coroutine(runtime)
+    return await discover_cached_tool_outputs.coroutine(runtime)
 
 
 def _make_store_with_entries(entries):
@@ -96,13 +98,13 @@ def _make_store_with_entries(entries):
 
 
 @pytest.mark.unit
-class TestDiscoverCachedDataTool:
-    def test_is_named_discover_cached_data(self):
+class TestDiscoverCachedToolOutputsTool:
+    def test_is_named_discover_cached_tool_outputs(self):
         from muffin_agent.middlewares.tool_result_cache.tools import (
-            discover_cached_data,
+            discover_cached_tool_outputs,
         )
 
-        assert discover_cached_data.name == "discover_cached_data"
+        assert discover_cached_tool_outputs.name == "discover_cached_tool_outputs"
 
     @pytest.mark.asyncio
     async def test_returns_json_from_store(self):
@@ -148,18 +150,18 @@ class TestDiscoverCachedDataTool:
 
 
 # ---------------------------------------------------------------------------
-# write_tool_output_to_backend tests
+# write_cached_tool_output_to_backend tests
 # ---------------------------------------------------------------------------
 
 
 async def _invoke_write(tool_name, args_hash, store=None, file_path=None):
-    """Call write_tool_output_to_backend's underlying coroutine directly."""
+    """Call write_cached_tool_output_to_backend's underlying coroutine."""
     from muffin_agent.middlewares.tool_result_cache.tools import (
-        write_tool_output_to_backend,
+        write_cached_tool_output_to_backend,
     )
 
     runtime = _make_runtime(store=store)
-    return await write_tool_output_to_backend.coroutine(
+    return await write_cached_tool_output_to_backend.coroutine(
         tool_name,
         args_hash,
         runtime,
@@ -168,13 +170,16 @@ async def _invoke_write(tool_name, args_hash, store=None, file_path=None):
 
 
 @pytest.mark.unit
-class TestWriteToolOutputToBackendTool:
-    def test_is_named_write_tool_output_to_backend(self):
+class TestWriteCachedToolOutputToBackendTool:
+    def test_is_named_write_cached_tool_output_to_backend(self):
         from muffin_agent.middlewares.tool_result_cache.tools import (
-            write_tool_output_to_backend,
+            write_cached_tool_output_to_backend,
         )
 
-        assert write_tool_output_to_backend.name == "write_tool_output_to_backend"
+        assert (
+            write_cached_tool_output_to_backend.name
+            == "write_cached_tool_output_to_backend"
+        )
 
     @pytest.mark.asyncio
     async def test_writes_store_content_to_sandbox_file(self):

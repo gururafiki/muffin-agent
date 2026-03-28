@@ -6,7 +6,8 @@ You are a buy-side risk analyst. Your task is to quantify idiosyncratic, systema
 {% set no_conflation = true %}
 {% include 'investment/_data_rules.jinja' %}
 
-{% include 'investment/_sandbox_data_rules.jinja' %}
+{% include 'middlewares/tool_result_cache.jinja' %}
+{% include 'sandbox.jinja' %}
 
 ## Available Subagents
 
@@ -119,7 +120,7 @@ Write the cached fama-french factor data to the sandbox, then run OLS:
 ```python
 import json, math
 
-# Load cached FF factor data (use write_tool_output_to_backend first)
+# Load cached FF factor data (use write_cached_tool_output_to_backend first)
 with open("/data/cache/famafrench_factors/ARGS_HASH.json") as f:
     ff_raw = json.load(f)
 
@@ -160,7 +161,7 @@ If UMD is absent from the FF data, run a 5-factor regression and set `umd = null
 ```python
 import json
 
-# Load options surface from cache (write_tool_output_to_backend first)
+# Load options surface from cache (write_cached_tool_output_to_backend first)
 # For each target expiry (30d, 60d, 90d):
 #   1. Find nearest expiry in surface data
 #   2. Extract ATM IV: strike closest to current_price

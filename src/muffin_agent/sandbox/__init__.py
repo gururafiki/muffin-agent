@@ -17,6 +17,10 @@ Provides three integration points:
    the current thread and executes Python code in it. Used for ad-hoc
    calculations not covered by the financial tools in :mod:`muffin_agent.tools`.
 
+4. **write_store_data_to_sandbox** / **read_sandbox_file_to_store** — Bridge
+   tools that transfer data between the LangGraph store and the sandbox
+   filesystem.  Namespace access is governed by ``StoreConfiguration``.
+
 Usage::
 
     from muffin_agent.sandbox import get_backend, execute_python
@@ -38,6 +42,8 @@ from .backend import OpenSandboxBackend
 from .factory import aget_sandbox, get_backend, get_sandbox
 from .tools import (
     execute_python,
+    read_sandbox_file_to_store,
+    write_store_data_to_sandbox,
 )
 
 __all__ = [
@@ -46,4 +52,6 @@ __all__ = [
     "execute_python",
     "get_backend",
     "get_sandbox",
+    "read_sandbox_file_to_store",
+    "write_store_data_to_sandbox",
 ]

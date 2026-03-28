@@ -1,10 +1,10 @@
-"""Sandbox-backed LangChain tools for muffin agents to work with cache.
+"""LangChain tools for the tool result cache middleware.
 
-Provides tools that execute in an isolated OpenSandbox container:
+Provides tools that let agents interact with cached tool results:
 
-- ``discover_cached_data`` — scan the shared store for cached tool results.
+- ``discover_cached_tool_outputs`` — scan the shared store for cached results.
 - ``get_tool_output_schema`` — look up output schema for any tool by name.
-- ``write_tool_output_to_backend`` — materialize store data to sandbox files.
+- ``write_cached_tool_output_to_backend`` — materialize cached data to sandbox.
 
 The sandbox is discovered by ``thread_id`` metadata via the OpenSandbox API.
 If no running sandbox exists, a new one is created automatically.
@@ -19,16 +19,15 @@ from langchain_mcp_adapters.sessions import create_session
 from langgraph.prebuilt import ToolRuntime
 from mcp.types import PaginatedRequestParams
 
-import muffin_agent.tools as _tools_pkg
-
 from ...mcp_config import McpConfiguration
 from ...sandbox.factory import aget_sandbox
+from .config import ToolResultCacheConfiguration
 
 # ── Cache discovery ──────────────────────────────────────────────────────────
 
 
 @tool
-async def discover_cached_data(runtime: ToolRuntime) -> str:
+async def discover_cached_tool_outputs(runtime: ToolRuntime) -> str:
     """Discover all cached tool results available in the shared store.
 
     Scans the store for cached entries and returns a JSON array describing
@@ -69,7 +68,7 @@ async def discover_cached_data(runtime: ToolRuntime) -> str:
 
 
 @tool(parse_docstring=True)
-async def write_tool_output_to_backend(
+async def write_cached_tool_output_to_backend(
     tool_name: str,
     args_hash: str,
     runtime: ToolRuntime,
@@ -78,12 +77,12 @@ async def write_tool_output_to_backend(
     """Write a cached tool result from the store to a sandbox file.
 
     Materializes cached data to the sandbox filesystem so it can be loaded
-    by ``execute_python`` code. Call ``discover_cached_data`` first to find
-    available cache entries and their ``store_key`` (args_hash) values.
+    by ``execute_python`` code.  Call ``discover_cached_tool_outputs`` first
+    to find available cache entries and their ``store_key`` (args_hash).
 
     Args:
         tool_name: The cached tool name (e.g. "equity_price_historical").
-        args_hash: The store key from ``discover_cached_data`` output.
+        args_hash: The store key from ``discover_cached_tool_outputs`` output.
         file_path: Optional custom file path. Defaults to
             ``/data/cache/{tool_name}/{args_hash}.json``.
         runtime: Injected by LangGraph ToolNode.
@@ -91,10 +90,6 @@ async def write_tool_output_to_backend(
     Returns:
         Confirmation message with the file path, or an error message.
     """
-    # TODO: think on renaming and generalizing this tool for
-    # non-tool-specific cache entries in the future, e.g.
-    # "write_cache_entry_to_sandbox" with args (namespace, key)
-    # instead of (tool_name, args_hash)
     store = runtime.store
     if store is None:
         return "Error: no store available"
@@ -122,23 +117,34 @@ async def write_tool_output_to_backend(
 # ── Schema lookup ────────────────────────────────────────────────────────────
 
 
-def _find_python_tool_schema(tool_name: str) -> dict | None:
-    """Find output_schema for a Python tool by scanning the tools package.
+def _find_python_tool_schema(
+    tool_name: str,
+    packages: list[str],
+) -> dict | None:
+    """Find output_schema for a Python tool by scanning configured packages.
 
-    Iterates all modules in ``muffin_agent.tools``, inspects module-level
+    Iterates all modules in the given packages, inspects module-level
     attributes for ``BaseTool`` instances, and returns the pre-computed
     JSON schema dict from ``extras["output_schema"]`` if present.
     """
-    for info in pkgutil.iter_modules(_tools_pkg.__path__):
-        mod = importlib.import_module(f"muffin_agent.tools.{info.name}")
-        for attr in vars(mod).values():
-            extras = getattr(attr, "extras", None) or {}
-            if (
-                isinstance(attr, BaseTool)
-                and attr.name == tool_name
-                and extras.get("output_schema")
-            ):
-                return extras["output_schema"]
+    for pkg_path in packages:
+        try:
+            pkg = importlib.import_module(pkg_path)
+        except ImportError:
+            continue
+        pkg_paths = getattr(pkg, "__path__", None)
+        if pkg_paths is None:
+            continue
+        for info in pkgutil.iter_modules(pkg_paths):
+            mod = importlib.import_module(f"{pkg_path}.{info.name}")
+            for attr in vars(mod).values():
+                extras = getattr(attr, "extras", None) or {}
+                if (
+                    isinstance(attr, BaseTool)
+                    and attr.name == tool_name
+                    and extras.get("output_schema")
+                ):
+                    return extras["output_schema"]
     return None
 
 
@@ -158,7 +164,10 @@ async def get_tool_output_schema(tool_name: str, runtime: ToolRuntime) -> str:
         JSON string with schema, or a message if not found.
     """
     # 1. Auto-scan Python tools for extras["output_schema"] (fast, no I/O).
-    schema = _find_python_tool_schema(tool_name)
+    cache_config = ToolResultCacheConfiguration.from_runnable_config(
+        runtime.config,
+    )
+    schema = _find_python_tool_schema(tool_name, cache_config.tool_schema_packages)
     if schema is not None:
         return json.dumps(schema)
 

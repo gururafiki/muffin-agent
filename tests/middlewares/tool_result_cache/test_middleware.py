@@ -110,9 +110,9 @@ class TestToolResultCacheMiddleware:
         assert len(mw.tools) == 3
         tool_names = {t.name for t in mw.tools}
         assert tool_names == {
-            "discover_cached_data",
+            "discover_cached_tool_outputs",
             "get_tool_output_schema",
-            "write_tool_output_to_backend",
+            "write_cached_tool_output_to_backend",
         }
 
     @pytest.mark.asyncio

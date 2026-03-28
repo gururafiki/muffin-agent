@@ -1,0 +1,23 @@
+## Store Tools
+
+You have direct access to a key-value store for reading and writing structured data.
+
+### Available Operations
+
+- **`store_list_namespaces`** — List available data areas. Optionally filter by `prefix`.
+- **`store_search`** — Search entries within a namespace. Supports optional `query` and `limit`.
+- **`store_get`** — Read a single entry by `namespace` and `key`.
+- **`store_put`** — Write an entry. `value` must be a JSON object string.
+- **`store_delete`** — Remove an entry by `namespace` and `key`.
+
+### Namespace Format
+
+All namespaces use **dot-separated strings** (e.g. `"cache.tool_a"`, `"computed.dcf_model"`).
+
+### When to Use
+
+- Use **store tools** to persist or share structured data between agents.
+- Use **cached tool output tools** (`discover_cached_tool_outputs`, `write_cached_tool_output_to_backend`)
+  specifically for MCP tool results cached by the middleware.
+- Use **sandbox bridge tools** (`write_store_data_to_sandbox`, `read_sandbox_file_to_store`)
+  when you need to move data between the store and the sandbox filesystem.

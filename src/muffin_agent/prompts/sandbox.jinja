@@ -1,0 +1,33 @@
+## Sandbox
+
+You have access to an isolated Python sandbox for computations.
+
+### Tools
+
+- **`execute_python`** — Run Python code in the sandbox. Use `print()` to produce output.
+  The sandbox has Python 3 with standard libraries. Use this for financial calculations,
+  dataframe manipulation, statistical analysis, and data transformations.
+
+- **`write_store_data_to_sandbox`** — Write any store entry to a sandbox file.
+  Provide `namespace` (dot-separated, e.g. `"computed.dcf_model"`) and `key`.
+  Returns the file path for loading in code.
+
+- **`read_sandbox_file_to_store`** — Persist a sandbox file to the store.
+  Provide `file_path`, `namespace`, and `key`. Other agents sharing the store
+  can then access the data.
+
+### Data Flow
+
+- Load data from file paths written by cache or store tools:
+  ```python
+  import json
+  with open("/data/cache/tool_name/hash.json") as f:
+      data = json.load(f)
+  ```
+- Save computation results for downstream agents:
+  ```python
+  import json
+  with open("/data/computed/result_name.json", "w") as f:
+      json.dump(result, f)
+  ```
+  Then call `read_sandbox_file_to_store` to persist results to the store.

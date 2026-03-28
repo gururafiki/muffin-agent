@@ -50,4 +50,4 @@ IMPORTANT — Error handling rules:
 - Instead of retrying with the same arguments, try: (a) a different tool, (b) different parameters, or (c) report the data as unavailable.
 - Do NOT apologize or explain at length when a tool fails. State what failed briefly, then continue with available tools.
 
-{% include 'data_collection/_data_file_rules.jinja' %}
+{% include 'middlewares/tool_result_cache.jinja' %}
