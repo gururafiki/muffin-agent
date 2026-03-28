@@ -123,6 +123,7 @@
     - **TODO**
 - **TODO**
 - [ ] Analysis check (Steps 8-9 from [docs/investment-process.md](docs/investment-process.md))
+    - [x] Step 8 — Risk & Downside / Stress Testing Agent: quantifies idiosyncratic and systematic risk via 4 deterministic tools (compute_beta, compute_var_cvar, compute_sharpe_sortino, compute_max_drawdown); FF5+UMD 6-factor OLS regression via sandbox; IV term structure (30/60/90d + 25d skew); short interest crowding classification; 6 stress scenarios (2 fixed historical: GFC 2008, COVID 2020; 3 regime-derived; 1 idiosyncratic); ex-ante stop level; risk_signal (acceptable/elevated/unacceptable); 7 data subagents (equity-price, options, fama-french, equity-ownership, fixed-income, economy-macro, data-validation).
 
 ## Phase 3
 
