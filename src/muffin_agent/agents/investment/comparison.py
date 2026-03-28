@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
-from muffin_agent.agents.investment.state import ScreeningState
+from .state import ScreeningState
 
 
 async def comparison_node(

@@ -372,7 +372,7 @@ class TestSectorAnalysisNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -400,7 +400,7 @@ class TestSectorAnalysisNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -428,7 +428,7 @@ class TestSectorAnalysisNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -462,7 +462,7 @@ class TestSectorAnalysisNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -496,6 +496,11 @@ class TestCreateSectorAnalysisAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.sector_analysis"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
                 ".create_etf_index_data_collection_agent",
@@ -552,6 +557,11 @@ class TestCreateSectorAnalysisAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.sector_analysis"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
                 ".create_etf_index_data_collection_agent",
@@ -618,6 +628,11 @@ class TestCreateSectorAnalysisAgent:
         with (
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch(
+                "muffin_agent.agents.investment.sector_analysis"
                 ".create_etf_index_data_collection_agent",
                 new_callable=AsyncMock,
                 return_value=MagicMock(),
@@ -674,6 +689,11 @@ class TestCreateSectorAnalysisAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.sector_analysis"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
                 ".create_etf_index_data_collection_agent",
@@ -751,7 +771,7 @@ class TestSectorAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -784,7 +804,7 @@ class TestSectorAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -812,7 +832,7 @@ class TestSectorAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -839,7 +859,7 @@ class TestSectorAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -869,7 +889,7 @@ class TestSectorAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.sector_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):

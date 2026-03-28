@@ -303,7 +303,7 @@ from muffin_agent.agents.data_collection import (
     # ...
 )
 from muffin_agent.agents.data_validation import create_data_validation_agent
-from muffin_agent.config import Configuration
+from muffin_agent.model_config import ModelConfiguration
 from muffin_agent.prompts import render_template
 from muffin_agent.sandbox import get_backend
 
@@ -334,7 +334,7 @@ class {Name}Output(BaseModel):
 # ── Subagent builder ──────────────────────────────────────────────────────────
 
 
-async def _build_{name}_subagents(config: Configuration) -> list[CompiledSubAgent]:
+async def _build_{name}_subagents(config: RunnableConfig) -> list[CompiledSubAgent]:
     """Build the focused subagent set for {name} analysis.
 
     Return {N} data collection subagents + 1 data validation subagent.
@@ -377,7 +377,7 @@ from muffin_agent.tools.{domain} import (
 )
 
 
-async def create_{name}_agent(config: Configuration):
+async def create_{name}_agent(config: ModelConfiguration, store: BaseStore | None = None):
     """Build the {name} deep agent.
 
     Create a deep agent that [what it does in 1-2 sentences].
@@ -396,6 +396,7 @@ async def create_{name}_agent(config: Configuration):
             # ... only tools relevant to this agent
         ],
         backend=get_backend,
+        store=store,
         response_format=AutoStrategy(schema={Name}Output),
     )
 
@@ -553,9 +554,16 @@ class TestNodeJsonInput:
         mock_agent = AsyncMock()
         mock_agent.ainvoke = AsyncMock(return_value={"structured_response": None})
 
-        with patch(
-            "muffin_agent.agents.investment.{name}.create_{name}_agent",
-            return_value=mock_agent,
+        with (
+            patch(
+                "muffin_agent.agents.investment.{name}.create_{name}_agent",
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.utils"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
         ):
             await {name}_node(
                 {"ticker": "AAPL", "query": "AI infrastructure"}, MagicMock()
@@ -572,9 +580,16 @@ class TestNodeJsonInput:
         mock_agent = AsyncMock()
         mock_agent.ainvoke = AsyncMock(return_value={"structured_response": None})
 
-        with patch(
-            "muffin_agent.agents.investment.{name}.create_{name}_agent",
-            return_value=mock_agent,
+        with (
+            patch(
+                "muffin_agent.agents.investment.{name}.create_{name}_agent",
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.utils"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
         ):
             await {name}_node({"query": "tech sector"}, MagicMock())
 
@@ -640,9 +655,16 @@ class TestNode:
             return_value={"structured_response": mock_output}
         )
 
-        with patch(
-            "muffin_agent.agents.investment.{name}.create_{name}_agent",
-            return_value=mock_agent,
+        with (
+            patch(
+                "muffin_agent.agents.investment.{name}.create_{name}_agent",
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.utils"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
         ):
             result = await {name}_node({"query": "test"}, MagicMock())
 
@@ -655,9 +677,16 @@ class TestNode:
             return_value={"structured_response": None, "output": "raw text"}
         )
 
-        with patch(
-            "muffin_agent.agents.investment.{name}.create_{name}_agent",
-            return_value=mock_agent,
+        with (
+            patch(
+                "muffin_agent.agents.investment.{name}.create_{name}_agent",
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.utils"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
         ):
             result = await {name}_node({"query": "test"}, MagicMock())
 

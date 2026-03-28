@@ -5,8 +5,8 @@ used by stock evaluation, criterion evaluation, and other orchestrator agents.
 """
 
 from deepagents import CompiledSubAgent
+from langchain_core.runnables import RunnableConfig
 
-from ..config import Configuration
 from .data_collection import (
     create_currency_commodities_data_collection_agent,
     create_discovery_screening_data_collection_agent,
@@ -35,7 +35,7 @@ _VALIDATION_DESCRIPTION = (
 )
 
 
-async def build_validation_subagent(config: Configuration) -> CompiledSubAgent:
+async def build_validation_subagent(config: RunnableConfig) -> CompiledSubAgent:
     """Create the data-validation subagent used across all investment stages."""
     validation_agent = await create_data_validation_agent(config)
     return CompiledSubAgent(
@@ -45,7 +45,7 @@ async def build_validation_subagent(config: Configuration) -> CompiledSubAgent:
     )
 
 
-async def build_analysis_subagents(config: Configuration) -> list[CompiledSubAgent]:
+async def build_analysis_subagents(config: RunnableConfig) -> list[CompiledSubAgent]:
     """Create the standard set of 14 analysis subagents.
 
     Return 13 data collection subagents + 1 data validation subagent,

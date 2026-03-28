@@ -53,9 +53,15 @@ class TestGetTools:
             }
         }
 
-        with patch(
-            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
-            return_value=mock_client,
+        with (
+            patch(
+                "muffin_agent.agents.data_collection.utils.McpConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch(
+                "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
+                return_value=mock_client,
+            ),
         ):
             tools = await get_tools(config, MCP_TOOLS)
 
@@ -75,9 +81,15 @@ class TestGetTools:
         config = MagicMock()
         config.get_mcp_connections.return_value = {}
 
-        with patch(
-            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
-            return_value=mock_client,
+        with (
+            patch(
+                "muffin_agent.agents.data_collection.utils.McpConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch(
+                "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
+                return_value=mock_client,
+            ),
         ):
             tools = await get_tools(config, MCP_TOOLS)
 

@@ -508,7 +508,7 @@ class TestForecastingNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -540,7 +540,7 @@ class TestForecastingNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -574,7 +574,7 @@ class TestForecastingNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -603,7 +603,7 @@ class TestForecastingNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -638,6 +638,11 @@ class TestCreateForecastingAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.forecasting"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
                 ".create_equity_estimates_data_collection_agent",
@@ -687,6 +692,11 @@ class TestCreateForecastingAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.forecasting"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
                 ".create_equity_estimates_data_collection_agent",
@@ -745,6 +755,11 @@ class TestCreateForecastingAgent:
         with (
             patch(
                 "muffin_agent.agents.investment.forecasting"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch(
+                "muffin_agent.agents.investment.forecasting"
                 ".create_equity_estimates_data_collection_agent",
                 new_callable=AsyncMock,
                 return_value=MagicMock(),
@@ -794,6 +809,11 @@ class TestCreateForecastingAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.forecasting"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
                 ".create_equity_estimates_data_collection_agent",
@@ -863,7 +883,7 @@ class TestForecastingNode:
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -895,7 +915,7 @@ class TestForecastingNode:
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -923,7 +943,7 @@ class TestForecastingNode:
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -951,7 +971,7 @@ class TestForecastingNode:
             ),
             patch(
                 "muffin_agent.agents.investment.forecasting"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):

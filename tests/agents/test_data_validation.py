@@ -64,7 +64,14 @@ class TestCreateDataValidationAgent:
         config = MagicMock()
         config.get_llm.return_value = MagicMock()
 
-        with patch("muffin_agent.agents.data_validation.create_agent") as mock_create:
+        with (
+            patch(
+                "muffin_agent.agents.data_validation"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch("muffin_agent.agents.data_validation.create_agent") as mock_create,
+        ):
             mock_create.return_value = MagicMock()
 
             from muffin_agent.agents.data_validation import (

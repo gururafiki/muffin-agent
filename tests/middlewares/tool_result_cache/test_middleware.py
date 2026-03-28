@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from langchain_core.messages import ToolMessage
 
-from muffin_agent.agents.middleware import (
+from muffin_agent.middlewares.tool_result_cache import (
     ToolResultCacheMiddleware,
-    _args_hash,
-    _is_error_content,
+    get_args_hash,
+    is_error_content,
 )
 
-# ── _args_hash ────────────────────────────────────────────────────────────────
+# ── get_args_hash ────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -19,30 +19,30 @@ class TestArgsHash:
     """Test deterministic hash generation."""
 
     def test_deterministic_same_args(self):
-        h1 = _args_hash({"x": 1, "y": 2})
-        h2 = _args_hash({"x": 1, "y": 2})
+        h1 = get_args_hash({"x": 1, "y": 2})
+        h2 = get_args_hash({"x": 1, "y": 2})
         assert h1 == h2
 
     def test_arg_order_does_not_matter(self):
-        h1 = _args_hash({"y": 2, "x": 1})
-        h2 = _args_hash({"x": 1, "y": 2})
+        h1 = get_args_hash({"y": 2, "x": 1})
+        h2 = get_args_hash({"x": 1, "y": 2})
         assert h1 == h2
 
     def test_different_args_different_hash(self):
-        h1 = _args_hash({"x": 1})
-        h2 = _args_hash({"x": 2})
+        h1 = get_args_hash({"x": 1})
+        h2 = get_args_hash({"x": 2})
         assert h1 != h2
 
     def test_hash_length(self):
-        h = _args_hash({"symbol": "AAPL"})
+        h = get_args_hash({"symbol": "AAPL"})
         assert len(h) == 12
 
     def test_empty_args(self):
-        h = _args_hash({})
+        h = get_args_hash({})
         assert len(h) == 12
 
 
-# ── _is_error_content ────────────────────────────────────────────────────────
+# ── is_error_content ────────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -50,19 +50,19 @@ class TestIsErrorContent:
     """Test error content detection."""
 
     def test_error_prefix(self):
-        assert _is_error_content("Error: something broke") is True
+        assert is_error_content("Error: something broke") is True
 
     def test_error_permanent(self):
-        assert _is_error_content("Error (permanent): unauthorized") is True
+        assert is_error_content("Error (permanent): unauthorized") is True
 
     def test_duplicate_blocked(self):
-        assert _is_error_content("DUPLICATE CALL BLOCKED: ...") is True
+        assert is_error_content("DUPLICATE CALL BLOCKED: ...") is True
 
     def test_normal_content(self):
-        assert _is_error_content('{"data": [1, 2, 3]}') is False
+        assert is_error_content('{"data": [1, 2, 3]}') is False
 
     def test_non_string(self):
-        assert _is_error_content(123) is False  # type: ignore[arg-type]
+        assert is_error_content(123) is False  # type: ignore[arg-type]
 
 
 # ── ToolResultCacheMiddleware ────────────────────────────────────────────────
@@ -78,7 +78,7 @@ def _make_store_item(content: str, tool_name: str = "tool_a", args: dict | None 
         "cached_at": "2026-03-22T14:30:00+00:00",
         "content_size": len(content),
     }
-    item.key = _args_hash(args or {})
+    item.key = get_args_hash(args or {})
     return item
 
 
@@ -127,7 +127,9 @@ class TestToolResultCacheMiddleware:
 
         mw = ToolResultCacheMiddleware()
         request = _make_request(
-            "equity_price_historical", {"symbol": "AAPL"}, store=store,
+            "equity_price_historical",
+            {"symbol": "AAPL"},
+            store=store,
         )
 
         result = await mw.awrap_tool_call(request, handler)
@@ -136,7 +138,7 @@ class TestToolResultCacheMiddleware:
         store.aput.assert_awaited_once()
         call_args = store.aput.call_args
         assert call_args.args[0] == ("cache", "equity_price_historical")
-        assert call_args.args[1] == _args_hash({"symbol": "AAPL"})
+        assert call_args.args[1] == get_args_hash({"symbol": "AAPL"})
         assert call_args.args[2]["content"] == "price data here"
         assert call_args.args[2]["tool_name"] == "equity_price_historical"
         assert "[Data cached" in result.content
@@ -154,7 +156,9 @@ class TestToolResultCacheMiddleware:
 
         mw = ToolResultCacheMiddleware()
         request = _make_request(
-            "equity_price_historical", {"symbol": "AAPL"}, store=store,
+            "equity_price_historical",
+            {"symbol": "AAPL"},
+            store=store,
         )
 
         result = await mw.awrap_tool_call(request, handler)

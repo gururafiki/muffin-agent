@@ -5,14 +5,15 @@ data, and produces a scored stock assessment with reasoning.
 """
 
 from deepagents import create_deep_agent
+from langchain_core.runnables import RunnableConfig
 
-from ..config import Configuration
+from ..model_config import ModelConfiguration
 from ..prompts import render_template
 from ..sandbox import get_backend
 from .subagents import build_analysis_subagents
 
 
-async def create_stock_evaluation_agent(config: Configuration):
+async def create_stock_evaluation_agent(config: RunnableConfig):
     """Build the stock evaluation deep agent.
 
     Create a deep agent that delegates data collection to specialized
@@ -23,7 +24,8 @@ async def create_stock_evaluation_agent(config: Configuration):
     """
     subagents = await build_analysis_subagents(config)
     prompt = render_template("stock_evaluation.jinja")
-    llm = config.get_llm()
+    model_config = ModelConfiguration.from_runnable_config(config)
+    llm = model_config.get_llm()
 
     return create_deep_agent(
         model=llm,

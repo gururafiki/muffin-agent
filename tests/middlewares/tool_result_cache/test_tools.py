@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-_PATCH_AGET = "muffin_agent.sandbox.tools.aget_sandbox"
+_PATCH_AGET = "muffin_agent.middlewares.tool_result_cache.tools.aget_sandbox"
 
 
 def _make_execution(stdout_texts=(), stderr_texts=(), error=None, cmd_id="cmd-1"):
@@ -58,89 +58,6 @@ def _make_runtime(store=None):
     return runtime
 
 
-async def _invoke(code):
-    """Call execute_python's underlying coroutine directly."""
-    from muffin_agent.sandbox.tools import execute_python
-
-    runtime = _make_runtime()
-    return await execute_python.coroutine(code, runtime)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestExecutePythonTool:
-    def test_is_named_execute_python(self):
-        from muffin_agent.sandbox.tools import execute_python
-
-        assert execute_python.name == "execute_python"
-
-    @pytest.mark.asyncio
-    async def test_successful_execution_returns_output(self):
-        sandbox = _make_sandbox(exec_output="hello world\n", exec_exit_code=0)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            result = await _invoke("print('hello world')")
-
-        assert result == "hello world\n"
-        sandbox.__aexit__.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_write_failure_returns_error_message(self):
-        sandbox = _make_sandbox(write_raises=True)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            result = await _invoke("print(1)")
-
-        assert "Failed to write" in result
-        sandbox.commands.run.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_nonzero_exit_code_returns_error_with_output(self):
-        err_output = "NameError: name 'x' is not defined\n"
-        sandbox = _make_sandbox(exec_output=err_output, exec_exit_code=1)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            result = await _invoke("print(x)")
-
-        assert "Execution failed" in result
-        assert "exit 1" in result
-        assert "NameError" in result
-
-    @pytest.mark.asyncio
-    async def test_no_output_returns_placeholder(self):
-        sandbox = _make_sandbox(exec_output="", exec_exit_code=0)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            result = await _invoke("x = 1 + 1")
-
-        assert result == "(no output)"
-
-    @pytest.mark.asyncio
-    async def test_cleanup_removes_temp_file(self):
-        sandbox = _make_sandbox(exec_output="ok\n", exec_exit_code=0)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            await _invoke("print('ok')")
-
-        assert sandbox.commands.run.call_count == 2
-        cleanup_cmd = sandbox.commands.run.call_args_list[1].args[0]
-        assert cleanup_cmd.startswith("rm -f /tmp/muffin_exec_")
-
-    @pytest.mark.asyncio
-    async def test_sandbox_discovered_via_aget_sandbox(self):
-        sandbox = _make_sandbox(exec_output="found\n", exec_exit_code=0)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)) as mock_aget:
-            result = await _invoke("print('found')")
-
-        mock_aget.assert_called_once()
-        assert result == "found\n"
-
-
 # ---------------------------------------------------------------------------
 # discover_cached_data tests
 # ---------------------------------------------------------------------------
@@ -148,7 +65,7 @@ class TestExecutePythonTool:
 
 async def _invoke_discover(store=None):
     """Call discover_cached_data's underlying coroutine directly."""
-    from muffin_agent.sandbox.tools import discover_cached_data
+    from muffin_agent.middlewares.tool_result_cache.tools import discover_cached_data
 
     runtime = _make_runtime(store=store)
     return await discover_cached_data.coroutine(runtime)
@@ -181,26 +98,30 @@ def _make_store_with_entries(entries):
 @pytest.mark.unit
 class TestDiscoverCachedDataTool:
     def test_is_named_discover_cached_data(self):
-        from muffin_agent.sandbox.tools import discover_cached_data
+        from muffin_agent.middlewares.tool_result_cache.tools import (
+            discover_cached_data,
+        )
 
         assert discover_cached_data.name == "discover_cached_data"
 
     @pytest.mark.asyncio
     async def test_returns_json_from_store(self):
         """Successful run returns JSON array from store entries."""
-        store = _make_store_with_entries([
-            (
-                ("cache", "tool_a"),
-                "abc123",
-                {
-                    "tool_name": "tool_a",
-                    "args": {"x": 1},
-                    "cached_at": "2026-03-22T14:00:00",
-                    "content_size": 100,
-                    "content": "data",
-                },
-            ),
-        ])
+        store = _make_store_with_entries(
+            [
+                (
+                    ("cache", "tool_a"),
+                    "abc123",
+                    {
+                        "tool_name": "tool_a",
+                        "args": {"x": 1},
+                        "cached_at": "2026-03-22T14:00:00",
+                        "content_size": 100,
+                        "content": "data",
+                    },
+                ),
+            ]
+        )
         result = await _invoke_discover(store=store)
 
         parsed = json.loads(result)
@@ -233,18 +154,25 @@ class TestDiscoverCachedDataTool:
 
 async def _invoke_write(tool_name, args_hash, store=None, file_path=None):
     """Call write_tool_output_to_backend's underlying coroutine directly."""
-    from muffin_agent.sandbox.tools import write_tool_output_to_backend
+    from muffin_agent.middlewares.tool_result_cache.tools import (
+        write_tool_output_to_backend,
+    )
 
     runtime = _make_runtime(store=store)
     return await write_tool_output_to_backend.coroutine(
-        tool_name, args_hash, runtime, file_path=file_path,
+        tool_name,
+        args_hash,
+        runtime,
+        file_path=file_path,
     )
 
 
 @pytest.mark.unit
 class TestWriteToolOutputToBackendTool:
     def test_is_named_write_tool_output_to_backend(self):
-        from muffin_agent.sandbox.tools import write_tool_output_to_backend
+        from muffin_agent.middlewares.tool_result_cache.tools import (
+            write_tool_output_to_backend,
+        )
 
         assert write_tool_output_to_backend.name == "write_tool_output_to_backend"
 
@@ -294,7 +222,10 @@ class TestWriteToolOutputToBackendTool:
 
         with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
             result = await _invoke_write(
-                "tool_a", "abc123", store=store, file_path="/custom/path.json",
+                "tool_a",
+                "abc123",
+                store=store,
+                file_path="/custom/path.json",
             )
 
         assert "/custom/path.json" in result
@@ -321,14 +252,15 @@ class TestWriteToolOutputToBackendTool:
 # get_tool_output_schema tests
 # ---------------------------------------------------------------------------
 
-_PATCH_FIND = "muffin_agent.sandbox.tools._find_python_tool_schema"
-_PATCH_CREATE_SESSION = "langchain_mcp_adapters.sessions.create_session"
-_PATCH_CONFIG = "muffin_agent.config.Configuration"
+_TOOLS_MOD = "muffin_agent.middlewares.tool_result_cache.tools"
+_PATCH_FIND = f"{_TOOLS_MOD}._find_python_tool_schema"
+_PATCH_CREATE_SESSION = f"{_TOOLS_MOD}.create_session"
+_PATCH_CONFIG = f"{_TOOLS_MOD}.McpConfiguration"
 
 
 async def _invoke_schema(tool_name: str):
     """Call get_tool_output_schema's underlying coroutine directly."""
-    from muffin_agent.sandbox.tools import get_tool_output_schema
+    from muffin_agent.middlewares.tool_result_cache.tools import get_tool_output_schema
 
     runtime = _make_runtime()
     return await get_tool_output_schema.coroutine(tool_name, runtime)
@@ -337,7 +269,9 @@ async def _invoke_schema(tool_name: str):
 @pytest.mark.unit
 class TestGetToolOutputSchemaTool:
     def test_is_named_get_tool_output_schema(self):
-        from muffin_agent.sandbox.tools import get_tool_output_schema
+        from muffin_agent.middlewares.tool_result_cache.tools import (
+            get_tool_output_schema,
+        )
 
         assert get_tool_output_schema.name == "get_tool_output_schema"
 

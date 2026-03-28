@@ -34,9 +34,16 @@ class TestGetTools:
         non_matching = MagicMock()
         non_matching.name = "fixedincome_rate_sofr"
 
-        with patch(
-            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient"
-        ) as mock_client_cls:
+        with (
+            patch(
+                "muffin_agent.agents.data_collection.utils.McpConfiguration"
+                ".from_runnable_config",
+                return_value=MagicMock(get_mcp_connections=MagicMock(return_value={})),
+            ),
+            patch(
+                "muffin_agent.agents.data_collection.utils.MultiServerMCPClient"
+            ) as mock_client_cls,
+        ):
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -56,9 +63,16 @@ class TestGetTools:
         mock_tool = MagicMock()
         mock_tool.name = "other_tool"
 
-        with patch(
-            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient"
-        ) as mock_client_cls:
+        with (
+            patch(
+                "muffin_agent.agents.data_collection.utils.McpConfiguration"
+                ".from_runnable_config",
+                return_value=MagicMock(get_mcp_connections=MagicMock(return_value={})),
+            ),
+            patch(
+                "muffin_agent.agents.data_collection.utils.MultiServerMCPClient"
+            ) as mock_client_cls,
+        ):
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)

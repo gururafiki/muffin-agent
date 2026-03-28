@@ -9,24 +9,24 @@ from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from muffin_agent.agents.data_collection import (
+from ...middlewares import ToolResultCacheMiddleware
+from ...model_config import ModelConfiguration
+from ...prompts import render_template
+from ...sandbox import get_backend
+from ...tools.sector import (
+    compute_peer_dispersion,
+    compute_sector_relative_performance,
+)
+from ..data_collection import (
     create_discovery_screening_data_collection_agent,
     create_equity_estimates_data_collection_agent,
     create_etf_index_data_collection_agent,
     create_news_data_collection_agent,
     create_regulatory_filings_data_collection_agent,
 )
-from muffin_agent.agents.investment.schemas import DataSource
-from muffin_agent.agents.investment.utils import run_deep_agent_node
-from muffin_agent.agents.middleware import ToolResultCacheMiddleware
-from muffin_agent.agents.subagents import build_validation_subagent
-from muffin_agent.config import Configuration
-from muffin_agent.prompts import render_template
-from muffin_agent.sandbox import get_backend
-from muffin_agent.tools.sector import (
-    compute_peer_dispersion,
-    compute_sector_relative_performance,
-)
+from ..investment.schemas import DataSource
+from ..investment.utils import run_deep_agent_node
+from ..subagents import build_validation_subagent
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ class SectorViewOutput(BaseModel):
 # ── Subagent builder ──────────────────────────────────────────────────────────
 
 
-async def _build_sector_subagents(config: Configuration) -> list[CompiledSubAgent]:
+async def _build_sector_subagents(config: RunnableConfig) -> list[CompiledSubAgent]:
     """Build the sector-focused subagent set for sector/industry analysis.
 
     Return 4 data collection subagents + 1 data validation subagent, covering
@@ -280,7 +280,7 @@ async def _build_sector_subagents(config: Configuration) -> list[CompiledSubAgen
 
 
 async def create_sector_analysis_agent(
-    config: Configuration,
+    config: RunnableConfig,
     store: BaseStore | None = None,
 ):
     """Build the sector analysis deep agent.
@@ -303,7 +303,8 @@ async def create_sector_analysis_agent(
     """
     subagents = await _build_sector_subagents(config)
     prompt = render_template("investment/sector_analysis.jinja")
-    llm = config.get_llm()
+    model_config = ModelConfiguration.from_runnable_config(config)
+    llm = model_config.get_llm()
 
     return create_deep_agent(
         model=llm,
@@ -317,10 +318,12 @@ async def create_sector_analysis_agent(
         store=store,
         middleware=[
             ToolResultCacheMiddleware(
-                cacheable_tools=frozenset({
-                    "compute_sector_relative_performance",
-                    "compute_peer_dispersion",
-                }),
+                cacheable_tools=frozenset(
+                    {
+                        "compute_sector_relative_performance",
+                        "compute_peer_dispersion",
+                    }
+                ),
             ),
         ],
         response_format=AutoStrategy(schema=SectorViewOutput),

@@ -93,6 +93,28 @@
     - reflects on evaluation results and based on reflection results push back on analysis to add more criteria or re-synthesize report if needed.
 
 ## Core workflow
+
+### High-level
+1. [ ] Define screening zone
+    - [ ] Analyse Region against other regions
+    - [ ] Analyse Country (Economy) against other economies
+    - [ ] Analyse Sector against other sectors
+2. [ ] Define Ticker
+    - [ ] Check losers/gainers/news
+3. [ ] Analyse Ticker
+    - [ ] Analyse business. Idea, Technologies used and their potential, MOAT and competetive advantage, offered products, current market coverage and potential market coverage, expansion to other markets (requires understanding of economy of potential markets, should be computed by subagent and stored in store)
+    - [ ] News analysis. Defining if news are affecting business short-term or long-term and how.
+    - [ ] Fundamental analysis
+    - [ ] Technical analysis
+    - [ ] Forecasting and scenario modeling
+    - [ ] Risk assesment
+    - [ ] Valuation
+4. [ ] Compare against other tickers (requires full analysis of other tickers, should be computed by subagent and stored in store)
+5. [ ] Define trade proposal 
+6. [ ] Check how new investment fits to portfolio
+7. [ ] Execute the trade
+
+### Low-level
 - [ ] Idea Sourcing & Screening: Defines investment idea (Step 1 from [docs/investment-process.md](docs/investment-process.md))
     - [ ] Macro screeners:
         - [ ] Sector screener: Compare sectors in the current economic condition to define which has potential to attract more capital.
@@ -139,7 +161,7 @@
 - [ ] Explore agents from https://github.com/virattt/ai-hedge-fund
 
 ### Other improvements
-- [ ] Rework tool results cache. Use ToolRuntime.store (share InMemoryStore across all agents). Add tool: `write_tool_output_to_backend` that will write tool output to backend from store for further manipulations. Within middleware check if tool output is already in cache (store) and if it's return it instead of reading it from sandbox. Update prompts to teach them about new tool and workflow to manipulate with data: check cached tool output using `discover_cached_data` -> use tool to get output schema -> use `write_tool_output_to_backend` to save output in backend -> execute custom code to manipulate with output.
+- [x] Rework tool results cache. Use ToolRuntime.store (share InMemoryStore across all agents). Add tool: `write_tool_output_to_backend` that will write tool output to backend from store for further manipulations. Within middleware check if tool output is already in cache (store) and if it's return it instead of reading it from sandbox. Update prompts to teach them about new tool and workflow to manipulate with data: check cached tool output using `discover_cached_data` -> use tool to get output schema -> use `write_tool_output_to_backend` to save output in backend -> execute custom code to manipulate with output.
 - [ ] Explore `langchain.agents.middleware.context_editing.ContextEditingMiddleware` and `langchain.agents.middleware.summarization.SummarizationMiddleware`:
     - [ ] Clean failed tools and just summarize what agent shouldn't do based on failure messages
     - [ ] Extract from news important in the current context information only (e.g. extract sentiment, evaluate how article may affect ticket short/long-term, etc)
@@ -155,6 +177,11 @@
 - [ ] Add an agent to analyze stock price gainers and reason why they have grown to incorporate this knowledge later
 - [x] For structure outputs explore response_format for agents — implemented in Market Regime Agent via `AutoStrategy(schema=MarketRegimeOutput)`
 - [ ] For cross-run memory - ask user to define it before run, so use defines style they need, depth of analysis, etc and later it's used for all interactions with agent
+- [ ] Explore additional Valuation methodologies:
+    - [ ] Precedent Transactions — zero coverage. No M&A deal data source exists in OpenBB's MCP tools, so there's no subagent to collect transaction multiples, control premiums, or deal environment context. We'd need an external M&A data provider first. OpenBB doesn't expose M&A deal databases (that's typically Bloomberg/Capital IQ/Refinitiv territory). Without deal data, there's nothing to compute on.
+    - [ ] SOTP (Sum-of-the-Parts) — schema field exists (sum_of_parts: dict | None) but is explicitly None / v1 placeholder. Would need segment-level revenue/EBITDA extraction (from 10-K MD&A), per-segment peer multiples, and a new aggregation tool. Needs segment-level financials. The regulatory-filings subagent can fetch 10-K filings, but parsing segment tables from SEC filings is a non-trivial extraction problem.
+    - [ ] Residual Income — also mentioned in docs/investment-process.md but not implemented.
+
 
 ### Unbiasing agents
 - [ ] When defining data needs for criterion - agent shouldn't know about subagents available, to make sure that data needs are unbaiased
@@ -199,7 +226,8 @@
     - [ ] Messengers
 
 #### Sandbox
-- [ ] Save tool outputs in file system and pass their references for computations instead of generating them within scripts.
+- [ ] Move Sandbox to separeate package: `langchain_opensandbox`
+- [ ] Generalize `write_tool_output_to_backend` (check todo in code)
 - [ ] Explore `context_schema` to store sandbox id/thread id: https://docs.langchain.com/oss/python/langchain/tools#context
 - [ ] Keep in memory/readme already written scripts.
 - [x] Auto-recreate dead sandboxes — `SandboxFactory` discovers by `thread_id` metadata and creates if not found

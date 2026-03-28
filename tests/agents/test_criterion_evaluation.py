@@ -101,6 +101,11 @@ class TestCreateCriterionEvaluationAgent:
 
         with (
             patch(
+                "muffin_agent.agents.criterion_evaluation"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch(
                 "muffin_agent.agents.subagents"
                 ".create_currency_commodities_data_collection_agent",
                 new_callable=AsyncMock,

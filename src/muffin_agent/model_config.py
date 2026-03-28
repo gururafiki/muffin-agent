@@ -1,19 +1,15 @@
 """Configuration and LLM provider management."""
 
-import os
 from typing import Any, Literal
 
-from dotenv import load_dotenv
-from langchain_core.runnables import RunnableConfig
-from langchain_mcp_adapters.sessions import Connection
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-load_dotenv()
+from .utils.base_config import BaseConfiguration
 
 DEFAULT_MODEL = "openai/gpt-oss-120b:free"
 
 
-class Configuration(BaseModel):
+class ModelConfiguration(BaseConfiguration):
     """LangGraph-compatible configuration for LLM provider selection.
 
     Model string format: "provider/model-name" where provider is one of:
@@ -50,7 +46,10 @@ class Configuration(BaseModel):
         default=6,
         ge=0,
         le=10,
-        description="Retries for transient LLM errors (e.g. HTTP 429 rate limits). Both ChatOpenAI and ChatAnthropic use exponential backoff.",
+        description=(
+            "Retries for transient LLM errors (e.g. HTTP 429 rate limits). "
+            "Both ChatOpenAI and ChatAnthropic use exponential backoff."
+        ),
     )
 
     # ==================== API Keys ====================
@@ -69,73 +68,6 @@ class Configuration(BaseModel):
         default=None,
         description="OpenRouter site URL (for backward compatibility)",
     )
-
-    # ==================== MCP Servers ====================
-
-    openbb_mcp_url: str = Field(
-        default="http://127.0.0.1:8001/mcp",
-        description="OpenBB MCP server URL",
-    )
-
-    # ==================== Sandbox ====================
-
-    opensandbox_url: str = Field(
-        default="localhost:8080",
-        description=(
-            "OpenSandbox server address (host:port). "
-            "Used as ConnectionConfig.domain when creating sandbox containers."
-        ),
-    )
-
-    opensandbox_api_key: str | None = Field(
-        default=None,
-        description="OpenSandbox server API key (leave empty if server has no auth).",
-    )
-
-    opensandbox_image: str = Field(
-        default="python:3.11-slim",
-        description=(
-            "Docker image for sandbox containers. "
-            "Override with a custom image that has pandas, numpy, ta-lib, etc. "
-            "pre-installed for faster startup."
-        ),
-    )
-
-    # ==================== Criteria Selection ====================
-
-    max_criteria: int = Field(
-        default=7,
-        ge=1,
-        le=20,
-        description="Maximum number of evaluation criteria for the reasoning agent",
-    )
-
-    def get_mcp_connections(self) -> dict[str, Connection]:
-        """Get MCP server connections for MultiServerMCPClient."""
-        return {
-            "openbb": {
-                "url": self.openbb_mcp_url,
-                "transport": "streamable_http",
-            }
-        }
-
-    @classmethod
-    def from_runnable_config(cls, config: RunnableConfig) -> "Configuration":
-        """Create Configuration from a LangGraph RunnableConfig.
-
-        Extracts known fields from config["configurable"], ignoring unknown keys.
-        """
-        configurable = config.get("configurable", {})
-
-        # Get raw values from environment or config
-        raw_values: dict[str, Any] = {
-            name: os.environ.get(name.upper(), configurable.get(name))
-            for name in cls.model_fields.keys()
-        }
-        # Filter out None values
-        values = {k: v for k, v in raw_values.items() if v is not None}
-
-        return cls(**values)
 
     def get_llm(
         self, model: str | None = None, temperature: float | None = None, **kwargs

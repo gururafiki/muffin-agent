@@ -1,6 +1,5 @@
 """Unit tests for risk tools (beta, VaR/CVaR, Sharpe/Sortino, max drawdown)."""
 
-
 import pytest
 
 from muffin_agent.tools.risk import (

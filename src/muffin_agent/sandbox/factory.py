@@ -12,8 +12,8 @@ from langgraph.config import get_config
 from langgraph.prebuilt import ToolRuntime
 from langgraph.runtime import Runtime
 
-from ..config import Configuration
 from .backend import OpenSandboxBackend
+from .config import OpenSandboxConfiguration
 
 
 class SandboxFactory:
@@ -27,6 +27,14 @@ class SandboxFactory:
     def __init__(self, runtime: Runtime | ToolRuntime) -> None:
         """Initialize with a runtime context."""
         self._runtime = runtime
+        self._config = self._get_opensandobx_config()
+
+    def _get_opensandobx_config(self) -> OpenSandboxConfiguration:
+        """Build a Configuration from runtime config or langgraph context."""
+        cfg = getattr(self._runtime, "config", None)
+        if not isinstance(cfg, dict):
+            cfg = get_config()
+        return OpenSandboxConfiguration.from_runnable_config(cfg)
 
     def _get_thread_id(self) -> str:
         """Extract thread_id from runtime config or langgraph context."""
@@ -35,21 +43,13 @@ class SandboxFactory:
             cfg = get_config()
         return (cfg.get("configurable") or {}).get("thread_id") or "default"
 
-    def _get_muffin_config(self) -> Configuration:
-        """Build a Configuration from runtime config or langgraph context."""
-        cfg = getattr(self._runtime, "config", None)
-        if not isinstance(cfg, dict):
-            cfg = get_config()
-        return Configuration.from_runnable_config(cfg)
-
     def _make_sync_connection(self):
         """Build a ConnectionConfigSync from muffin agent config."""
         from opensandbox.config.connection_sync import ConnectionConfigSync
 
-        config = self._get_muffin_config()
         return ConnectionConfigSync(
-            domain=config.opensandbox_url,
-            api_key=config.opensandbox_api_key or None,
+            domain=self._config.opensandbox_url,
+            api_key=self._config.opensandbox_api_key,
             protocol="http",
         )
 
@@ -57,10 +57,9 @@ class SandboxFactory:
         """Build a ConnectionConfig (async) from muffin agent config."""
         from opensandbox.config.connection import ConnectionConfig
 
-        config = self._get_muffin_config()
         return ConnectionConfig(
-            domain=config.opensandbox_url,
-            api_key=config.opensandbox_api_key or None,
+            domain=self._config.opensandbox_url,
+            api_key=self._config.opensandbox_api_key,
             protocol="http",
         )
 
@@ -106,7 +105,6 @@ class SandboxFactory:
         """Find or create a sandbox (sync)."""
         from opensandbox.sync.sandbox import SandboxSync
 
-        config = self._get_muffin_config()
         sandbox_id = self._find_sandbox_id()
         if sandbox_id:
             return SandboxSync.connect(
@@ -115,7 +113,7 @@ class SandboxFactory:
                 skip_health_check=False,
             )
         return SandboxSync.create(
-            config.opensandbox_image,
+            self._config.opensandbox_image,
             connection_config=self._make_sync_connection(),
             timeout=timedelta(hours=1),
             env={"PYTHONUNBUFFERED": "1"},
@@ -126,7 +124,6 @@ class SandboxFactory:
         """Find or create a sandbox (async)."""
         from opensandbox.sandbox import Sandbox
 
-        config = self._get_muffin_config()
         sandbox_id = await self._afind_sandbox_id()
         if sandbox_id:
             return await Sandbox.connect(
@@ -135,7 +132,7 @@ class SandboxFactory:
                 skip_health_check=False,
             )
         return await Sandbox.create(
-            config.opensandbox_image,
+            self._config.opensandbox_image,
             connection_config=self._make_async_connection(),
             timeout=timedelta(hours=1),
             env={"PYTHONUNBUFFERED": "1"},
