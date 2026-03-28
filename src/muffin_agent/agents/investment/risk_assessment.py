@@ -9,7 +9,17 @@ from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from muffin_agent.agents.data_collection import (
+from ...middlewares import ToolResultCacheMiddleware
+from ...model_config import ModelConfiguration
+from ...prompts import render_template
+from ...sandbox import get_backend
+from ...tools.risk import (
+    compute_beta,
+    compute_max_drawdown,
+    compute_sharpe_sortino,
+    compute_var_cvar,
+)
+from ..data_collection import (
     create_economy_macro_data_collection_agent,
     create_equity_ownership_data_collection_agent,
     create_equity_price_data_collection_agent,
@@ -17,19 +27,9 @@ from muffin_agent.agents.data_collection import (
     create_fixed_income_data_collection_agent,
     create_options_data_collection_agent,
 )
-from muffin_agent.agents.investment.schemas import DataSource
-from muffin_agent.agents.investment.utils import run_deep_agent_node
-from muffin_agent.agents.middleware import ToolResultCacheMiddleware
-from muffin_agent.agents.subagents import build_validation_subagent
-from muffin_agent.config import Configuration
-from muffin_agent.prompts import render_template
-from muffin_agent.sandbox import get_backend
-from muffin_agent.tools.risk import (
-    compute_beta,
-    compute_max_drawdown,
-    compute_sharpe_sortino,
-    compute_var_cvar,
-)
+from ..subagents import build_validation_subagent
+from .schemas import DataSource
+from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -298,7 +298,7 @@ class RiskAssessmentOutput(BaseModel):
 
 
 async def _build_risk_assessment_subagents(
-    config: Configuration,
+    config: RunnableConfig,
 ) -> list[CompiledSubAgent]:
     """Build the focused subagent set for risk & downside assessment.
 
@@ -400,7 +400,7 @@ async def _build_risk_assessment_subagents(
 
 
 async def create_risk_assessment_agent(
-    config: Configuration,
+    config: RunnableConfig,
     store: BaseStore | None = None,
 ) -> Any:
     """Build the risk assessment deep agent.
@@ -416,7 +416,8 @@ async def create_risk_assessment_agent(
     """
     subagents = await _build_risk_assessment_subagents(config)
     prompt = render_template("investment/risk_assessment.jinja")
-    llm = config.get_llm()
+    model_config = ModelConfiguration.from_runnable_config(config)
+    llm = model_config.get_llm()
 
     return create_deep_agent(
         model=llm,

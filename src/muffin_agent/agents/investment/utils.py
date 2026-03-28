@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 
-from muffin_agent.config import Configuration
+from ...model_config import ModelConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +49,11 @@ async def run_deep_agent_node(
     fallback = error_fallback or {}
 
     try:
-        configuration = Configuration.from_runnable_config(config)
+        configuration = ModelConfiguration.from_runnable_config(config)
         agent = await agent_factory(configuration, store=store)
 
         context = {
-            k: state[k]
-            for k in input_state_type.__annotations__
-            if state.get(k)
+            k: state[k] for k in input_state_type.__annotations__ if state.get(k)
         }
         result = await agent.ainvoke({"input": json.dumps(context)})
 
@@ -63,11 +61,7 @@ async def run_deep_agent_node(
             result.get("structured_response") if isinstance(result, dict) else None
         )
         if structured is None:
-            raw = (
-                result.get("output", "")
-                if isinstance(result, dict)
-                else str(result)
-            )
+            raw = result.get("output", "") if isinstance(result, dict) else str(result)
             return {
                 state_key: {
                     **fallback,

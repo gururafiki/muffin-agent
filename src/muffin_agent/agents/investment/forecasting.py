@@ -9,27 +9,27 @@ from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from muffin_agent.agents.data_collection import (
+from ...middlewares import ToolResultCacheMiddleware
+from ...model_config import ModelConfiguration
+from ...prompts import render_template
+from ...sandbox import get_backend
+from ...tools.profitability import (
+    compute_accruals_ratio,
+    compute_revenue_cagr,
+)
+from ...tools.projections import (
+    compute_sensitivity,
+    project_three_year_financials,
+)
+from ..data_collection import (
     create_currency_commodities_data_collection_agent,
     create_economy_macro_data_collection_agent,
     create_equity_estimates_data_collection_agent,
     create_equity_fundamentals_data_collection_agent,
 )
-from muffin_agent.agents.investment.schemas import DataSource
-from muffin_agent.agents.investment.utils import run_deep_agent_node
-from muffin_agent.agents.middleware import ToolResultCacheMiddleware
-from muffin_agent.agents.subagents import build_validation_subagent
-from muffin_agent.config import Configuration
-from muffin_agent.prompts import render_template
-from muffin_agent.sandbox import get_backend
-from muffin_agent.tools.profitability import (
-    compute_accruals_ratio,
-    compute_revenue_cagr,
-)
-from muffin_agent.tools.projections import (
-    compute_sensitivity,
-    project_three_year_financials,
-)
+from ..subagents import build_validation_subagent
+from .schemas import DataSource
+from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -298,7 +298,9 @@ class ForecastOutput(BaseModel):
 # ── Subagent builder ──────────────────────────────────────────────────────────
 
 
-async def _build_forecasting_subagents(config: Configuration) -> list[CompiledSubAgent]:
+async def _build_forecasting_subagents(
+    config: RunnableConfig,
+) -> list[CompiledSubAgent]:
     """Build the focused subagent set for forecasting & scenario modeling.
 
     Return 4 data collection subagents + 1 data validation subagent.
@@ -385,7 +387,7 @@ _PROBABILITY_ANCHORS: dict[str, tuple[float, float, float]] = {
 
 
 async def create_forecasting_agent(
-    config: Configuration,
+    config: RunnableConfig,
     company_signal: str | None = None,
     store: BaseStore | None = None,
 ):
@@ -414,7 +416,8 @@ async def create_forecasting_agent(
         bear_probability=bear_p,
         company_signal=company_signal or "pass",
     )
-    llm = config.get_llm()
+    model_config = ModelConfiguration.from_runnable_config(config)
+    llm = model_config.get_llm()
 
     return create_deep_agent(
         model=llm,
@@ -430,12 +433,14 @@ async def create_forecasting_agent(
         store=store,
         middleware=[
             ToolResultCacheMiddleware(
-                cacheable_tools=frozenset({
-                    "project_three_year_financials",
-                    "compute_sensitivity",
-                    "compute_accruals_ratio",
-                    "compute_revenue_cagr",
-                }),
+                cacheable_tools=frozenset(
+                    {
+                        "project_three_year_financials",
+                        "compute_sensitivity",
+                        "compute_accruals_ratio",
+                        "compute_revenue_cagr",
+                    }
+                ),
             ),
         ],
         response_format=AutoStrategy(schema=ForecastOutput),
@@ -471,9 +476,11 @@ async def forecasting_node(
         else None
     )
 
-    async def _factory(cfg: Configuration, **_kw):
+    async def _factory(cfg: RunnableConfig, **_kw):
         return await create_forecasting_agent(
-            cfg, company_signal=company_signal, store=store,
+            cfg,
+            company_signal=company_signal,
+            store=store,
         )
 
     return await run_deep_agent_node(

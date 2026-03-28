@@ -370,8 +370,15 @@ class TestCreateAgent:
     async def test_correct_subagent_count(self):
         """Agent factory should build 7 subagents (6 data + 1 validation)."""
         mock_agent = MagicMock()
+        config = MagicMock()
+        config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.risk_assessment"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
                 return_value=mock_agent,
@@ -382,8 +389,6 @@ class TestCreateAgent:
                 return_value=[MagicMock()] * 7,
             ),
         ):
-            config = MagicMock()
-            config.get_llm.return_value = MagicMock()
             await create_risk_assessment_agent(config)
 
             call_kwargs = mock_create.call_args.kwargs
@@ -394,8 +399,15 @@ class TestCreateAgent:
         from langchain.agents.structured_output import AutoStrategy
 
         mock_agent = MagicMock()
+        config = MagicMock()
+        config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.risk_assessment"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
                 return_value=mock_agent,
@@ -406,8 +418,6 @@ class TestCreateAgent:
                 return_value=[MagicMock()] * 7,
             ),
         ):
-            config = MagicMock()
-            config.get_llm.return_value = MagicMock()
             await create_risk_assessment_agent(config)
 
             call_kwargs = mock_create.call_args.kwargs
@@ -418,8 +428,15 @@ class TestCreateAgent:
         from muffin_agent.sandbox import get_backend
 
         mock_agent = MagicMock()
+        config = MagicMock()
+        config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.risk_assessment"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
                 return_value=mock_agent,
@@ -430,8 +447,6 @@ class TestCreateAgent:
                 return_value=[MagicMock()] * 7,
             ),
         ):
-            config = MagicMock()
-            config.get_llm.return_value = MagicMock()
             await create_risk_assessment_agent(config)
 
             call_kwargs = mock_create.call_args.kwargs
@@ -441,8 +456,15 @@ class TestCreateAgent:
     async def test_store_forwarded_to_create_deep_agent(self):
         mock_store = MagicMock()
         mock_agent = MagicMock()
+        config = MagicMock()
+        config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.risk_assessment"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
                 return_value=mock_agent,
@@ -453,8 +475,6 @@ class TestCreateAgent:
                 return_value=[MagicMock()] * 7,
             ),
         ):
-            config = MagicMock()
-            config.get_llm.return_value = MagicMock()
             await create_risk_assessment_agent(config, store=mock_store)
 
             call_kwargs = mock_create.call_args.kwargs
@@ -464,8 +484,15 @@ class TestCreateAgent:
     async def test_risk_tools_passed(self):
 
         mock_agent = MagicMock()
+        config = MagicMock()
+        config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.risk_assessment"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
                 return_value=mock_agent,
@@ -476,8 +503,6 @@ class TestCreateAgent:
                 return_value=[MagicMock()] * 7,
             ),
         ):
-            config = MagicMock()
-            config.get_llm.return_value = MagicMock()
             await create_risk_assessment_agent(config)
 
             call_kwargs = mock_create.call_args.kwargs
@@ -507,7 +532,7 @@ class TestNode:
                 return_value=mock_agent,
             ),
             patch(
-                "muffin_agent.agents.investment.utils.Configuration.from_runnable_config",
+                "muffin_agent.agents.investment.utils.ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -535,7 +560,7 @@ class TestNode:
                 return_value=mock_agent,
             ),
             patch(
-                "muffin_agent.agents.investment.utils.Configuration.from_runnable_config",
+                "muffin_agent.agents.investment.utils.ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -557,7 +582,7 @@ class TestNode:
                 side_effect=RuntimeError("agent build failed"),
             ),
             patch(
-                "muffin_agent.agents.investment.utils.Configuration.from_runnable_config",
+                "muffin_agent.agents.investment.utils.ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -590,7 +615,7 @@ class TestNode:
                 side_effect=fake_factory,
             ),
             patch(
-                "muffin_agent.agents.investment.utils.Configuration.from_runnable_config",
+                "muffin_agent.agents.investment.utils.ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):

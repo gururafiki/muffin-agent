@@ -9,26 +9,26 @@ from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from muffin_agent.agents.data_collection import (
+from ...middlewares import ToolResultCacheMiddleware
+from ...model_config import ModelConfiguration
+from ...prompts import render_template
+from ...sandbox import get_backend
+from ...tools.macro import (
+    compute_factor_zscore,
+    compute_vix_regime,
+    compute_yield_curve_metrics,
+)
+from ...tools.sector import compute_sector_relative_performance
+from ..data_collection import (
     create_currency_commodities_data_collection_agent,
     create_economy_macro_data_collection_agent,
     create_etf_index_data_collection_agent,
     create_fama_french_data_collection_agent,
     create_fixed_income_data_collection_agent,
 )
-from muffin_agent.agents.investment.schemas import DataSource
-from muffin_agent.agents.investment.utils import run_deep_agent_node
-from muffin_agent.agents.middleware import ToolResultCacheMiddleware
-from muffin_agent.agents.subagents import build_validation_subagent
-from muffin_agent.config import Configuration
-from muffin_agent.prompts import render_template
-from muffin_agent.sandbox import get_backend
-from muffin_agent.tools.macro import (
-    compute_factor_zscore,
-    compute_vix_regime,
-    compute_yield_curve_metrics,
-)
-from muffin_agent.tools.sector import compute_sector_relative_performance
+from ..subagents import build_validation_subagent
+from .schemas import DataSource
+from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -176,7 +176,7 @@ class MarketRegimeOutput(BaseModel):
 # ── Subagent builder ──────────────────────────────────────────────────────────
 
 
-async def _build_macro_subagents(config: Configuration) -> list[CompiledSubAgent]:
+async def _build_macro_subagents(config: RunnableConfig) -> list[CompiledSubAgent]:
     """Build the macro-focused subagents for market regime analysis.
 
     Return 5 data collection subagents + 1 data validation subagent, covering
@@ -254,7 +254,7 @@ async def _build_macro_subagents(config: Configuration) -> list[CompiledSubAgent
 
 
 async def create_market_regime_agent(
-    config: Configuration,
+    config: RunnableConfig,
     store: BaseStore | None = None,
 ):
     """Build the market regime deep agent.
@@ -275,7 +275,8 @@ async def create_market_regime_agent(
     """
     subagents = await _build_macro_subagents(config)
     prompt = render_template("investment/market_regime.jinja")
-    llm = config.get_llm()
+    model_config = ModelConfiguration.from_runnable_config(config)
+    llm = model_config.get_llm()
 
     return create_deep_agent(
         model=llm,
@@ -291,12 +292,14 @@ async def create_market_regime_agent(
         store=store,
         middleware=[
             ToolResultCacheMiddleware(
-                cacheable_tools=frozenset({
-                    "compute_yield_curve_metrics",
-                    "compute_factor_zscore",
-                    "compute_vix_regime",
-                    "compute_sector_relative_performance",
-                }),
+                cacheable_tools=frozenset(
+                    {
+                        "compute_yield_curve_metrics",
+                        "compute_factor_zscore",
+                        "compute_vix_regime",
+                        "compute_sector_relative_performance",
+                    }
+                ),
             ),
         ],
         response_format=AutoStrategy(schema=MarketRegimeOutput),

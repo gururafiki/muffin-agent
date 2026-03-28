@@ -92,7 +92,7 @@ class TestSandboxFactoryGetSandbox:
 
         with (
             patch(
-                f"{_PATCH_PREFIX}.Configuration.from_runnable_config",
+                f"{_PATCH_PREFIX}.OpenSandboxConfiguration.from_runnable_config",
                 return_value=_make_mock_config(),
             ),
             patch(
@@ -125,7 +125,7 @@ class TestSandboxFactoryGetSandbox:
 
         with (
             patch(
-                f"{_PATCH_PREFIX}.Configuration.from_runnable_config",
+                f"{_PATCH_PREFIX}.OpenSandboxConfiguration.from_runnable_config",
                 return_value=_make_mock_config(),
             ),
             patch(
@@ -171,7 +171,7 @@ class TestSandboxFactoryAgetSandbox:
 
         with (
             patch(
-                f"{_PATCH_PREFIX}.Configuration.from_runnable_config",
+                f"{_PATCH_PREFIX}.OpenSandboxConfiguration.from_runnable_config",
                 return_value=_make_mock_config(),
             ),
             patch(
@@ -208,7 +208,7 @@ class TestSandboxFactoryAgetSandbox:
 
         with (
             patch(
-                f"{_PATCH_PREFIX}.Configuration.from_runnable_config",
+                f"{_PATCH_PREFIX}.OpenSandboxConfiguration.from_runnable_config",
                 return_value=_make_mock_config(),
             ),
             patch(
@@ -262,9 +262,15 @@ class TestGetBackend:
         # Simulate Runtime object — no 'config' attribute
         runtime = MagicMock(spec=[])
 
-        with patch(
-            f"{_PATCH_PREFIX}.SandboxFactory.get_sandbox",
-            return_value=mock_sandbox,
+        with (
+            patch(
+                f"{_PATCH_PREFIX}.get_config",
+                return_value={"configurable": {}},
+            ),
+            patch(
+                f"{_PATCH_PREFIX}.SandboxFactory.get_sandbox",
+                return_value=mock_sandbox,
+            ),
         ):
             backend = get_backend(runtime)
 

@@ -459,7 +459,7 @@ class TestCompanyAnalysisNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -487,7 +487,7 @@ class TestCompanyAnalysisNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -516,7 +516,7 @@ class TestCompanyAnalysisNodeJsonInput:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -551,6 +551,11 @@ class TestCreateCompanyAnalysisAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.company_analysis"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
                 ".create_equity_fundamentals_data_collection_agent",
@@ -607,6 +612,11 @@ class TestCreateCompanyAnalysisAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.company_analysis"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
                 ".create_equity_fundamentals_data_collection_agent",
@@ -673,6 +683,11 @@ class TestCreateCompanyAnalysisAgent:
         with (
             patch(
                 "muffin_agent.agents.investment.company_analysis"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch(
+                "muffin_agent.agents.investment.company_analysis"
                 ".create_equity_fundamentals_data_collection_agent",
                 new_callable=AsyncMock,
                 return_value=MagicMock(),
@@ -729,6 +744,11 @@ class TestCreateCompanyAnalysisAgent:
         config.get_llm.return_value = MagicMock()
 
         with (
+            patch(
+                "muffin_agent.agents.investment.company_analysis"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=config,
+            ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
                 ".create_equity_fundamentals_data_collection_agent",
@@ -806,7 +826,7 @@ class TestCompanyAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -839,7 +859,7 @@ class TestCompanyAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -867,7 +887,7 @@ class TestCompanyAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -894,7 +914,7 @@ class TestCompanyAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):
@@ -923,7 +943,7 @@ class TestCompanyAnalysisNode:
             ),
             patch(
                 "muffin_agent.agents.investment.company_analysis"
-                ".Configuration.from_runnable_config",
+                ".ModelConfiguration.from_runnable_config",
                 return_value=MagicMock(),
             ),
         ):

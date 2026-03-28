@@ -99,9 +99,7 @@ def project_three_year_financials(
     # --- Income statement + FCF projections ---
     projections: list[dict] = []
     revenue = baseline_revenue
-    for i, (g, m, c) in enumerate(
-        zip(rev_growth_rates, ebitda_margins, capex_rates)
-    ):
+    for i, (g, m, c) in enumerate(zip(rev_growth_rates, ebitda_margins, capex_rates)):
         year = base_year + i + 1
         revenue = revenue * (1 + g)
         ebitda = revenue * m
@@ -111,18 +109,20 @@ def project_three_year_financials(
         eps = net_income / diluted_shares if diluted_shares else None
         capex = revenue * c
         fcf = net_income + da - capex
-        projections.append({
-            "year": year,
-            "revenue": revenue,
-            "revenue_growth_pct": g * 100,
-            "ebitda": ebitda,
-            "ebitda_margin_pct": m * 100,
-            "ebit": ebit,
-            "ebit_margin_pct": (ebit / revenue) * 100 if revenue else None,
-            "eps": eps,
-            "fcf": fcf,
-            "fcf_margin_pct": (fcf / revenue) * 100 if revenue else None,
-        })
+        projections.append(
+            {
+                "year": year,
+                "revenue": revenue,
+                "revenue_growth_pct": g * 100,
+                "ebitda": ebitda,
+                "ebitda_margin_pct": m * 100,
+                "ebit": ebit,
+                "ebit_margin_pct": (ebit / revenue) * 100 if revenue else None,
+                "eps": eps,
+                "fcf": fcf,
+                "fcf_margin_pct": (fcf / revenue) * 100 if revenue else None,
+            }
+        )
 
     # --- Balance sheet projections ---
     total_debt = total_debt_0
@@ -149,14 +149,16 @@ def project_three_year_financials(
         )
         total_assets = working_capital + fixed_assets + cash
 
-        proj.update({
-            "total_debt": total_debt,
-            "cash": cash,
-            "net_debt": total_debt - cash,
-            "working_capital": working_capital,
-            "total_assets": total_assets,
-            "shareholders_equity": equity,
-        })
+        proj.update(
+            {
+                "total_debt": total_debt,
+                "cash": cash,
+                "net_debt": total_debt - cash,
+                "working_capital": working_capital,
+                "total_assets": total_assets,
+                "shareholders_equity": equity,
+            }
+        )
 
     return [YearlyProjection(**p).model_dump() for p in projections]
 
@@ -204,8 +206,7 @@ def compute_sensitivity(
         ).model_dump()
     return SensitivityMetrics(
         delta_eps_per_rev_1pp=(
-            ebit_margin * baseline_revenue * 0.01 * (1 - tax_rate)
-            / diluted_shares
+            ebit_margin * baseline_revenue * 0.01 * (1 - tax_rate) / diluted_shares
         ),
         delta_eps_per_margin_1pp=(
             baseline_revenue * 0.01 * (1 - tax_rate) / diluted_shares

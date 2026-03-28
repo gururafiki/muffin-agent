@@ -8,40 +8,41 @@ Organized by financial domain:
 - ``macro`` — yield curve metrics, factor Z-scores, VIX regime
 - ``projections`` — 3-year financial projections, sensitivity analysis
 - ``risk`` — beta, VaR/CVaR, Sharpe/Sortino, max drawdown
-- ``valuation`` — WACC, DCF (blended exit-multiple + Gordon Growth), multiples-based fair value, scenario-weighted NAV
+- ``valuation`` — WACC, DCF (blended exit-multiple + Gordon Growth),
+  multiples-based fair value, scenario-weighted NAV
 """
 
-from muffin_agent.tools.credit_risk import (
+from .credit_risk import (
     compute_altman_z_score,
     compute_interest_coverage,
     compute_net_debt_to_ebitda,
 )
-from muffin_agent.tools.macro import (
+from .macro import (
     compute_factor_zscore,
     compute_vix_regime,
     compute_yield_curve_metrics,
 )
-from muffin_agent.tools.profitability import (
+from .profitability import (
     compute_accruals_ratio,
     compute_fcf_conversion,
     compute_revenue_cagr,
     compute_roic,
 )
-from muffin_agent.tools.projections import (
+from .projections import (
     compute_sensitivity,
     project_three_year_financials,
 )
-from muffin_agent.tools.risk import (
+from .risk import (
     compute_beta,
     compute_max_drawdown,
     compute_sharpe_sortino,
     compute_var_cvar,
 )
-from muffin_agent.tools.sector import (
+from .sector import (
     compute_peer_dispersion,
     compute_sector_relative_performance,
 )
-from muffin_agent.tools.valuation import (
+from .valuation import (
     compute_dcf,
     compute_multiples_value,
     compute_scenario_weighted_value,

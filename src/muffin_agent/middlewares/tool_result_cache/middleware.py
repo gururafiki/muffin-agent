@@ -17,7 +17,7 @@ from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-from muffin_agent.sandbox.tools import (
+from .tools import (
     discover_cached_data,
     get_tool_output_schema,
     write_tool_output_to_backend,
@@ -26,13 +26,13 @@ from muffin_agent.sandbox.tools import (
 logger = logging.getLogger(__name__)
 
 
-def _args_hash(args: dict[str, Any]) -> str:
+def get_args_hash(args: dict[str, Any]) -> str:
     """Build a deterministic 12-char hex hash from sorted args."""
     args_json = json.dumps(args, sort_keys=True)
     return hashlib.sha256(args_json.encode()).hexdigest()[:12]
 
 
-def _is_error_content(content: str) -> bool:
+def is_error_content(content: str) -> bool:
     """Check whether a tool message contains an error."""
     if not isinstance(content, str):
         return False
@@ -73,10 +73,7 @@ class ToolResultCacheMiddleware(AgentMiddleware):
         tool_name: str = request.tool_call["name"]
 
         # Skip non-cacheable tools.
-        if (
-            self._cacheable_tools is not None
-            and tool_name not in self._cacheable_tools
-        ):
+        if self._cacheable_tools is not None and tool_name not in self._cacheable_tools:
             return await handler(request)
 
         args: dict[str, Any] = request.tool_call.get("args", {})
@@ -85,7 +82,7 @@ class ToolResultCacheMiddleware(AgentMiddleware):
             return await handler(request)
 
         namespace = ("cache", tool_name)
-        key = _args_hash(args)
+        key = get_args_hash(args)
 
         # ── Cache hit ───────────────────────────────────────────────
         try:
@@ -110,16 +107,20 @@ class ToolResultCacheMiddleware(AgentMiddleware):
         if (
             isinstance(result, ToolMessage)
             and isinstance(result.content, str)
-            and not _is_error_content(result.content)
+            and not is_error_content(result.content)
         ):
             try:
-                await store.aput(namespace, key, {
-                    "content": result.content,
-                    "tool_name": tool_name,
-                    "args": args,
-                    "cached_at": datetime.now(UTC).isoformat(),
-                    "content_size": len(result.content),
-                })
+                await store.aput(
+                    namespace,
+                    key,
+                    {
+                        "content": result.content,
+                        "tool_name": tool_name,
+                        "args": args,
+                        "cached_at": datetime.now(UTC).isoformat(),
+                        "content_size": len(result.content),
+                    },
+                )
                 logger.debug("Cache WRITE for %s → %s/%s", tool_name, namespace, key)
                 result = ToolMessage(
                     content=(

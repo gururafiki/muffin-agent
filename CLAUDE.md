@@ -30,22 +30,28 @@ mypy src/                        # type check
 
 The source lives in `src/muffin_agent/` and is organized as:
 
-- **`config.py`** — Central `Configuration` Pydantic model. Manages LLM provider selection (OpenAI/Anthropic), API keys, and model parameters. Nodes get config via `Configuration.from_runnable_config(config)` which merges env vars with LangGraph's `RunnableConfig["configurable"]`. Call `configuration.get_llm()` to get a LangChain chat model. Also provides `get_mcp_connections()` for OpenBB MCP server access.
+- **`utils/base_config.py`** — `BaseConfiguration` Pydantic model. Shared base for all configuration classes. Provides `from_runnable_config(config: RunnableConfig)` classmethod which merges env vars with LangGraph's `RunnableConfig["configurable"]`.
+
+- **`model_config.py`** — `ModelConfiguration(BaseConfiguration)`. Manages LLM provider selection (OpenAI/Anthropic), API keys, and model parameters. Investment agents get config via `ModelConfiguration.from_runnable_config(config)`. Call `model_config.get_llm()` to get a LangChain chat model.
+
+- **`mcp_config.py`** — `McpConfiguration(BaseConfiguration)`. Manages OpenBB MCP server URL. Provides `get_mcp_connections()` for MCP client setup. Used internally by `agents/data_collection/utils.py` and `middlewares/tool_result_cache/tools.py`.
 
 - **`prompts/`** — Jinja2-based prompt templates organized into `data_collection/` and `investment/` subdirectories mirroring the `agents/` structure. Use `render_template(template_name, **kwargs)` from `prompts/__init__.py` with subdirectory-prefixed names (e.g., `render_template("data_collection/equity_fundamentals.jinja")`). Root-level agents (`stock_evaluation`, `criterion_evaluation`, `data_validation`) keep their templates at the prompts root. Investment prompts use shared Jinja2 partials (`investment/_data_rules.jinja`, `_validation_step.jinja`, `_returning_analysis.jinja`, `_missing_data_rules.jinja`, `_sandbox_data_rules.jinja`) via `{% include %}` to avoid boilerplate duplication. Data collection prompts include `data_collection/_data_file_rules.jinja` for cached file path instructions. Partials accept variables via `{% set %}` or `{% with %}` blocks.
 
 - **`utils/observability.py`** — Optional LangFuse tracing via `setup_tracing()`. Returns callback handlers for `RunnableConfig["callbacks"]`. Gracefully degrades if LangFuse is unavailable.
 
-- **`agents/middleware.py`** — `ToolResultCacheMiddleware`: caches successful tool results in a shared `InMemoryStore` (via `ToolRuntime.store`) for cross-agent deduplication. On cache miss: executes tool, writes result to store with namespace `("cache", tool_name)` and key `_args_hash(args)`, appends `[Data cached — ...]` annotation. On cache hit: returns `[Cached result — ...]` with content from store, skips tool execution. Store values contain content, tool_name, args, cached_at, and content_size — used by `discover_cached_data` for structured discovery. `cacheable_tools` parameter restricts which tools are cached (None = all). Registers `discover_cached_data`, `get_tool_output_schema`, and `write_tool_output_to_backend` via `self.tools` attribute (same pattern as `FilesystemMiddleware`). Also exports `_args_hash()` and `_is_error_content()` helpers.
+- **`middlewares/`** — Middleware package with two subpackages:
+  - `tool_result_cache/middleware.py` — `ToolResultCacheMiddleware`: caches successful tool results in a shared `InMemoryStore` (via `ToolRuntime.store`) for cross-agent deduplication. On cache miss: executes tool, writes result to store with namespace `("cache", tool_name)` and key `get_args_hash(args)`, appends `[Data cached — ...]` annotation. On cache hit: returns `[Cached result — ...]` with content from store, skips tool execution. Store values contain content, tool_name, args, cached_at, and content_size. `cacheable_tools` parameter restricts which tools are cached (None = all). Also exports `get_args_hash()` and `is_error_content()` helpers.
+  - `tool_result_cache/tools.py` — Three `@tool` functions auto-registered via `ToolResultCacheMiddleware.tools`: `discover_cached_data` (queries store for cached entries, returns JSON metadata array), `get_tool_output_schema` (returns JSON Schema for any tool — scans Python tools' `extras["output_schema"]` first, falls back to MCP `outputSchema`), `write_tool_output_to_backend` (reads cached entry from store, writes to sandbox file for `execute_python`).
+  - `tool_error_handler/middleware.py` — `ToolErrorHandlerMiddleware`: catches tool exceptions, blocks duplicate permanent failures via graph state.
 
 - **`agents/data_collection/`** — Data collection agents using MCP tools with the ReAct pattern. Each agent is a single `.py` file containing:
   - `MCP_TOOLS` — list of allowed MCP tool name strings
-  - `create_*_agent(config)` — async; calls shared `get_tools()`, renders the Jinja2 prompt, builds the agent via `create_agent()` from `langchain.agents`
+  - `create_*_agent(config: RunnableConfig)` — async; calls shared `get_tools()`, renders the Jinja2 prompt, builds the agent via `create_agent()` from `langchain.agents`
 
   Shared utilities live in `utils.py`:
-  - `get_tools(config, allowed_tools, custom_tools=None)` — loads filtered MCP tools via `MultiServerMCPClient`
-  - `data_collection_middleware(cacheable_tools)` — standard middleware stack: `ToolErrorHandler` (outer) → `FilesystemMiddleware` (middle, file tools + auto-eviction) → `ToolResultCacheMiddleware` (inner, store-based cache)
-  - `ToolErrorHandler` — catches tool exceptions, blocks duplicate permanent failures via graph state
+  - `get_tools(config: RunnableConfig, allowed_tools, custom_tools=None)` — internally calls `McpConfiguration.from_runnable_config(config)` to get MCP connections, then loads filtered MCP tools via `MultiServerMCPClient`
+  - `data_collection_middleware(cacheable_tools)` — standard middleware stack: `ToolErrorHandlerMiddleware` (outer) → `FilesystemMiddleware` (middle, file tools + auto-eviction) → `ToolResultCacheMiddleware` (inner, store-based cache). Imported from `middlewares`.
 
   Currently implemented: `equity_fundamentals.py` (25 tools), `equity_price.py` (5 MCP tools + `execute_python` custom tool via OpenSandbox)
 
@@ -55,7 +61,7 @@ The source lives in `src/muffin_agent/` and is organized as:
 
 - **`agents/investment/schemas.py`** — Shared Pydantic models used across investment stage agents (`DataSource`).
 
-- **`agents/investment/utils.py`** — Shared `run_deep_agent_node()` utility that encapsulates the pattern common to all investment node functions: config extraction → agent creation (with optional `store` param) → state context → ainvoke → structured output extraction → error fallback with exception handling. Accepts `store: BaseStore | None` and passes it to agent factories as `store=store` kwarg.
+- **`agents/investment/utils.py`** — Shared `run_deep_agent_node()` utility that encapsulates the pattern common to all investment node functions: `ModelConfiguration` extraction → agent creation (with optional `store` param) → state context → ainvoke → structured output extraction → error fallback with exception handling. Accepts `store: BaseStore | None` and passes it to agent factories as `store=store` kwarg.
 
 - **`agents/criterion_evaluation.py`** — Deep agent that evaluates a single investment criterion. Uses `build_analysis_subagents()` and `create_deep_agent()`. Follows a 5-step workflow: Analyze Criterion → Collect Data → Validate → Evaluate (CoT with dynamic sub-criteria) → Reflect. Produces structured output with score, confidence, signal, reasoning, and counterargument.
 
@@ -76,14 +82,12 @@ The source lives in `src/muffin_agent/` and is organized as:
 - **`agents/equity_screening.py`** — Multi-ticker screening graph. Runs `market_regime` + `sector_analysis` once (shared context), then fans out per ticker via `Send`. `build_equity_screening_graph(checkpointer=None, store=None)` accepts an optional `BaseCheckpointSaver` and `BaseStore`. Inner per-ticker subgraphs share the same store via closure but compile without a checkpointer.
 
 - **`sandbox/`** — OpenSandbox integration. Sandboxes are discovered/created lazily by `thread_id` metadata — no middleware or state propagation needed.
+  - `OpenSandboxConfiguration` (`config.py`) — `BaseConfiguration` subclass with `opensandbox_url`, `opensandbox_api_key`, and `opensandbox_image` fields.
   - `OpenSandboxBackend` (`backend.py`) — `deepagents.BaseSandbox` implementation backed by a `SandboxSync` container. Pure wrapper; all file operations delegated to shell commands via `execute()`.
   - `SandboxFactory` (`factory.py`, internal) — Discovers running sandboxes by `thread_id` metadata via `SandboxManagerSync.list_sandbox_infos()`. Creates a new sandbox if none found. Works with both `ToolRuntime` and `Runtime` contexts (`thread_id` from `langgraph.config.get_config()`).
   - `get_backend` (`factory.py`) — `BackendFactory` function. Pass as `backend=get_backend` to `create_deep_agent`.
   - `get_sandbox` / `aget_sandbox` (`factory.py`) — Sync/async functions returning a raw sandbox instance for direct use.
-  - `execute_python` (`tools.py`) — `@tool` async tool. Discovers the sandbox for the current thread via `aget_sandbox` and executes Python code in it. Used for ad-hoc calculations not covered by the financial tools in `tools/`.
-  - `discover_cached_data` (`tools.py`) — `@tool` async tool. Queries `ToolRuntime.store` for all cached entries under namespace prefix `("cache",)` and returns a JSON array of metadata (tool name, args, cached_at, content_size, store_key). Auto-registered via `ToolResultCacheMiddleware.tools`. Agents call this before data collection to avoid duplicate MCP fetches.
-  - `get_tool_output_schema` (`tools.py`) — `@tool` async tool. Returns the JSON Schema for any tool by name. For Python tools: auto-scans `muffin_agent.tools` package for `BaseTool` instances with `extras["output_schema"]`. For MCP tools: creates a temporary session and reads `outputSchema` from the MCP server. Auto-registered via `ToolResultCacheMiddleware.tools`.
-  - `write_tool_output_to_backend` (`tools.py`) — `@tool` async tool. Reads cached tool result from `ToolRuntime.store` and writes it to a sandbox file for use by `execute_python`. Takes `tool_name` and `args_hash` (from `discover_cached_data` output), optional `file_path`. Auto-registered via `ToolResultCacheMiddleware.tools`.
+  - `execute_python` (`tools.py`) — `@tool` async tool. Discovers the sandbox for the current thread via `aget_sandbox` and executes Python code in it. Used for ad-hoc calculations not covered by the financial tools in `tools/`. Cache-related tools (`discover_cached_data`, `get_tool_output_schema`, `write_tool_output_to_backend`) live in `middlewares/tool_result_cache/tools.py`.
 
 - **`tools/`** — LangChain `@tool(parse_docstring=True)` functions for deterministic financial computations, organized by domain. Each tool contains its own computation logic inline. Parameter descriptions are parsed from Google-style docstrings into the JSON schema so the LLM sees full context. Tools are passed to `create_deep_agent` via `tools=[...]` — each investment agent imports only its relevant subset. Runs in-process (no sandbox round-trip). Unit tested in `tests/tools/`. Tools that return structured JSON define a co-located Pydantic output model and attach its pre-computed schema via `@tool(extras={"output_schema": Model.model_json_schema()})`. The tool validates output at construction time via `Model(...).model_dump()`, and `get_tool_output_schema` auto-discovers the schema by scanning `extras`.
   - `profitability.py` — `compute_roic`, `compute_fcf_conversion`, `compute_accruals_ratio`, `compute_revenue_cagr` (used by company_analysis, forecasting)

@@ -48,14 +48,14 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Send
 
-from muffin_agent.agents.investment import (
+from .investment import (
     comparison_node,
     idea_sourcing_node,
     market_regime_node,
     sector_analysis_node,
 )
-from muffin_agent.agents.investment.state import ScreeningState, TickerAnalysisState
-from muffin_agent.agents.investment_analysis import build_investment_analysis_graph
+from .investment.state import ScreeningState, TickerAnalysisState
+from .investment_analysis import build_investment_analysis_graph
 
 
 def _fan_out_tickers(state: ScreeningState) -> list[Send]:

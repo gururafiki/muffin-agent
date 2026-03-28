@@ -9,30 +9,30 @@ from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from muffin_agent.agents.data_collection import (
+from ...middlewares.tool_result_cache import ToolResultCacheMiddleware
+from ...model_config import ModelConfiguration
+from ...prompts import render_template
+from ...sandbox import get_backend
+from ...tools.credit_risk import (
+    compute_altman_z_score,
+    compute_interest_coverage,
+    compute_net_debt_to_ebitda,
+)
+from ...tools.profitability import (
+    compute_fcf_conversion,
+    compute_revenue_cagr,
+    compute_roic,
+)
+from ..data_collection import (
     create_discovery_screening_data_collection_agent,
     create_equity_fundamentals_data_collection_agent,
     create_equity_ownership_data_collection_agent,
     create_news_data_collection_agent,
     create_regulatory_filings_data_collection_agent,
 )
-from muffin_agent.agents.investment.schemas import DataSource
-from muffin_agent.agents.investment.utils import run_deep_agent_node
-from muffin_agent.agents.middleware import ToolResultCacheMiddleware
-from muffin_agent.agents.subagents import build_validation_subagent
-from muffin_agent.config import Configuration
-from muffin_agent.prompts import render_template
-from muffin_agent.sandbox import get_backend
-from muffin_agent.tools.credit_risk import (
-    compute_altman_z_score,
-    compute_interest_coverage,
-    compute_net_debt_to_ebitda,
-)
-from muffin_agent.tools.profitability import (
-    compute_fcf_conversion,
-    compute_revenue_cagr,
-    compute_roic,
-)
+from ..subagents import build_validation_subagent
+from .schemas import DataSource
+from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -277,7 +277,7 @@ class CompanyAnalysisOutput(BaseModel):
 
 
 async def _build_company_analysis_subagents(
-    config: Configuration,
+    config: RunnableConfig,
 ) -> list[CompiledSubAgent]:
     """Build the company-focused subagent set for business quality analysis.
 
@@ -381,7 +381,7 @@ async def _build_company_analysis_subagents(
 
 
 async def create_company_analysis_agent(
-    config: Configuration,
+    config: RunnableConfig,
     store: BaseStore | None = None,
 ):
     """Build the company analysis deep agent.
@@ -402,7 +402,8 @@ async def create_company_analysis_agent(
     """
     subagents = await _build_company_analysis_subagents(config)
     prompt = render_template("investment/company_analysis.jinja")
-    llm = config.get_llm()
+    model_config = ModelConfiguration.from_runnable_config(config)
+    llm = model_config.get_llm()
 
     return create_deep_agent(
         model=llm,
@@ -420,14 +421,16 @@ async def create_company_analysis_agent(
         store=store,
         middleware=[
             ToolResultCacheMiddleware(
-                cacheable_tools=frozenset({
-                    "compute_roic",
-                    "compute_fcf_conversion",
-                    "compute_net_debt_to_ebitda",
-                    "compute_interest_coverage",
-                    "compute_revenue_cagr",
-                    "compute_altman_z_score",
-                }),
+                cacheable_tools=frozenset(
+                    {
+                        "compute_roic",
+                        "compute_fcf_conversion",
+                        "compute_net_debt_to_ebitda",
+                        "compute_interest_coverage",
+                        "compute_revenue_cagr",
+                        "compute_altman_z_score",
+                    }
+                ),
             ),
         ],
         response_format=AutoStrategy(schema=CompanyAnalysisOutput),

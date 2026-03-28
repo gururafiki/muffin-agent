@@ -335,7 +335,6 @@ cp .env.example .env
 | `MODEL` | No | Model in `provider/model` format | Default: `openai/gpt-oss-120b:free`. Browse [OpenRouter models](https://openrouter.ai/models) |
 | `LLM_PROVIDER` | No | `openai` or `anthropic` | Default: `openai` (also used for OpenRouter) |
 | `TEMPERATURE` | No | LLM temperature (0.0–2.0) | Default: `0.1` |
-| `MAX_CRITERIA` | No | Max evaluation criteria per agent (1–20) | Default: `7` |
 | `OPENBB_MCP_URL` | No | OpenBB MCP server URL | Default: `http://127.0.0.1:8001/mcp` |
 | `OPENSANDBOX_URL` | No | OpenSandbox server address (`host:port`) | Default: `localhost:8080` |
 | `OPENSANDBOX_API_KEY` | No | OpenSandbox API key (omit if no auth) | — |

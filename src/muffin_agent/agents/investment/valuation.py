@@ -9,26 +9,26 @@ from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from muffin_agent.agents.data_collection import (
+from ...middlewares import ToolResultCacheMiddleware
+from ...model_config import ModelConfiguration
+from ...prompts import render_template
+from ...sandbox import get_backend
+from ...tools.valuation import (
+    compute_dcf,
+    compute_multiples_value,
+    compute_scenario_weighted_value,
+    compute_wacc,
+)
+from ..data_collection import (
     create_discovery_screening_data_collection_agent,
     create_equity_estimates_data_collection_agent,
     create_equity_price_data_collection_agent,
     create_etf_index_data_collection_agent,
     create_fixed_income_data_collection_agent,
 )
-from muffin_agent.agents.investment.schemas import DataSource
-from muffin_agent.agents.investment.utils import run_deep_agent_node
-from muffin_agent.agents.middleware import ToolResultCacheMiddleware
-from muffin_agent.agents.subagents import build_validation_subagent
-from muffin_agent.config import Configuration
-from muffin_agent.prompts import render_template
-from muffin_agent.sandbox import get_backend
-from muffin_agent.tools.valuation import (
-    compute_dcf,
-    compute_multiples_value,
-    compute_scenario_weighted_value,
-    compute_wacc,
-)
+from ..subagents import build_validation_subagent
+from .schemas import DataSource
+from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -295,7 +295,7 @@ class ValuationOutput(BaseModel):
 # ── Subagent builder ───────────────────────────────────────────────────────────
 
 
-async def _build_valuation_subagents(config: Configuration) -> list[CompiledSubAgent]:
+async def _build_valuation_subagents(config: RunnableConfig) -> list[CompiledSubAgent]:
     """Build the focused subagent set for valuation & relative value.
 
     Return 5 data collection subagents + 1 data validation subagent.
@@ -380,7 +380,7 @@ async def _build_valuation_subagents(config: Configuration) -> list[CompiledSubA
 
 
 async def create_valuation_agent(
-    config: Configuration,
+    config: RunnableConfig,
     store: BaseStore | None = None,
 ) -> Any:
     """Build the valuation deep agent.
@@ -396,7 +396,8 @@ async def create_valuation_agent(
     """
     subagents = await _build_valuation_subagents(config)
     prompt = render_template("investment/valuation.jinja")
-    llm = config.get_llm()
+    model_config = ModelConfiguration.from_runnable_config(config)
+    llm = model_config.get_llm()
 
     return create_deep_agent(
         model=llm,
@@ -412,12 +413,14 @@ async def create_valuation_agent(
         store=store,
         middleware=[
             ToolResultCacheMiddleware(
-                cacheable_tools=frozenset({
-                    "compute_wacc",
-                    "compute_dcf",
-                    "compute_multiples_value",
-                    "compute_scenario_weighted_value",
-                }),
+                cacheable_tools=frozenset(
+                    {
+                        "compute_wacc",
+                        "compute_dcf",
+                        "compute_multiples_value",
+                        "compute_scenario_weighted_value",
+                    }
+                ),
             ),
         ],
         response_format=AutoStrategy(schema=ValuationOutput),

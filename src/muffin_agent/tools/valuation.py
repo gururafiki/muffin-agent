@@ -69,8 +69,17 @@ def compute_wacc(
             cost_of_equity=None,
             cost_of_debt_after_tax=None,
         ).model_dump()
-    if any(v < 0 for v in [beta, risk_free_rate, cost_of_debt, debt_weight,
-                             equity_weight, tax_rate]):
+    if any(
+        v < 0
+        for v in [
+            beta,
+            risk_free_rate,
+            cost_of_debt,
+            debt_weight,
+            equity_weight,
+            tax_rate,
+        ]
+    ):
         return WACCResult(
             wacc=None,
             cost_of_equity=None,
@@ -186,9 +195,12 @@ def compute_dcf(
     """
     if wacc <= 0 or shares_outstanding <= 0:
         return DCFResult(
-            nav_per_share=None, nav_exit_multiple=None,
-            nav_gordon_growth=None, pv_fcfs=None,
-            pv_terminal_exit_multiple=None, pv_terminal_gordon_growth=None,
+            nav_per_share=None,
+            nav_exit_multiple=None,
+            nav_gordon_growth=None,
+            pv_fcfs=None,
+            pv_terminal_exit_multiple=None,
+            pv_terminal_gordon_growth=None,
             methodology=None,
         ).model_dump()
 

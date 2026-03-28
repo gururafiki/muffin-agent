@@ -164,6 +164,11 @@ class TestCreateStockEvaluationAgent:
                 return_value=mock_validation_agent,
             ),
             patch(
+                "muffin_agent.agents.stock_evaluation.ModelConfiguration"
+                ".from_runnable_config",
+                return_value=MagicMock(get_llm=config.get_llm),
+            ),
+            patch(
                 "muffin_agent.agents.stock_evaluation.create_deep_agent"
             ) as mock_create,
         ):

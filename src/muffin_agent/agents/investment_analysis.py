@@ -32,7 +32,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 
-from muffin_agent.agents.investment import (
+from .investment import (
     company_analysis_node,
     forecasting_node,
     market_regime_node,
@@ -41,7 +41,7 @@ from muffin_agent.agents.investment import (
     thesis_synthesis_node,
     valuation_node,
 )
-from muffin_agent.agents.investment.state import TickerAnalysisState
+from .investment.state import TickerAnalysisState
 
 
 def build_investment_analysis_graph(

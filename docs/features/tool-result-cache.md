@@ -55,7 +55,7 @@ Tool call arrives
 ### Cache miss (first call)
 
 ```
-ToolErrorHandler → FilesystemMiddleware → ToolResultCacheMiddleware → MCP handler
+ToolErrorHandlerMiddleware → FilesystemMiddleware → ToolResultCacheMiddleware → MCP handler
                                               ↓
                                          execute tool
                                               ↓
@@ -71,7 +71,7 @@ ToolErrorHandler → FilesystemMiddleware → ToolResultCacheMiddleware → MCP 
 ### Cache hit (duplicate call)
 
 ```
-ToolErrorHandler → FilesystemMiddleware → ToolResultCacheMiddleware
+ToolErrorHandlerMiddleware → FilesystemMiddleware → ToolResultCacheMiddleware
                                               ↓
                                          store.aget(("cache", tool), hash)
                                               ↓
@@ -88,7 +88,7 @@ ToolErrorHandler → FilesystemMiddleware → ToolResultCacheMiddleware
 
 ```python
 middleware=[
-    ToolErrorHandler(),                   # outer: blocks duplicate permanent failures
+    ToolErrorHandlerMiddleware(),          # outer: blocks duplicate permanent failures
     FilesystemMiddleware(backend=...),    # middle: file tools + auto-eviction
     ToolResultCacheMiddleware(            # inner: store-based cache + dedup
         cacheable_tools=frozenset(MCP_TOOLS),
@@ -96,7 +96,7 @@ middleware=[
 ]
 ```
 
-**Order matters**: `ToolErrorHandler` is outermost — a duplicate call to a permanently failed tool is blocked before reaching the cache. `FilesystemMiddleware` provides file tools and auto-evicts large results. `ToolResultCacheMiddleware` is innermost — it wraps the actual tool execution.
+**Order matters**: `ToolErrorHandlerMiddleware` is outermost — a duplicate call to a permanently failed tool is blocked before reaching the cache. `FilesystemMiddleware` provides file tools and auto-evicts large results. `ToolResultCacheMiddleware` is innermost — it wraps the actual tool execution.
 
 #### Investment agents (deep agents)
 
@@ -171,10 +171,10 @@ Agents receive instructions about cached data via Jinja2 partials:
 
 | File | Change |
 |------|--------|
-| `src/muffin_agent/agents/middleware.py` | `ToolResultCacheMiddleware` (store-based), `_args_hash()`, `_is_error_content()` |
+| `src/muffin_agent/middlewares/tool_result_cache/middleware.py` | `ToolResultCacheMiddleware` (store-based), `get_args_hash()`, `is_error_content()` |
 | `src/muffin_agent/agents/data_collection/utils.py` | `data_collection_middleware()` helper |
-| `src/muffin_agent/sandbox/tools.py` | `discover_cached_data`, `write_tool_output_to_backend`, `get_tool_output_schema` tools |
-| `src/muffin_agent/sandbox/__init__.py` | Exports all sandbox tools |
+| `src/muffin_agent/middlewares/tool_result_cache/tools.py` | `discover_cached_data`, `write_tool_output_to_backend`, `get_tool_output_schema` tools |
+| `src/muffin_agent/sandbox/__init__.py` | Exports `execute_python`, `get_backend`, `get_sandbox`, `aget_sandbox` |
 | `src/muffin_agent/agents/investment/utils.py` | `run_deep_agent_node()` with `store` param |
 | 4 investment agent files | Add `store` param, pass to `create_deep_agent` |
 | `src/muffin_agent/agents/investment_analysis.py` | `build_investment_analysis_graph(store=store)` |
@@ -183,14 +183,14 @@ Agents receive instructions about cached data via Jinja2 partials:
 | 13 data collection agent files | Use `data_collection_middleware(MCP_TOOLS)` |
 | `src/muffin_agent/prompts/data_collection/_data_file_rules.jinja` | Store-based caching instructions |
 | `src/muffin_agent/prompts/investment/_sandbox_data_rules.jinja` | Discover → schema → write → execute workflow |
-| `tests/agents/test_middleware.py` | 17 tests (store-based cache) |
-| `tests/sandbox/test_tool.py` | `discover_cached_data`, `write_tool_output_to_backend`, `get_tool_output_schema` tests |
+| `tests/middlewares/tool_result_cache/test_middleware.py` | 17 tests (store-based cache) |
+| `tests/middlewares/tool_result_cache/test_tools.py` | `discover_cached_data`, `write_tool_output_to_backend`, `get_tool_output_schema` tests |
 | `tests/agents/test_investment_utils.py` | Graph builder store tests |
 
 ## Verification
 
 ```bash
-pytest tests/agents/test_middleware.py tests/sandbox/test_tool.py tests/agents/test_investment_utils.py -v
+pytest tests/middlewares/tool_result_cache/test_middleware.py tests/middlewares/tool_result_cache/test_tools.py tests/agents/test_investment_utils.py -v
 ```
 
 Tests verify:

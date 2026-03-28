@@ -39,10 +39,11 @@ ReAct agent that retrieves {description of what the agent does} via OpenBB MCP t
 """
 
 from langchain.agents import create_agent
+from langchain_core.runnables import RunnableConfig
 
-from ...config import Configuration
+from ...model_config import ModelConfiguration
 from ...prompts import render_template
-from .utils import ToolErrorHandler, get_tools
+from .utils import data_collection_middleware, get_tools
 
 MCP_TOOLS = [
     # sorted alphabetically
@@ -51,23 +52,24 @@ MCP_TOOLS = [
 ]
 
 
-async def create_{name}_data_collection_agent(config: Configuration):
+async def create_{name}_data_collection_agent(config: RunnableConfig):
     """Build the {name} ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
     prompt = render_template("data_collection/{name}.jinja")
-    llm = config.get_llm()
+    model_config = ModelConfiguration.from_runnable_config(config)
+    llm = model_config.get_llm()
     return create_agent(
         model=llm,
         tools=tools,
         system_prompt=prompt,
-        middleware=[ToolErrorHandler()],
+        middleware=data_collection_middleware(MCP_TOOLS),
     )
 ```
 
 **Rules:**
 - `MCP_TOOLS` must be sorted alphabetically
 - Use `create_agent` from `langchain.agents` — **never** `create_react_agent` from `langgraph.prebuilt`
-- Always include `middleware=[ToolErrorHandler()]`
+- Always include `middleware=data_collection_middleware(MCP_TOOLS)`
 - Google-style imperative-mood docstring on the function (e.g. "Build the …")
 
 ---
@@ -151,10 +153,9 @@ async def _stream_{name}(ticker: str, query: str | None) -> None:
     from langchain_core.runnables import RunnableConfig
 
     from muffin_agent.agents.data_collection import create_{name}_data_collection_agent
-    from muffin_agent.config import Configuration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = Configuration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_{name}_data_collection_agent(config)
 
@@ -246,11 +247,18 @@ class TestGetTools:
             }
         }
 
-        with patch(
-            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
-            return_value=mock_client,
+        with (
+            patch(
+                "muffin_agent.agents.data_collection.utils"
+                ".McpConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch(
+                "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
+                return_value=mock_client,
+            ),
         ):
-            tools = await get_tools(config, MCP_TOOLS)
+            tools = await get_tools(MagicMock(), MCP_TOOLS)
 
         assert len(tools) == 1
         assert tools[0].name == MCP_TOOLS[0]
@@ -268,11 +276,18 @@ class TestGetTools:
         config = MagicMock()
         config.get_mcp_connections.return_value = {}
 
-        with patch(
-            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
-            return_value=mock_client,
+        with (
+            patch(
+                "muffin_agent.agents.data_collection.utils"
+                ".McpConfiguration.from_runnable_config",
+                return_value=config,
+            ),
+            patch(
+                "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
+                return_value=mock_client,
+            ),
         ):
-            tools = await get_tools(config, MCP_TOOLS)
+            tools = await get_tools(MagicMock(), MCP_TOOLS)
 
         assert tools == []
 
