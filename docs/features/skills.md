@@ -133,9 +133,160 @@ Manual verification:
 - Run a market regime analysis and check LangFuse trace for skill loading events
 - Compare output quality: full prompt vs skills-based (qualitative review)
 
+## Criteria Definition Agent — SkillFilterMiddleware
+
+The criteria definition agent (`agents/criteria_definition.py`) is the second agent to use progressive prompt disclosure, with a significantly larger skills corpus (55 skills vs 3 for market regime). It uses the default `SkillsMiddleware` (via `skills=` parameter) for skill parsing, alongside `SkillFilterMiddleware` — a schema-driven `AgentMiddleware` — that pre-filters skills based on a classification provided as input state.
+
+### How it works
+
+Classification is provided as flat state keys, not computed by the agent:
+
+```python
+class TickerClassification(AgentState):
+    sector: NotRequired[str]
+    sub_sector: NotRequired[str]
+    market: NotRequired[str]
+    stock_type: NotRequired[str]
+```
+
+`SkillFilterMiddleware` is parameterised via `__class_getitem__` with the state schema. Category keys are derived automatically from the extra fields (beyond `AgentState`). Two hooks:
+
+1. **`abefore_agent`** — filters `skills_metadata` (set by `SkillsMiddleware`) to only skills matching the classification
+2. **`awrap_model_call`** — injects classification context into the system prompt
+
+The agent sees only matched skills (typically 4-6 out of 55) and reads all of them.
+
+### Skills corpus
+
+- **55 SKILL.md files** under `skills/valuation/` (vs 3 for market regime)
+- **Flat tag-based naming**: `{tags}` where tags compose freely (e.g. `banking-developed-value`, `emerging`, `growth`)
+- **10 supported sectors**: banking, insurance, software-saas, pharmaceuticals, reits, consumer-staples, consumer-discretionary, industrials, energy, telecommunications
+- **4 cross-cutting skills**: `guidelines`, `value`, `growth`, `emerging`
+
+### SKILL.md metadata format
+
+Each SKILL.md has category tags in its YAML frontmatter `metadata` field:
+
+```yaml
+# Universal skill — no metadata, always matched
+---
+name: guidelines
+description: >
+  Quick-reference summary table of primary valuation metrics.
+---
+
+# Cross-cutting — one category
+---
+name: value
+description: >
+  Common value stock principles and screening questions.
+metadata:
+  stock_type: value
+---
+
+# Full classification — multiple categories
+---
+name: banking-developed-value
+description: >
+  Valuation criteria for developed market value banking stocks.
+metadata:
+  sector: banking
+  market: developed
+  stock_type: value
+---
+
+# Sub-sector exclusive — replaces parent sector skill
+---
+name: insurance-life-developed-value
+description: >
+  Life insurance using Embedded Value methodology.
+metadata:
+  sector: insurance
+  sub_sector: life
+  market: developed
+  stock_type: value
+  scope: exclusive
+---
+```
+
+### Filtering logic
+
+`_filter_skills()` keeps skills whose **ALL** category values match the classification:
+
+- **Universal skills** (no metadata categories) always match
+- A skill with `{sector: banking}` matches if the classification has `sector=banking`
+- A skill with `{sector: banking, market: developed}` matches only if **both** match
+- Results sorted by specificity (fewest categories first → most specific last)
+
+**Category keys**: Derived automatically from the filter schema's extra fields (beyond `AgentState`). For criteria definition: `{"sector", "sub_sector", "market", "stock_type"}`. Supports multiple skill directories with different or overlapping metadata keys — skills whose metadata keys are absent from the classification are naturally excluded.
+
+**Exclusivity**: Skills with `scope: exclusive` in metadata indicate that broader skills in the same category should be skipped. Enforced by the prompt, not by code.
+
+### Workflow
+
+```
+Agent starts with flat classification keys in input state
+  │
+  ├── SkillsMiddleware (built-in): parses 55 SKILL.md files,
+  │   writes all to skills_metadata in state
+  │
+  ├── SkillFilterMiddleware (abefore_agent): filters skills_metadata
+  │   to only those matching classification (e.g. 4-6 out of 55)
+  │
+  ├── SkillsMiddleware (awrap_model_call): lists only filtered skills
+  │   in system prompt
+  │
+  ├── SkillFilterMiddleware (awrap_model_call): injects classification
+  │   context into system prompt
+  │
+  ├── Agent collects contextualization data from 4 subagents
+  │
+  └── Agent reads all matched skills via read_file
+```
+
+### Integration
+
+```python
+from ..middlewares import SkillFilterMiddleware, ToolResultCacheMiddleware
+from ..utils.backends import get_skills_backend
+
+return create_deep_agent(
+    model=llm,
+    system_prompt=prompt,
+    subagents=subagents,
+    backend=get_skills_backend,
+    skills=["/skills/valuation/"],  # Built-in SkillsMiddleware
+    store=store,
+    middleware=[
+        ToolResultCacheMiddleware(),
+        SkillFilterMiddleware[TickerClassification](),
+    ],
+    response_format=AutoStrategy(schema=CriteriaDefinitionOutput),
+)
+```
+
+`skills=` adds the built-in `SkillsMiddleware` which parses SKILL.md files and writes `skills_metadata` to state. `SkillFilterMiddleware[TickerClassification]()` runs after it, filtering `skills_metadata` in `abefore_agent` so only matched skills appear. `get_skills_backend` (from `utils/backends.py`) routes `/skills/` reads to local filesystem.
+
+### Reusing for other agents
+
+`SkillFilterMiddleware` is generic. To use it with another agent:
+
+1. Define an `AgentState` subclass with `NotRequired[str]` fields for each category key
+2. Add `metadata` tags to the agent's SKILL.md files
+3. Pass `skills=[...]` to `create_deep_agent` for standard skill parsing
+4. Pass `backend=get_skills_backend` from `utils/backends.py`
+5. Add `SkillFilterMiddleware[YourSchema]()` to the middleware list
+
+### Verification
+
+```bash
+# Middleware unit tests (31 tests) + agent integration tests (46 tests)
+pytest tests/middlewares/test_skill_suggestion.py tests/agents/test_criteria_definition.py -v
+```
+
 ## Limitations & Future Work
 
-- **market_regime only**: Skills are currently implemented only for the market regime agent. Other investment agents (sector analysis, company analysis, forecasting) still load their full prompts. These can be retrofitted with skills as the pattern proves effective.
-- **No dynamic skill discovery**: The agent is told which skills exist via the prompt. A more sophisticated approach would let the agent discover skills based on its current data context.
+- **Two agents use skills**: Market regime (3 skills, standard `SkillsMiddleware`) and criteria definition (55 skills, `SkillFilterMiddleware`). Other investment agents (sector analysis, company analysis, forecasting) still load their full prompts. These can be retrofitted with skills as the pattern proves effective.
+- **Exclusivity is prompt-driven**: `scope: exclusive` is annotated but not enforced by code. If LLM-driven exclusivity proves unreliable, add `_apply_exclusivity_overrides()` to `_filter_skills()`.
 - **No skill versioning**: Skills are loaded from the filesystem with no versioning. If a skill is updated, all future runs use the new version immediately.
 - **Revert path**: If skills loading degrades output quality, switch `market_regime.jinja` back to `market_regime_full.jinja` and remove `skills=` and `backend=` overrides from `create_deep_agent`.

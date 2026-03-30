@@ -1,5 +1,6 @@
 """Middleware components for muffin agents."""
 
+from .skill_suggestion import SkillFilterMiddleware
 from .store_access import StoreAccessMiddleware
 from .tool_error_handler import ToolErrorHandlerMiddleware
 from .tool_result_cache import (
@@ -7,7 +8,8 @@ from .tool_result_cache import (
 )
 
 __all__ = [
+    "SkillFilterMiddleware",
     "StoreAccessMiddleware",
-    "ToolResultCacheMiddleware",
     "ToolErrorHandlerMiddleware",
+    "ToolResultCacheMiddleware",
 ]

@@ -83,6 +83,21 @@ A deep agent that evaluates a **single investment criterion** (e.g., "Does the c
 
 **Output**: Structured `CRITERION_EVALUATION_START/END` delimited output with score, confidence (numeric 0.0–1.0), signal, sub-criteria breakdown, evidence summary, reasoning, counterargument, and limitations. Designed to be consumed by the parent Criteria Evaluation Agent (planned).
 
+### Criteria Definition Agent
+
+A standalone deep agent that classifies a ticker by sector, market type (developed/emerging), and stock type (value/growth), then loads matching valuation skills via progressive prompt disclosure to produce sector-specific evaluation criteria with target ranges and methodology guidance.
+
+Uses 5 subagents (etf-index, equity-fundamentals, discovery-screening, economy-macro, data-validation) and 55 valuation skills organised under `skills/valuation/`. Skills are pre-filtered by `SkillFilterMiddleware` based on a flat classification provided as input state — the agent only sees the 4-6 skills relevant to its classification.
+
+**Workflow**: Parse Context → Collect Data (4 subagents in parallel) → Validate → Load Skills & Extract Criteria → Reflect.
+
+**Output**: `CriteriaDefinitionOutput` with ticker, sector, market type, stock type, 5-8 valuation criteria (with target ranges, weights, and guidance), screening questions, and valuation pitfalls.
+
+**CLI**:
+```bash
+muffin criteria AAPL --sector banking --market developed --stock-type value
+```
+
 ### Market Regime Agent
 
 A deep agent (Step 2 of the investment process) that classifies the current macro and liquidity regime, identifies factor tailwinds and headwinds, and provides portfolio positioning guidance. Uses a **macro-focused subset** of 6 subagents — the 5 market-wide data collection agents plus data-validation — built by a private `_build_macro_subagents()` helper rather than the full 14-agent set.
@@ -248,6 +263,36 @@ Follows a 5-step workflow: **Parse Context → Collect Data → Compute Valuatio
 **Structured output** is enforced via `response_format=AutoStrategy(schema=ValuationOutput)`. Output includes: `current_price`, `dcf_value` (bull/base/bear NAV + blended base + methodology + wacc_used), `ev_ebitda_value`, `pe_value`, `fcf_yield_value`, `analyst_target_median`, `probability_weighted_nav`, `upside_base`, `upside_bull`, `downside_bear`, `risk_reward_ratio`, `relative_value` list (ev_ebitda + pe each with stock_current, peer_median, market_median, premium_discount_pct, historical_5y_avg, vs_own_history), `wacc`, `valuation_signal` (cheap/fairly_valued/expensive), `key_valuation_drivers`, `confidence`, `data_sources`, `limitations`.
 
 Runs **sequentially** after Group 2 barrier (forecasting + risk_assessment); output consumed by `thesis_synthesis_node`.
+
+### Middleware
+
+Middleware components are plugged into agents via the `middleware=` parameter on `create_deep_agent` or `create_agent`. Each middleware implements hooks (`abefore_agent`, `awrap_model_call`, `awrap_tool_call`) and optionally registers tools.
+
+| Middleware | Purpose | Tools |
+|-----------|---------|-------|
+| **`ToolResultCacheMiddleware`** | Caches successful tool results in-memory for cross-agent deduplication. On cache hit, returns the cached content without re-executing the tool. | `discover_cached_tool_outputs`, `get_tool_output_schema`, `write_cached_tool_output_to_backend` |
+| **`SkillFilterMiddleware`** | Schema-driven skill pre-filtering for progressive prompt disclosure. Parameterised via `__class_getitem__` with an `AgentState` subclass whose extra fields become category keys. Filters `skills_metadata` in `abefore_agent` and injects classification context into the system prompt. Supports multiple skill directories with different or overlapping metadata keys. | None |
+| **`StoreAccessMiddleware`** | Provides namespace-scoped CRUD access to a `BaseStore` for persistent data sharing between agents. | `store_get`, `store_put`, `store_delete`, `store_search`, `store_list_namespaces` |
+| **`ToolErrorHandlerMiddleware`** | Catches tool exceptions and blocks duplicate permanent failures via graph state. | None |
+
+**SkillFilterMiddleware usage**:
+
+```python
+class TickerClassification(AgentState):
+    sector: NotRequired[str]
+    market: NotRequired[str]
+    stock_type: NotRequired[str]
+
+create_deep_agent(
+    ...,
+    skills=["/skills/valuation/"],
+    backend=get_skills_backend,
+    middleware=[SkillFilterMiddleware[TickerClassification]()],
+)
+
+# Invoke with flat state keys
+agent.ainvoke({"messages": [...], "sector": "banking", "market": "developed"})
+```
 
 ### Design Principles
 
@@ -417,6 +462,10 @@ muffin evaluate AAPL -q "Is this stock undervalued based on fundamentals?"
 # Evaluate a single investment criterion
 muffin criterion AAPL -c "Does the company have strong and improving profitability?"
 muffin criterion MSFT -c "Is the balance sheet healthy?" -q "Focus on debt levels and liquidity"
+
+# Define valuation criteria (with optional pre-classification)
+muffin criteria AAPL
+muffin criteria JPM --sector banking --market developed --stock-type value
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"

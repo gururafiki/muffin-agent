@@ -84,6 +84,12 @@
     - evaluates criterion using the data (produces confidence/score/reasoning);
     - reflects on evaluation results and based on reflection results push back on analysis to gather more data or re-evaluate if needed.
 
+### Criteria Definition Agent
+- [x] Develop criteria definition agent that classifies a ticker by sector, market type (DM/EM), and stock type (value/growth), then loads matching valuation skills (55 SKILL.md files across 10 sectors) to produce sector-specific evaluation criteria with target ranges. Standalone deep agent — not yet wired into the investment pipeline.
+- [x] Build `SkillSuggestionMiddleware` — metadata-based skill filtering via `get_suggested_skills` tool. Replaces listing all 55 skills in the system prompt with a compact summary + tool-based discovery. Added `metadata` tags (sector, market, stock_type, sub_sector, scope) to all 55 SKILL.md frontmatter. Reusable for any agent with tagged skills.
+- [ ] Add valuation skills for remaining sectors: Utilities, Materials/Mining, Conglomerates, Healthcare Equipment, Semiconductors, Fintech/Payments, Aerospace & Defence, Transportation & Logistics
+- [ ] Wire criteria definition agent into the investment pipeline (as Stage 0 or parallel with Group 1)
+
 ### Criteria evaluation Agent
 - [ ] Develop agent that takes as an input ticker and some additional information and:
     - collects data about the ticker (industry, sector, other relevant info);
