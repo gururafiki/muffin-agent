@@ -75,6 +75,86 @@ services:
     networks:
       - muffin-net
 
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./extras/searxng:/etc/searxng:rw
+    environment:
+      SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY:-changeme-set-in-env}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - muffin-net
+
+  firecrawl-redis:
+    image: redis:alpine
+    restart: unless-stopped
+    healthcheck:
+      test: redis-cli ping
+      interval: 5s
+      timeout: 1s
+      retries: 5
+    networks:
+      - muffin-net
+
+  firecrawl-playwright:
+    image: ghcr.io/mendableai/firecrawl-playwright-service:latest
+    restart: unless-stopped
+    networks:
+      - muffin-net
+
+  firecrawl-api:
+    image: ghcr.io/mendableai/firecrawl:latest
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    depends_on:
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_started
+    env_file:
+      - extras/firecrawl/.env
+    environment:
+      REDIS_URL: redis://firecrawl-redis:6379
+      REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
+      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
+      USE_DB_AUTHENTICATION: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - muffin-net
+
+  firecrawl-worker:
+    image: ghcr.io/mendableai/firecrawl:latest
+    restart: unless-stopped
+    entrypoint: ["sh", "-c", "npm run workers"]
+    depends_on:
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_started
+    env_file:
+      - extras/firecrawl/.env
+    environment:
+      REDIS_URL: redis://firecrawl-redis:6379
+      REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
+      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
+      USE_DB_AUTHENTICATION: "false"
+    networks:
+      - muffin-net
+
   langgraph-api:
     image: ${IMAGE_NAME:-muffin-agent:latest}
     restart: unless-stopped
@@ -89,6 +169,10 @@ services:
         condition: service_healthy
       opensandbox-server:
         condition: service_healthy
+      searxng:
+        condition: service_healthy
+      firecrawl-api:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -96,6 +180,9 @@ services:
       DATABASE_URI: postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
       OPENBB_MCP_URL: http://openbb-mcp:8001/mcp
       OPENSANDBOX_URL: opensandbox-server:8080
+      SEARXNG_URL: http://searxng:8080
+      FIRECRAWL_URL: http://firecrawl-api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-local}
     networks:
       - muffin-net
 

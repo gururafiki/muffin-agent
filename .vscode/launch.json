@@ -373,6 +373,36 @@
             "justMyCode": false
         },
         {
+            "name": "Web Search Data Collection Agent: AAPL IR",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "web-search",
+                "AAPL investor relations annual report",
+                "--ticker",
+                "AAPL"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Web Search Data Collection Agent: Custom Query",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "web-search",
+                "${input:query}",
+                "--ticker",
+                "${input:ticker}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
             "name": "Stock Evaluation Agent: AAPL",
             "type": "debugpy",
             "request": "launch",

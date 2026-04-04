@@ -21,6 +21,7 @@ from .data_collection import (
     create_news_data_collection_agent,
     create_options_data_collection_agent,
     create_regulatory_filings_data_collection_agent,
+    create_web_search_data_collection_agent,
 )
 from .data_validation import create_data_validation_agent
 
@@ -46,9 +47,9 @@ async def build_validation_subagent(config: RunnableConfig) -> CompiledSubAgent:
 
 
 async def build_analysis_subagents(config: RunnableConfig) -> list[CompiledSubAgent]:
-    """Create the standard set of 14 analysis subagents.
+    """Create the standard set of 15 analysis subagents.
 
-    Return 13 data collection subagents + 1 data validation subagent,
+    Return 14 data collection subagents + 1 data validation subagent,
     each wrapped in CompiledSubAgent with name, description, and runnable.
     """
     currency_commodities_agent = (
@@ -70,6 +71,7 @@ async def build_analysis_subagents(config: RunnableConfig) -> list[CompiledSubAg
     regulatory_filings_agent = await create_regulatory_filings_data_collection_agent(
         config
     )
+    web_search_agent = await create_web_search_data_collection_agent(config)
     validation_subagent = await build_validation_subagent(config)
 
     return [
@@ -236,6 +238,21 @@ async def build_analysis_subagents(config: RunnableConfig) -> list[CompiledSubAg
                 "(factor risk premiums)."
             ),
             runnable=fama_french_agent,
+        ),
+        CompiledSubAgent(
+            name="web-search",
+            description=(
+                "Searches the web and scrapes URLs for information not available "
+                "through financial data APIs. Use for: company IR pages, industry "
+                "reports, product launch sites, press releases, regulatory documents, "
+                "forum/Reddit sentiment, blog posts, earnings call transcripts from "
+                "company sites, and any recent web content. Accepts a search query "
+                "(via web_search) or a direct URL (via web_scrape). For multi-page "
+                "sites, web_crawl follows internal links; web_map discovers URLs "
+                "without fetching content; convert_document handles PDFs, Word, "
+                "Excel, and PowerPoint files downloaded directly from a URL."
+            ),
+            runnable=web_search_agent,
         ),
         validation_subagent,
     ]

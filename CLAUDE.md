@@ -36,6 +36,8 @@ The source lives in `src/muffin_agent/` and is organized as:
 
 - **`mcp_config.py`** — `McpConfiguration(BaseConfiguration)`. Manages OpenBB MCP server URL. Provides `get_mcp_connections()` for MCP client setup. Used internally by `agents/data_collection/utils.py` and `middlewares/tool_result_cache/tools.py`.
 
+- **`web_config.py`** — `WebConfiguration(BaseConfiguration)`. Manages self-hosted web search and crawling service URLs: `searxng_url` (default `http://127.0.0.1:8888`), `firecrawl_url` (default `http://127.0.0.1:3002`), and `firecrawl_api_key` (default `"local"`). Resolved from env vars `SEARXNG_URL`, `FIRECRAWL_URL`, `FIRECRAWL_API_KEY`. Docker-compose auto-configures internal DNS names (`http://searxng:8080`, `http://firecrawl-api:3002`).
+
 - **`prompts/`** — Jinja2-based prompt templates organized into `data_collection/` and `investment/` subdirectories mirroring the `agents/` structure. Use `render_template(template_name, **kwargs)` from `prompts/__init__.py` with subdirectory-prefixed names (e.g., `render_template("data_collection/equity_fundamentals.jinja")`). Root-level agents (`stock_evaluation`, `criterion_evaluation`, `data_validation`) keep their templates at the prompts root. Investment prompts use shared Jinja2 partials (`investment/_data_rules.jinja`, `_validation_step.jinja`, `_returning_analysis.jinja`, `_missing_data_rules.jinja`) via `{% include %}` to avoid boilerplate duplication. Cross-cutting tool/middleware partials live at paths mirroring their package location: `middlewares/tool_result_cache.jinja` (cache workflow: discover → schema → write → load), `sandbox.jinja` (execute_python + store↔sandbox bridge tools), `tools/store.jinja` (generic CRUD tools). Data collection prompts include `middlewares/tool_result_cache.jinja`; investment prompts include both `middlewares/tool_result_cache.jinja` and `sandbox.jinja`. Partials accept variables via `{% set %}` or `{% with %}` blocks.
 
 - **`utils/observability.py`** — Optional LangFuse tracing via `setup_tracing()`. Returns callback handlers for `RunnableConfig["callbacks"]`. Gracefully degrades if LangFuse is unavailable.
@@ -58,14 +60,14 @@ The source lives in `src/muffin_agent/` and is organized as:
   - `create_*_agent(config: RunnableConfig)` — async; calls shared `get_tools()`, renders the Jinja2 prompt, builds the agent via `create_agent()` from `langchain.agents`
 
   Shared utilities live in `utils.py`:
-  - `get_tools(config: RunnableConfig, allowed_tools, custom_tools=None)` — internally calls `McpConfiguration.from_runnable_config(config)` to get MCP connections, then loads filtered MCP tools via `MultiServerMCPClient`
+  - `get_tools(config: RunnableConfig, allowed_tools, custom_tools=None)` — internally calls `McpConfiguration.from_runnable_config(config)` to get MCP connections, then loads filtered MCP tools via `MultiServerMCPClient`. Skips the MCP connection entirely when `allowed_tools=[]` (e.g. `web_search` agent).
   - `data_collection_middleware(cacheable_tools)` — standard middleware stack: `ToolErrorHandlerMiddleware` (outer) → `FilesystemMiddleware` (middle, file tools + auto-eviction) → `ToolResultCacheMiddleware` (inner, store-based cache). Imported from `middlewares`.
 
-  Currently implemented: `equity_fundamentals.py` (25 tools), `equity_price.py` (5 MCP tools + `execute_python` custom tool via OpenSandbox)
+  Currently implemented: `equity_fundamentals.py` (25 tools), `equity_price.py` (5 MCP tools + `execute_python` custom tool via OpenSandbox), `web_search.py` (0 MCP tools + 5 custom HTTP tools: `web_search`, `web_scrape`, `web_crawl`, `web_map`, `convert_document`)
 
 - **`agents/data_validation.py`** — Pure reasoning agent (no MCP tools) that validates collected data against a criterion. Built with `create_agent(model, system_prompt=...)` and no tools — the ReAct loop resolves to a direct LLM response. Checks sufficiency, relevance, temporal validity, and consistency. Prompt: `data_validation.jinja`. Used as a `CompiledSubAgent` in both stock evaluation and criterion evaluation agents.
 
-- **`agents/subagents.py`** — Shared subagent builders. `build_analysis_subagents(config)` creates the standard 14 subagents (13 data collection + 1 validation) used by `stock_evaluation.py` and `criterion_evaluation.py`. `build_validation_subagent(config)` creates just the data-validation subagent, used by all 4 investment stage agents.
+- **`agents/subagents.py`** — Shared subagent builders. `build_analysis_subagents(config)` creates the standard 15 subagents (14 data collection + 1 validation) used by `stock_evaluation.py` and `criterion_evaluation.py`. `build_validation_subagent(config)` creates just the data-validation subagent, used by all 4 investment stage agents.
 
 - **`agents/investment/schemas.py`** — Shared Pydantic models used across investment stage agents (`DataSource`).
 
@@ -109,6 +111,7 @@ The source lives in `src/muffin_agent/` and is organized as:
   - `macro.py` — `compute_yield_curve_metrics` (`YieldCurveMetrics`), `compute_factor_zscore` (`FactorZScore`), `compute_vix_regime` (used by market_regime)
   - `projections.py` — `project_three_year_financials` (`YearlyProjection`), `compute_sensitivity` (`SensitivityMetrics`) (used by forecasting)
   - `risk.py` — `compute_beta` (`BetaMetrics`), `compute_var_cvar` (`VaRResult`), `compute_sharpe_sortino` (`RiskAdjustedReturns`), `compute_max_drawdown` (used by risk_assessment). Uses `statistics.NormalDist` (stdlib, Python 3.8+) for parametric VaR/CVaR — no scipy dependency.
+  - `web.py` — Five async tools backed by self-hosted SearxNG and Firecrawl: `web_search` (SearxNG JSON API, returns `WebSearchOutput` with output schema), `web_scrape` (Firecrawl `/v1/scrape`, single URL → Markdown), `web_crawl` (Firecrawl `/v1/crawl` async job, multi-page), `web_map` (Firecrawl `/v1/map`, URL discovery), `convert_document` (httpx download + MarkItDown, supports PDF/Word/Excel/PPT/CSV/etc.). All tools accept `runtime: ToolRuntime` (injected; not in schema). Config via `WebConfiguration.from_runnable_config(runtime.config)`. Tests call `.coroutine()` directly to bypass Pydantic schema validation on the injected param. Used exclusively by `agents/data_collection/web_search.py`.
 
 ## Conventions
 

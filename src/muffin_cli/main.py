@@ -569,6 +569,49 @@ def regulatory_filings(
     asyncio.run(_stream_regulatory_filings(ticker, query))
 
 
+async def _stream_web_search(query: str, ticker: str | None) -> None:
+    """Build the web search agent and stream output."""
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.agents.data_collection import (
+        create_web_search_data_collection_agent,
+    )
+    from muffin_agent.model_config import ModelConfiguration
+    from muffin_agent.utils.observability import setup_tracing
+
+    session_id = ticker or query[:40].replace(" ", "-")
+    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    callbacks = setup_tracing(session_id=session_id)
+    agent = await create_web_search_data_collection_agent(config)
+
+    prompt = (
+        f"Ticker: {ticker}. {query}"
+        if ticker
+        else query
+    )
+
+    printer = StreamPrinter()
+    async for chunk, _metadata in agent.astream(
+        {"messages": [HumanMessage(prompt)]},
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
+        stream_mode="messages",
+    ):
+        printer.print_chunk(chunk)
+    printer.finish()
+
+
+@app.command()
+def web_search(
+    query: Annotated[str, typer.Argument(help="Search query or URL to scrape")],
+    ticker: Annotated[
+        str | None,
+        typer.Option("--ticker", "-t", help="Optional ticker symbol for context"),
+    ] = None,
+) -> None:
+    """Search the web or scrape a URL using SearxNG and Firecrawl."""
+    asyncio.run(_stream_web_search(query, ticker))
+
+
 async def _stream_criterion(ticker: str, criterion: str, query: str | None) -> None:
     """Build the criterion evaluation agent and stream output."""
     from langchain_core.runnables import RunnableConfig

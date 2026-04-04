@@ -43,6 +43,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `currency_commodities` | 9 | FX pair history and reference rates, commodity spot prices (WTI, Brent, gold), EIA energy outlook, crypto price history |
 | `regulatory_filings` | 14 | SEC filings, CIK lookups, CFTC Commitment of Traders, US congressional bills |
 | `fama_french` | 6 | Fama-French 3/5-factor model returns, US/regional/country portfolio returns, international index returns, size/value breakpoints |
+| `web_search` | 5 custom | Web search (SearxNG), page scraping (Firecrawl), multi-page crawling, site URL discovery, document-to-Markdown conversion (MarkItDown) |
 
 ### Data Validation Agent
 
@@ -384,6 +385,10 @@ cp .env.example .env
 | `OPENSANDBOX_URL` | No | OpenSandbox server address (`host:port`) | Default: `localhost:8080` |
 | `OPENSANDBOX_API_KEY` | No | OpenSandbox API key (omit if no auth) | — |
 | `OPENSANDBOX_IMAGE` | No | Docker image for sandbox containers | Default: `python:3.11-slim` |
+| `SEARXNG_URL` | No | SearxNG base URL | Default: `http://127.0.0.1:8888`. Auto-configured in docker-compose. |
+| `FIRECRAWL_URL` | No | Firecrawl API base URL | Default: `http://127.0.0.1:3002`. Auto-configured in docker-compose. |
+| `FIRECRAWL_API_KEY` | No | Firecrawl API key | Default: `local` (any value works with `USE_DB_AUTHENTICATION=false`) |
+| `SEARXNG_SECRET_KEY` | No | SearxNG secret key | Required for docker-compose. Set a random string. |
 | `LANGFUSE_SECRET_KEY` | No | LLM tracing (optional) | [Langfuse Cloud](https://cloud.langfuse.com) → Settings → API Keys |
 | `LANGFUSE_PUBLIC_KEY` | No | LLM tracing (optional) | Same as above |
 | `LANGFUSE_BASE_URL` | No | Langfuse host URL | Default: `https://cloud.langfuse.com` |
@@ -474,6 +479,8 @@ muffin estimates MSFT -q "Get analyst price targets and forward PE"
 muffin ownership MSFT -q "Get institutional holders and short interest"
 muffin news MSFT -q "Get recent news and sentiment"
 muffin options MSFT -q "Get options chain and implied volatility surface"
+muffin web-search "MSFT AI strategy 2025" --ticker MSFT
+muffin web-search "https://ir.microsoft.com/financial-information/annual-reports"
 
 # Help
 muffin --help
