@@ -771,6 +771,86 @@ def screen(
     asyncio.run(_run_screen(query, max_tickers))
 
 
+async def _stream_criteria(
+    ticker: str,
+    query: str | None,
+    sector: str | None,
+    sub_sector: str | None,
+    market: str | None,
+    stock_type: str | None,
+) -> None:
+    """Build the criteria definition agent and stream output."""
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.agents.criteria_definition import create_criteria_definition_agent
+    from muffin_agent.model_config import ModelConfiguration
+    from muffin_agent.utils.observability import setup_tracing
+
+    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    callbacks = setup_tracing(session_id=ticker)
+    agent = await create_criteria_definition_agent(config)
+
+    prompt = (
+        f"Ticker: {ticker}. {query}"
+        if query
+        else f"Define valuation criteria for {ticker}"
+    )
+
+    state: dict = {"messages": [HumanMessage(prompt)]}
+    if sector:
+        state["sector"] = sector
+    if sub_sector:
+        state["sub_sector"] = sub_sector
+    if market:
+        state["market"] = market
+    if stock_type:
+        state["stock_type"] = stock_type
+
+    printer = StreamPrinter()
+    async for chunk, _metadata in agent.astream(
+        state,
+        config=RunnableConfig(callbacks=callbacks, recursion_limit=40),
+        stream_mode="messages",
+    ):
+        printer.print_chunk(chunk)
+    printer.finish()
+
+
+@app.command()
+def criteria(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Custom query or investment mandate"),
+    ] = None,
+    sector: Annotated[
+        str | None,
+        typer.Option("--sector", "-s", help="Sector tag (e.g. banking, software-saas)"),
+    ] = None,
+    sub_sector: Annotated[
+        str | None,
+        typer.Option("--sub-sector", help="Sub-sector tag (e.g. life for insurance)"),
+    ] = None,
+    market: Annotated[
+        str | None,
+        typer.Option("--market", "-m", help="Market type: developed or emerging"),
+    ] = None,
+    stock_type: Annotated[
+        str | None,
+        typer.Option("--stock-type", "-t", help="Stock type: value or growth"),
+    ] = None,
+) -> None:
+    """Define valuation criteria for a ticker using sector-specific skills.
+
+    Pre-classify the ticker with flags to skip classification:
+
+        muffin criteria AAPL --sector software-saas -m developed
+    """
+    asyncio.run(
+        _stream_criteria(ticker, query, sector, sub_sector, market, stock_type)
+    )
+
+
 def main() -> None:
     """Entry point for the `muffin` CLI."""
     app()
