@@ -5,8 +5,6 @@ ReAct agent combining:
   snippets with engine/category metadata, direct JSON output).
 - Firecrawl MCP tools for scraping, crawling, URL discovery, batch scraping,
   and structured LLM extraction.
-- MarkItDown ``convert_document`` for downloading and converting file-based
-  documents (PDF, Word, Excel, PowerPoint, etc.).
 """
 
 from langchain.agents import create_agent
@@ -15,7 +13,6 @@ from langchain_core.runnables import RunnableConfig
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
-from ...tools.web import convert_document
 from ...web_config import WebConfiguration
 from .utils import data_collection_middleware, get_tools
 
@@ -42,12 +39,11 @@ async def create_web_search_data_collection_agent(config: RunnableConfig):
         num_results=10,
     )
 
-    # Firecrawl MCP tools (scrape, crawl, map, search, batch_scrape, extract)
-    # plus convert_document (MarkItDown, not in MCP) as custom tool.
+    # Firecrawl MCP tools (scrape, crawl, map, search, batch_scrape, extract).
     tools = await get_tools(
         config,
         allowed_tools=FIRECRAWL_MCP_TOOLS,
-        custom_tools=[*searxng_tools, convert_document],
+        custom_tools=[*searxng_tools],
     )
 
     prompt = render_template("data_collection/web_search.jinja")

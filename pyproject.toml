@@ -32,8 +32,6 @@ dependencies = [
     "opensandbox",
     "opensandbox-code-interpreter",
     # Web search and crawling
-    "httpx>=0.27",
-    "markitdown[all]>=0.1.5",
     "langchain-community>=0.4.1",
 ]
 

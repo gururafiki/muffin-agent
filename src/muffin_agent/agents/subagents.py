@@ -246,11 +246,13 @@ async def build_analysis_subagents(config: RunnableConfig) -> list[CompiledSubAg
                 "through financial data APIs. Use for: company IR pages, industry "
                 "reports, product launch sites, press releases, regulatory documents, "
                 "forum/Reddit sentiment, blog posts, earnings call transcripts from "
-                "company sites, and any recent web content. Accepts a search query "
-                "(via web_search) or a direct URL (via web_scrape). For multi-page "
-                "sites, web_crawl follows internal links; web_map discovers URLs "
-                "without fetching content; convert_document handles PDFs, Word, "
-                "Excel, and PowerPoint files downloaded directly from a URL."
+                "company sites, and any recent web content. Supports: search queries "
+                "(searx_search_results, firecrawl_search), single-page scraping "
+                "(firecrawl_scrape), multi-page crawling (firecrawl_crawl), URL "
+                "discovery (firecrawl_map), parallel batch scraping "
+                "(firecrawl_batch_scrape), and structured LLM extraction "
+                "(firecrawl_extract). Firecrawl handles PDFs, Word, and Excel files "
+                "at web URLs natively."
             ),
             runnable=web_search_agent,
         ),

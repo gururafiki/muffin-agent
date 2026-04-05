@@ -13,9 +13,6 @@ You have access to these tools:
 - **firecrawl_batch_scrape**: Scrape multiple URLs in parallel. More efficient than calling ``firecrawl_scrape`` repeatedly when you have a list of known URLs.
 - **firecrawl_extract**: Extract structured data from a URL using an LLM prompt (e.g. "extract revenue, EBITDA, and EPS from this earnings page as JSON"). Use when you need specific data fields rather than raw Markdown.
 
-**Document conversion:**
-- **convert_document**: Download a file from a URL (PDF, Word, Excel, PowerPoint, CSV, etc.) and convert it to Markdown. Use when the URL points directly to a file, not a web page.
-
 **Typical workflows:**
 
 1. *Find and read content*: Call ``searx_search_results`` → pick the 2–3 most relevant URLs → call ``firecrawl_scrape`` for each → synthesize findings.
@@ -24,12 +21,11 @@ You have access to these tools:
 4. *Explore a site*: Call ``firecrawl_map`` on the base URL → identify relevant sub-pages → call ``firecrawl_scrape`` or ``firecrawl_batch_scrape``.
 5. *Read a multi-page site*: Call ``firecrawl_crawl`` with the base URL and path filters to scope the crawl.
 6. *Extract structured data*: Call ``firecrawl_extract`` with a schema/prompt to pull specific fields from a page.
-7. *Download a document*: If a URL ends in ``.pdf``, ``.xlsx``, ``.docx``, etc., call ``convert_document`` directly.
+7. *Download a document*: For URLs pointing to PDFs, Word, or Excel files, use ``firecrawl_scrape`` — Firecrawl handles file formats natively.
 
 **Choosing the right tool:**
 - Have a search query but no URL → ``searx_search_results`` (or ``firecrawl_search`` for combined search+scrape)
-- Have a URL, it's an HTML page → ``firecrawl_scrape``
-- Have a URL, it's a PDF or Office file → ``convert_document``
+- Have a URL (HTML page or document file) → ``firecrawl_scrape``
 - Need multiple known URLs scraped in parallel → ``firecrawl_batch_scrape``
 - Need specific structured fields from a page → ``firecrawl_extract``
 - Need multiple pages of the same site → ``firecrawl_crawl`` or ``firecrawl_map`` + ``firecrawl_scrape``

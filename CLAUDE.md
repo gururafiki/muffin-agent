@@ -63,7 +63,7 @@ The source lives in `src/muffin_agent/` and is organized as:
   - `get_tools(config: RunnableConfig, allowed_tools, custom_tools=None)` — calls `McpConfiguration.from_runnable_config(config)` to get all MCP connections (OpenBB + Firecrawl), loads all tools via `MultiServerMCPClient`, then filters by `allowed_tools`. Skips MCP entirely when `allowed_tools=[]`.
   - `data_collection_middleware(cacheable_tools)` — standard middleware stack: `ToolErrorHandlerMiddleware` (outer) → `FilesystemMiddleware` (middle, file tools + auto-eviction) → `ToolResultCacheMiddleware` (inner, store-based cache). Imported from `middlewares`.
 
-  Currently implemented: `equity_fundamentals.py` (25 OpenBB tools), `equity_price.py` (5 OpenBB tools + `execute_python`), `web_search.py` (6 Firecrawl MCP tools + `searx_search_results` via LangChain `load_tools` + `convert_document` custom tool)
+  Currently implemented: `equity_fundamentals.py` (25 OpenBB tools), `equity_price.py` (5 OpenBB tools + `execute_python`), `web_search.py` (6 Firecrawl MCP tools + `searx_search_results` via LangChain `load_tools`)
 
 - **`agents/data_validation.py`** — Pure reasoning agent (no MCP tools) that validates collected data against a criterion. Built with `create_agent(model, system_prompt=...)` and no tools — the ReAct loop resolves to a direct LLM response. Checks sufficiency, relevance, temporal validity, and consistency. Prompt: `data_validation.jinja`. Used as a `CompiledSubAgent` in both stock evaluation and criterion evaluation agents.
 
@@ -111,7 +111,6 @@ The source lives in `src/muffin_agent/` and is organized as:
   - `macro.py` — `compute_yield_curve_metrics` (`YieldCurveMetrics`), `compute_factor_zscore` (`FactorZScore`), `compute_vix_regime` (used by market_regime)
   - `projections.py` — `project_three_year_financials` (`YearlyProjection`), `compute_sensitivity` (`SensitivityMetrics`) (used by forecasting)
   - `risk.py` — `compute_beta` (`BetaMetrics`), `compute_var_cvar` (`VaRResult`), `compute_sharpe_sortino` (`RiskAdjustedReturns`), `compute_max_drawdown` (used by risk_assessment). Uses `statistics.NormalDist` (stdlib, Python 3.8+) for parametric VaR/CVaR — no scipy dependency.
-  - `web.py` — Single tool: `convert_document` (httpx download + MarkItDown, supports PDF/Word/Excel/PPT/CSV/etc.). Accepts `runtime: ToolRuntime` (injected; not in schema). Tests call `.coroutine()` directly to bypass Pydantic schema validation on the injected param. Web search is handled by LangChain `SearxSearchResults` (via `load_tools`); scraping/crawling/mapping by Firecrawl MCP tools. Used exclusively by `agents/data_collection/web_search.py`.
 
 ## Conventions
 

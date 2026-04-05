@@ -104,9 +104,23 @@ services:
     networks:
       - muffin-net
 
+  firecrawl-rabbitmq:
+    image: rabbitmq:3
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - muffin-net
+
   firecrawl-playwright:
     image: ghcr.io/mendableai/firecrawl-playwright-service:latest
     restart: unless-stopped
+    environment:
+      BLOCK_MEDIA: "true"
     networks:
       - muffin-net
 
@@ -120,6 +134,8 @@ services:
         condition: service_healthy
       firecrawl-playwright:
         condition: service_started
+      firecrawl-rabbitmq:
+        condition: service_healthy
     env_file:
       - extras/firecrawl/.env
     environment:
@@ -128,32 +144,14 @@ services:
       PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
       USE_DB_AUTHENTICATION: "false"
       SEARXNG_ENDPOINT: http://searxng:8080
+      NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
+      NUM_WORKERS_PER_QUEUE: "8"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
-    networks:
-      - muffin-net
-
-  firecrawl-worker:
-    image: ghcr.io/mendableai/firecrawl:latest
-    restart: unless-stopped
-    entrypoint: ["sh", "-c", "npm run workers"]
-    depends_on:
-      firecrawl-redis:
-        condition: service_healthy
-      firecrawl-playwright:
-        condition: service_started
-    env_file:
-      - extras/firecrawl/.env
-    environment:
-      REDIS_URL: redis://firecrawl-redis:6379
-      REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
-      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
-      USE_DB_AUTHENTICATION: "false"
-      SEARXNG_ENDPOINT: http://searxng:8080
     networks:
       - muffin-net
 

@@ -94,6 +94,7 @@ class TestCreateCriterionEvaluationAgent:
         mock_options_agent = MagicMock()
         mock_regulatory_filings_agent = MagicMock()
         mock_fama_french_agent = MagicMock()
+        mock_web_search_agent = MagicMock()
         mock_validation_agent = MagicMock()
 
         config = MagicMock()
@@ -181,6 +182,12 @@ class TestCreateCriterionEvaluationAgent:
                 return_value=mock_fama_french_agent,
             ),
             patch(
+                "muffin_agent.agents.subagents"
+                ".create_web_search_data_collection_agent",
+                new_callable=AsyncMock,
+                return_value=mock_web_search_agent,
+            ),
+            patch(
                 "muffin_agent.agents.subagents.create_data_validation_agent",
                 new_callable=AsyncMock,
                 return_value=mock_validation_agent,
@@ -201,7 +208,7 @@ class TestCreateCriterionEvaluationAgent:
             call_kwargs = mock_create.call_args
             assert call_kwargs.kwargs["model"] == config.get_llm.return_value
             subagents = call_kwargs.kwargs["subagents"]
-            assert len(subagents) == 14
+            assert len(subagents) == 15
             assert subagents[0]["name"] == "equity-fundamentals"
             assert subagents[0]["runnable"] is mock_fundamentals_agent
             assert subagents[1]["name"] == "equity-price"
@@ -228,6 +235,8 @@ class TestCreateCriterionEvaluationAgent:
             assert subagents[11]["runnable"] is mock_regulatory_filings_agent
             assert subagents[12]["name"] == "fama-french"
             assert subagents[12]["runnable"] is mock_fama_french_agent
-            assert subagents[13]["name"] == "data-validation"
-            assert subagents[13]["runnable"] is mock_validation_agent
+            assert subagents[13]["name"] == "web-search"
+            assert subagents[13]["runnable"] is mock_web_search_agent
+            assert subagents[14]["name"] == "data-validation"
+            assert subagents[14]["runnable"] is mock_validation_agent
             assert agent is mock_create.return_value

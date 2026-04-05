@@ -10,8 +10,8 @@ Organized by financial domain:
 - ``risk`` — beta, VaR/CVaR, Sharpe/Sortino, max drawdown
 - ``valuation`` — WACC, DCF (blended exit-multiple + Gordon Growth),
   multiples-based fair value, scenario-weighted NAV
-- ``web`` — convert_document (MarkItDown); web search via LangChain SearxNG
-  integration; scraping/crawling via Firecrawl MCP
+Web search is handled by LangChain SearxNG integration (``load_tools``);
+scraping/crawling by Firecrawl MCP tools. No custom web tools remain.
 """
 
 from .credit_risk import (
@@ -50,7 +50,6 @@ from .valuation import (
     compute_scenario_weighted_value,
     compute_wacc,
 )
-from .web import convert_document
 
 __all__ = [
     "compute_accruals_ratio",
@@ -74,6 +73,5 @@ __all__ = [
     "compute_vix_regime",
     "compute_wacc",
     "compute_yield_curve_metrics",
-    "convert_document",
     "project_three_year_financials",
 ]
