@@ -170,7 +170,6 @@ Key environment variables set in docker-compose.yml (override in `.env`):
 |----------|---------|-------------|
 | `OPENBB_MCP_URL` | langgraph-api | OpenBB MCP server URL |
 | `FIRECRAWL_MCP_URL` | langgraph-api | Firecrawl MCP server URL |
-| `SEARXNG_URL` | langgraph-api | SearxNG base URL for search |
 | `SEARXNG_SECRET_KEY` | searxng | Secret key for SearxNG (set in `.env`) |
 | `FIRECRAWL_API_KEY` | firecrawl-mcp | API key for Firecrawl (default: `local`) |
 | `OPENSANDBOX_API_KEY` | opensandbox-server | Sandbox auth key (optional) |

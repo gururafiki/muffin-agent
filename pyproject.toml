@@ -31,8 +31,6 @@ dependencies = [
     # Sandbox
     "opensandbox",
     "opensandbox-code-interpreter",
-    # Web search and crawling
-    "langchain-community>=0.4.1",
 ]
 
 [project.scripts]

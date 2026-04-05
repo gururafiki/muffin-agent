@@ -247,7 +247,7 @@ async def build_analysis_subagents(config: RunnableConfig) -> list[CompiledSubAg
                 "reports, product launch sites, press releases, regulatory documents, "
                 "forum/Reddit sentiment, blog posts, earnings call transcripts from "
                 "company sites, and any recent web content. Supports: search queries "
-                "(searx_search_results, firecrawl_search), single-page scraping "
+                "(firecrawl_search, SearxNG-backed), single-page scraping "
                 "(firecrawl_scrape), multi-page crawling (firecrawl_crawl), URL "
                 "discovery (firecrawl_map), parallel batch scraping "
                 "(firecrawl_batch_scrape), and structured LLM extraction "

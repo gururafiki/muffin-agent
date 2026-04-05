@@ -201,7 +201,6 @@ services:
       DATABASE_URI: postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
       OPENBB_MCP_URL: http://openbb-mcp:8001/mcp
       OPENSANDBOX_URL: opensandbox-server:8080
-      SEARXNG_URL: http://searxng:8080
       FIRECRAWL_MCP_URL: http://firecrawl-mcp:3000/mcp
     networks:
       - muffin-net
