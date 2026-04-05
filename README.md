@@ -43,7 +43,7 @@ ReAct agents that retrieve financial data via OpenBB MCP. Each agent has a filte
 | `currency_commodities` | 9 | FX pair history and reference rates, commodity spot prices (WTI, Brent, gold), EIA energy outlook, crypto price history |
 | `regulatory_filings` | 14 | SEC filings, CIK lookups, CFTC Commitment of Traders, US congressional bills |
 | `fama_french` | 6 | Fama-French 3/5-factor model returns, US/regional/country portfolio returns, international index returns, size/value breakpoints |
-| `web_search` | 5 custom | Web search (SearxNG), page scraping (Firecrawl), multi-page crawling, site URL discovery, document-to-Markdown conversion (MarkItDown) |
+| `web_search` | 6 Firecrawl MCP + SearxNG + 1 custom | Web search (SearxNG via `load_tools`), Firecrawl scrape/crawl/map/batch-scrape/extract, document-to-Markdown (MarkItDown) |
 
 ### Data Validation Agent
 
@@ -386,7 +386,7 @@ cp .env.example .env
 | `OPENSANDBOX_API_KEY` | No | OpenSandbox API key (omit if no auth) | — |
 | `OPENSANDBOX_IMAGE` | No | Docker image for sandbox containers | Default: `python:3.11-slim` |
 | `SEARXNG_URL` | No | SearxNG base URL | Default: `http://127.0.0.1:8888`. Auto-configured in docker-compose. |
-| `FIRECRAWL_URL` | No | Firecrawl API base URL | Default: `http://127.0.0.1:3002`. Auto-configured in docker-compose. |
+| `FIRECRAWL_MCP_URL` | No | Firecrawl MCP server URL | Default: `http://127.0.0.1:3000/mcp`. Auto-configured in docker-compose. |
 | `FIRECRAWL_API_KEY` | No | Firecrawl API key | Default: `local` (any value works with `USE_DB_AUTHENTICATION=false`) |
 | `SEARXNG_SECRET_KEY` | No | SearxNG secret key | Required for docker-compose. Set a random string. |
 | `LANGFUSE_SECRET_KEY` | No | LLM tracing (optional) | [Langfuse Cloud](https://cloud.langfuse.com) → Settings → API Keys |

@@ -127,6 +127,7 @@ services:
       REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
       PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
       USE_DB_AUTHENTICATION: "false"
+      SEARXNG_ENDPOINT: http://searxng:8080
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
       interval: 15s
@@ -152,6 +153,21 @@ services:
       REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
       PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
       USE_DB_AUTHENTICATION: "false"
+      SEARXNG_ENDPOINT: http://searxng:8080
+    networks:
+      - muffin-net
+
+  firecrawl-mcp:
+    image: node:22-slim
+    restart: unless-stopped
+    command: sh -c "npx --yes firecrawl-mcp"
+    environment:
+      HTTP_STREAMABLE_SERVER: "true"
+      FIRECRAWL_API_URL: http://firecrawl-api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-local}
+    depends_on:
+      firecrawl-api:
+        condition: service_healthy
     networks:
       - muffin-net
 
@@ -173,6 +189,8 @@ services:
         condition: service_healthy
       firecrawl-api:
         condition: service_healthy
+      firecrawl-mcp:
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -181,8 +199,7 @@ services:
       OPENBB_MCP_URL: http://openbb-mcp:8001/mcp
       OPENSANDBOX_URL: opensandbox-server:8080
       SEARXNG_URL: http://searxng:8080
-      FIRECRAWL_URL: http://firecrawl-api:3002
-      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-local}
+      FIRECRAWL_MCP_URL: http://firecrawl-mcp:3000/mcp
     networks:
       - muffin-net
 

@@ -33,8 +33,8 @@ dependencies = [
     "opensandbox-code-interpreter",
     # Web search and crawling
     "httpx>=0.27",
-    "firecrawl-py>=1.0",
     "markitdown[all]>=0.1.5",
+    "langchain-community>=0.4.1",
 ]
 
 [project.scripts]
