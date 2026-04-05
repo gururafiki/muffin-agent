@@ -66,7 +66,7 @@ The defaults in `.env.example` work for a local self-hosted setup with no authen
 docker compose up
 ```
 
-This starts twelve services:
+This starts thirteen services:
 
 | Service | Port | Role |
 |---------|------|------|
@@ -80,7 +80,8 @@ This starts twelve services:
 | `firecrawl-redis` | — | Firecrawl rate-limit / cache store |
 | `firecrawl-rabbitmq` | — | Firecrawl job queue (RabbitMQ) |
 | `firecrawl-playwright` | — | Browser automation for JS-rendered pages |
-| `firecrawl-api` | 3002 | Firecrawl HTTP API + workers (harness.js) |
+| `firecrawl-postgres` | — | Firecrawl NUQ job queue database (pg_cron + nuq schema) |
+| `firecrawl-api` | 3002 | Firecrawl HTTP API + workers (harness.js --start-docker) |
 | `firecrawl-mcp` | 3000 | Firecrawl MCP server |
 
 Open [http://localhost:3000](http://localhost:3000) to use the chat UI.
@@ -94,8 +95,8 @@ curl http://localhost:8123/ok
 # Verify SearxNG
 curl 'http://localhost:8888/search?q=test&format=json' | jq '.results[0].title'
 
-# Verify Firecrawl
-curl http://localhost:3002/health
+# Verify Firecrawl (root endpoint returns {"message":"Firecrawl API"})
+curl http://localhost:3002/
 ```
 
 ## Using the Deployed Agent
@@ -137,10 +138,11 @@ graph TD
     LG --> FMCP["Firecrawl MCP (:3000)"]
 
     subgraph Firecrawl Cluster
-        FMCP --> FAPI["Firecrawl API (:3002)\nnode dist/src/harness.js"]
+        FMCP --> FAPI["Firecrawl API (:3002)\nnode dist/src/harness.js --start-docker"]
         FAPI --> FRD[("Firecrawl Redis\n(rate-limit/cache)")]
         FAPI --> MQ[("RabbitMQ\n(job queue)")]
         FAPI --> PW["Playwright\n(JS rendering)"]
+        FAPI --> FPG[("firecrawl-postgres\nnuq-postgres image\npg_cron + nuq schema")]
     end
 
     FAPI -.->|firecrawl_search| SX

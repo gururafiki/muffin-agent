@@ -61,6 +61,8 @@
 #### Option 1 (Separate client and agent server):
 ##### For Server options:
 - [x] Setup self-hosted [Standalone Agent Server](https://docs.langchain.com/langsmith/deploy-standalone-server#docker-compose) accept 1M node executions limit for development purpose. Build image with [langgraph cli](https://docs.langchain.com/langsmith/cli#build)
+- [x] Docker Compose: all 13 infrastructure services start healthy (`firecrawl-api` requires `--start-docker` flag + dedicated `firecrawl-postgres` using `ghcr.io/firecrawl/nuq-postgres:latest` with `NUQ_DATABASE_URL` set; healthcheck uses root `/` endpoint not `/health`)
+- [ ] `langgraph-api` crashes on startup: `ImportError: attempted relative import with no known parent package` — graph.py loaded as script instead of package module; needs investigation
 - [ ] ~~Setup [aegra](https://github.com/ibbybuilds/aegra)~~
 ##### For client:
 - [x] Setup client web app. For MVP we can go with [langchain-ai/agent-chat-ui](https://docs.langchain.com/oss/python/langchain/ui)
@@ -151,7 +153,7 @@
 ### Data collection
 - [ ] Iterate over data collection agents, improve prompts based on openbb docs. if needed split to smaller specialized agents.
 - [ ] Check https://docs.openbb.co/odp/python/reference . There are a lot of commands that are not covered by MCP.
-- [ ] Add fire crawl to collect data from web (consider adding as MCP)
+- [x] Add firecrawl to collect data from web (consider adding as MCP)
 
 ### Specialized Agents
 - [ ] Integrate tool(s) to get Technical indicators (consider TA-lib)

@@ -125,10 +125,26 @@ services:
     networks:
       - muffin-net
 
+  firecrawl-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: pg_isready -U postgres
+      start_period: 10s
+      timeout: 1s
+      retries: 5
+      interval: 5s
+    networks:
+      - muffin-net
+
   firecrawl-api:
     image: ghcr.io/firecrawl/firecrawl
     restart: unless-stopped
-    command: node dist/src/harness.js
+    command: node dist/src/harness.js --start-docker
     ports:
       - "3002:3002"
     depends_on:
@@ -137,6 +153,8 @@ services:
       firecrawl-playwright:
         condition: service_started
       firecrawl-rabbitmq:
+        condition: service_healthy
+      firecrawl-postgres:
         condition: service_healthy
     env_file:
       - extras/firecrawl/.env
@@ -151,8 +169,9 @@ services:
       SEARXNG_ENDPOINT: http://searxng:8080
       NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
       NUM_WORKERS_PER_QUEUE: "8"
+      NUQ_DATABASE_URL: postgresql://postgres:postgres@firecrawl-postgres:5432/postgres
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/',r=>{process.exit(r.statusCode===200?0:1)})"]
       interval: 15s
       timeout: 5s
       retries: 5
