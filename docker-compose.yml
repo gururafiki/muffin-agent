@@ -117,16 +117,18 @@ services:
       - muffin-net
 
   firecrawl-playwright:
-    image: ghcr.io/mendableai/firecrawl-playwright-service:latest
+    image: ghcr.io/firecrawl/playwright-service:latest
     restart: unless-stopped
     environment:
+      PORT: "3000"
       BLOCK_MEDIA: "true"
     networks:
       - muffin-net
 
   firecrawl-api:
-    image: ghcr.io/mendableai/firecrawl:latest
+    image: ghcr.io/firecrawl/firecrawl
     restart: unless-stopped
+    command: node dist/src/harness.js
     ports:
       - "3002:3002"
     depends_on:
@@ -139,6 +141,9 @@ services:
     env_file:
       - extras/firecrawl/.env
     environment:
+      HOST: "0.0.0.0"
+      PORT: "3002"
+      ENV: local
       REDIS_URL: redis://firecrawl-redis:6379
       REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
       PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape

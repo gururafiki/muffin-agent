@@ -123,45 +123,27 @@ Open [LangSmith Studio](https://smith.langchain.com/) — your deployed agent wi
 
 ## Architecture
 
-```
-┌──────────────┐
-│ Agent Chat UI│ (:3000)
-└──────┬───────┘
-       │
-┌──────▼─────────┐     ┌─────────────────┐     ┌──────────────────────┐
-│ LangGraph API  │────▶│  OpenBB MCP     │     │  OpenSandbox Server  │
-│   (:8123)      │     │   (:8001)       │     │   (:8080)            │
-└───┬───────┬────┘     └─────────────────┘     └──────────┬───────────┘
-    │       │                                              │
- ┌──┴────┐ ┌┴──────────┐                       sandbox containers
- │Postgres│ │   Redis   │                       (one per conversation)
- │(state) │ │(streaming)│
- └────────┘ └───────────┘
-    │
-┌───▼──────────────────────────────────────┐
-│              Web Search Cluster          │
-│                                          │
-│  ┌──────────┐    ┌──────────────────┐   │
-│  │ SearxNG  │    │  Firecrawl MCP   │   │
-│  │ (:8888)  │    │   (:3000)        │   │
-│  └──────────┘    └────────┬─────────┘   │
-│                           │             │
-│                  ┌────────▼─────────┐   │
-│                  │  Firecrawl API   │   │
-│                  │  + workers       │   │
-│                  │  (:3002)         │   │
-│                  └──┬───────────┬───┘   │
-│                     │           │       │
-│              ┌──────┴──┐  ┌────┴────┐  │
-│              │  Redis  │  │RabbitMQ │  │
-│              │ (cache) │  │ (queue) │  │
-│              └─────────┘  └─────────┘  │
-│                     │                  │
-│              ┌──────┴──────┐           │
-│              │ Playwright  │           │
-│              │  (browser)  │           │
-│              └─────────────┘           │
-└──────────────────────────────────────--┘
+```mermaid
+graph TD
+    UI["Agent Chat UI (:3000)"] --> LG["LangGraph API (:8123)"]
+
+    LG --> OBB["OpenBB MCP (:8001)"]
+    LG --> SBX["OpenSandbox (:8080)"]
+    SBX --> SC["Sandbox Containers\n(one per conversation)"]
+    LG --> PG[("PostgreSQL\n(state)")]
+    LG --> RD[("Redis\n(streaming)")]
+
+    LG --> SX["SearxNG (:8888)"]
+    LG --> FMCP["Firecrawl MCP (:3000)"]
+
+    subgraph Firecrawl Cluster
+        FMCP --> FAPI["Firecrawl API (:3002)\nnode dist/src/harness.js"]
+        FAPI --> FRD[("Firecrawl Redis\n(rate-limit/cache)")]
+        FAPI --> MQ[("RabbitMQ\n(job queue)")]
+        FAPI --> PW["Playwright\n(JS rendering)"]
+    end
+
+    FAPI -.->|firecrawl_search| SX
 ```
 
 **Sandbox lifecycle**: Each chat conversation gets its own isolated container.
