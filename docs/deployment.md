@@ -50,27 +50,52 @@ cp extras/openbb/.env.example extras/openbb/.env
 
 See [extras/openbb/README.md](../extras/openbb/README.md) for which providers are free and where to get keys.
 
-### 3. Run with Docker Compose
+### 3. Configure Firecrawl
+
+The `extras/firecrawl/.env` file is required (even if empty) since `docker-compose.yml` references it:
+
+```bash
+cp extras/firecrawl/.env.example extras/firecrawl/.env
+```
+
+The defaults in `.env.example` work for a local self-hosted setup with no authentication.
+
+### 4. Run with Docker Compose
 
 ```bash
 docker compose up
 ```
 
-This starts six services:
-- **langgraph-api** — the agent server on port `8123`
-- **agent-chat-ui** — chat interface on port `3000`
-- **opensandbox-server** — OpenSandbox container manager on port `8080` (internal only); mounts the Docker socket to provision per-conversation Python execution containers
-- **openbb-mcp** — OpenBB MCP server (internal only)
-- **langgraph-postgres** — PostgreSQL for persistence (internal only)
-- **langgraph-redis** — Redis for streaming pub-sub (internal only)
+This starts twelve services:
+
+| Service | Port | Role |
+|---------|------|------|
+| `langgraph-api` | 8123 | Agent server |
+| `agent-chat-ui` | 3000 | Chat interface |
+| `langgraph-postgres` | — | LangGraph state persistence |
+| `langgraph-redis` | — | LangGraph streaming pub-sub |
+| `opensandbox-server` | 8080 | Python sandbox container manager |
+| `openbb-mcp` | 8001 | OpenBB MCP server |
+| `searxng` | 8888 | Meta-search engine (aggregates multiple engines) |
+| `firecrawl-redis` | — | Firecrawl rate-limit / cache store |
+| `firecrawl-rabbitmq` | — | Firecrawl job queue (RabbitMQ) |
+| `firecrawl-playwright` | — | Browser automation for JS-rendered pages |
+| `firecrawl-api` | 3002 | Firecrawl HTTP API + workers (harness.js) |
+| `firecrawl-mcp` | 3000 | Firecrawl MCP server |
 
 Open [http://localhost:3000](http://localhost:3000) to use the chat UI.
 
-### 4. Verify
+### 5. Verify
 
 ```bash
 curl http://localhost:8123/ok
 # Expected: {"ok": true}
+
+# Verify SearxNG
+curl 'http://localhost:8888/search?q=test&format=json' | jq '.results[0].title'
+
+# Verify Firecrawl
+curl http://localhost:3002/health
 ```
 
 ## Using the Deployed Agent
@@ -98,22 +123,27 @@ Open [LangSmith Studio](https://smith.langchain.com/) — your deployed agent wi
 
 ## Architecture
 
-```
-┌──────────────┐
-│ Agent Chat UI│ (:3000)
-└──────┬───────┘
-       │
-┌──────▼─────────┐     ┌─────────────────┐     ┌──────────────────────┐
-│ LangGraph API  │────▶│  OpenBB MCP     │     │  OpenSandbox Server  │
-│   (:8123)      │     │   (:8001)       │     │   (:8080)            │
-└───────┬────────┘     └─────────────────┘     └──────────┬───────────┘
-        │                                                  │
- ┌──────┴──────┐                                sandbox containers
- │             │                                (one per conversation)
-┌▼──────────┐ ┌▼───────────┐
-│ PostgreSQL│ │   Redis     │
-│ (persist) │ │ (streaming) │
-└───────────┘ └─────────────┘
+```mermaid
+graph TD
+    UI["Agent Chat UI (:3000)"] --> LG["LangGraph API (:8123)"]
+
+    LG --> OBB["OpenBB MCP (:8001)"]
+    LG --> SBX["OpenSandbox (:8080)"]
+    SBX --> SC["Sandbox Containers\n(one per conversation)"]
+    LG --> PG[("PostgreSQL\n(state)")]
+    LG --> RD[("Redis\n(streaming)")]
+
+    LG --> SX["SearxNG (:8888)"]
+    LG --> FMCP["Firecrawl MCP (:3000)"]
+
+    subgraph Firecrawl Cluster
+        FMCP --> FAPI["Firecrawl API (:3002)\nnode dist/src/harness.js"]
+        FAPI --> FRD[("Firecrawl Redis\n(rate-limit/cache)")]
+        FAPI --> MQ[("RabbitMQ\n(job queue)")]
+        FAPI --> PW["Playwright\n(JS rendering)"]
+    end
+
+    FAPI -.->|firecrawl_search| SX
 ```
 
 **Sandbox lifecycle**: Each chat conversation gets its own isolated container.
@@ -124,6 +154,25 @@ automatically. If the container dies mid-conversation (e.g. 1-hour timeout,
 container crash), a new container is created transparently on the next call
 (in-sandbox state like installed packages or written files is lost).
 Containers auto-terminate after a 1-hour idle timeout.
+
+**Web search architecture**: SearxNG aggregates results from multiple search
+engines (Google, Bing, DuckDuckGo, Brave, etc.) and serves them to both the
+agent directly (via `searx_search_results` LangChain tool) and to the
+Firecrawl API (via `SEARXNG_ENDPOINT` env var, used by `firecrawl_search`).
+Firecrawl workers use RabbitMQ for job queuing and Playwright for
+JavaScript-rendered pages, enabling scraping of complex sites.
+
+## Environment Variables
+
+Key environment variables set in docker-compose.yml (override in `.env`):
+
+| Variable | Service | Description |
+|----------|---------|-------------|
+| `OPENBB_MCP_URL` | langgraph-api | OpenBB MCP server URL |
+| `FIRECRAWL_MCP_URL` | langgraph-api | Firecrawl MCP server URL |
+| `SEARXNG_SECRET_KEY` | searxng | Secret key for SearxNG (set in `.env`) |
+| `FIRECRAWL_API_KEY` | firecrawl-mcp | API key for Firecrawl (default: `local`) |
+| `OPENSANDBOX_API_KEY` | opensandbox-server | Sandbox auth key (optional) |
 
 ## Production Considerations
 
@@ -136,6 +185,7 @@ The current Docker Compose setup is intended for **local development**. Before d
 - [ ] **API authentication** — The LangGraph API has no auth by default; add authentication at the proxy layer or via LangSmith API keys
 - [ ] **OpenSandbox authentication** — Set `OPENSANDBOX_API_KEY` and `SANDBOX_API_KEY` in the compose environment to require auth on the sandbox server
 - [ ] **Sandbox image** — Set `OPENSANDBOX_IMAGE` to a hardened custom image with only the required packages; avoid `python:3.11-slim` in production as it allows arbitrary package installation at runtime
+- [ ] **SearxNG secret key** — Set a strong random `SEARXNG_SECRET_KEY` in `.env` (the default `changeme-set-in-env` is insecure)
 
 ### Reliability
 - [ ] **Postgres backups** — Set up periodic `pg_dump` or use a managed database service

@@ -75,6 +75,105 @@ services:
     networks:
       - muffin-net
 
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./extras/searxng:/etc/searxng:rw
+    environment:
+      SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY:-changeme-set-in-env}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - muffin-net
+
+  firecrawl-redis:
+    image: redis:alpine
+    restart: unless-stopped
+    healthcheck:
+      test: redis-cli ping
+      interval: 5s
+      timeout: 1s
+      retries: 5
+    networks:
+      - muffin-net
+
+  firecrawl-rabbitmq:
+    image: rabbitmq:3
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - muffin-net
+
+  firecrawl-playwright:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      BLOCK_MEDIA: "true"
+    networks:
+      - muffin-net
+
+  firecrawl-api:
+    image: ghcr.io/firecrawl/firecrawl
+    restart: unless-stopped
+    command: node dist/src/harness.js
+    ports:
+      - "3002:3002"
+    depends_on:
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_started
+      firecrawl-rabbitmq:
+        condition: service_healthy
+    env_file:
+      - extras/firecrawl/.env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3002"
+      ENV: local
+      REDIS_URL: redis://firecrawl-redis:6379
+      REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
+      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
+      USE_DB_AUTHENTICATION: "false"
+      SEARXNG_ENDPOINT: http://searxng:8080
+      NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
+      NUM_WORKERS_PER_QUEUE: "8"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - muffin-net
+
+  firecrawl-mcp:
+    image: node:22-slim
+    restart: unless-stopped
+    command: sh -c "npx --yes firecrawl-mcp"
+    environment:
+      HTTP_STREAMABLE_SERVER: "true"
+      FIRECRAWL_API_URL: http://firecrawl-api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-local}
+    depends_on:
+      firecrawl-api:
+        condition: service_healthy
+    networks:
+      - muffin-net
+
   langgraph-api:
     image: ${IMAGE_NAME:-muffin-agent:latest}
     restart: unless-stopped
@@ -89,6 +188,12 @@ services:
         condition: service_healthy
       opensandbox-server:
         condition: service_healthy
+      searxng:
+        condition: service_healthy
+      firecrawl-api:
+        condition: service_healthy
+      firecrawl-mcp:
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -96,6 +201,7 @@ services:
       DATABASE_URI: postgres://postgres:postgres@langgraph-postgres:5432/postgres?sslmode=disable
       OPENBB_MCP_URL: http://openbb-mcp:8001/mcp
       OPENSANDBOX_URL: opensandbox-server:8080
+      FIRECRAWL_MCP_URL: http://firecrawl-mcp:3000/mcp
     networks:
       - muffin-net
 

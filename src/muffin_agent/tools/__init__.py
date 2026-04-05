@@ -10,6 +10,8 @@ Organized by financial domain:
 - ``risk`` — beta, VaR/CVaR, Sharpe/Sortino, max drawdown
 - ``valuation`` — WACC, DCF (blended exit-multiple + Gordon Growth),
   multiples-based fair value, scenario-weighted NAV
+Web search is handled by LangChain SearxNG integration (``load_tools``);
+scraping/crawling by Firecrawl MCP tools. No custom web tools remain.
 """
 
 from .credit_risk import (

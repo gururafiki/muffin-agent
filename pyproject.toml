@@ -76,6 +76,7 @@ convention = "google"
 dev = [
     "langgraph-cli[inmem]",
     "pytest",
+    "pytest-asyncio",
     "pytest-cov",
     "pytest-mock",
 ]

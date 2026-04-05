@@ -13,6 +13,10 @@ class McpConfiguration(BaseConfiguration):
         default="http://127.0.0.1:8001/mcp",
         description="OpenBB MCP server URL",
     )
+    firecrawl_mcp_url: str = Field(
+        default="http://127.0.0.1:3000/mcp",
+        description="Firecrawl MCP server URL",
+    )
 
     def get_mcp_connections(self) -> dict[str, Connection]:
         """Get MCP server connections for MultiServerMCPClient."""
@@ -20,5 +24,9 @@ class McpConfiguration(BaseConfiguration):
             "openbb": {
                 "url": self.openbb_mcp_url,
                 "transport": "streamable_http",
-            }
+            },
+            "firecrawl": {
+                "url": self.firecrawl_mcp_url,
+                "transport": "streamable_http",
+            },
         }
