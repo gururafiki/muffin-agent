@@ -37,11 +37,12 @@
 ### DX
 - [x] Create prompt generation skill.
 - [ ] Extend docker compose to allow mounting local code to the code location within docker to allow making changes locally and test them immediately.
-- [ ] Add configuration to allow debugging python code when docker compose is launched. Options:
-    - using VSCode debugging in docker
-    - using `langraph dev`
-    - using normal python debugger to execute muffin-cli, just connect it to other services hosted within docker compose.
-    - update docker compose to use executed outside of docker compose
+- [ ] Add configuration to allow debugging python code when docker compose is launched. Options (In order of preference):
+    - VS Code Dev containers (mount code directory to sync changes)
+    - Using VSCode debugging in docker (attach to running container, mount code directory to sync changes)
+    - Running muffin agent server outside of docker compose with vscode debuger (having separate docker compose file for development that uses server hosted outside)
+    - Running muffin agent server outside of docker compose with `langgraph dev` (or alternative) and attach to running process with vscode (having separate docker compose file for development that uses server hosted outside)
+    -  Using normal VSCode python debugger to execute muffin-cli, just connect it to other services hosted within docker compose (least preferred)
 
 ### Documentation
 - [ ] Document Data Validation agent and add launch.json config

@@ -18,7 +18,7 @@ MCP tools are fetched eagerly during graph construction.
 
 import asyncio
 
-from .agents import create_stock_evaluation_agent
+from muffin_agent.agents import create_stock_evaluation_agent
 
 
 async def _build_graph():
