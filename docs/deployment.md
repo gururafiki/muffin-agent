@@ -107,7 +107,7 @@ curl http://localhost:3002/
 curl -X POST http://localhost:8123/runs/stream \
   -H "Content-Type: application/json" \
   -d '{
-    "input": {"messages": [{"role": "user", "content": "Analyze AAPL"}]},
+    "input": {"messages": [{"role": "user", "content": "What is the current AAPL price?"}]},
     "assistant_id": "stock_evaluation"
   }'
 ```

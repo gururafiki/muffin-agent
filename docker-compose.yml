@@ -185,11 +185,19 @@ services:
     command: sh -c "npx --yes firecrawl-mcp"
     environment:
       HTTP_STREAMABLE_SERVER: "true"
+      HOST: 0.0.0.0
+      PORT: "3000"
       FIRECRAWL_API_URL: http://firecrawl-api:3002
       FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-local}
     depends_on:
       firecrawl-api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').request({host:'localhost',port:3000,path:'/mcp',method:'POST'},r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1)).end()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     networks:
       - muffin-net
 
@@ -212,7 +220,7 @@ services:
       firecrawl-api:
         condition: service_healthy
       firecrawl-mcp:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - .env
     environment:
