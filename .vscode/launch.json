@@ -2,6 +2,30 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "LangGraph Dev Server (Debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "langgraph_cli",
+            "args": [
+                "dev",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8123",
+                "--no-browser",
+                "--allow-blocking"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "FIRECRAWL_MCP_URL": "http://127.0.0.1:3100/mcp"
+            },
+            "justMyCode": false,
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "preLaunchTask": "Start Docker Infra"
+        },
+        {
             "name": "Fundamentals Data Collection Agent: AAPL",
             "type": "debugpy",
             "request": "launch",

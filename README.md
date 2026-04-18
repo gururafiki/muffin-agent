@@ -505,6 +505,11 @@ muffin options --help
 See [docs/deployment.md](docs/deployment.md) for deploying to a LangGraph Standalone Server (Docker + PostgreSQL + Redis).
 
 
+## 🐞 Debugging locally
+
+Press `F5` on the **LangGraph Dev Server (Debug)** config in VSCode — docker compose starts infra + chat UI, `langgraph dev` runs on the host under debugpy on port 8123, and the UI at http://localhost:3000 routes to it. Breakpoints fire in `src/muffin_agent/**` on every request; edits hot-reload. Full guide: [docs/debugging-locally.md](docs/debugging-locally.md).
+
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

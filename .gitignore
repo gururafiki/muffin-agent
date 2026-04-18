@@ -4,3 +4,4 @@ __pycache__/
 uv.lock
 src/*.egg-info/
 *.DS_Store
+.langgraph_api/
