@@ -230,8 +230,11 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    depends_on:
-      - langgraph-api
+    # No depends_on — the UI's NEXT_PUBLIC_API_URL is baked at build time, so the
+    # browser talks to whatever is listening on localhost:8123. It tolerates the
+    # backend coming up later (prod langgraph-api in docker, or host-side
+    # `langgraph dev` via docker-compose.dev.yml). Stripping depends_on from an
+    # overlay isn't supported in Compose v2.13, so we keep it omitted here.
     networks:
       - muffin-net
 

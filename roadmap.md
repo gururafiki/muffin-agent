@@ -36,12 +36,15 @@
 
 ### DX
 - [x] Create prompt generation skill.
-- [ ] Extend docker compose to allow mounting local code to the code location within docker to allow making changes locally and test them immediately.
-- [ ] Add configuration to allow debugging python code when docker compose is launched. Options:
-    - using VSCode debugging in docker
-    - using `langraph dev`
-    - using normal python debugger to execute muffin-cli, just connect it to other services hosted within docker compose.
-    - update docker compose to use executed outside of docker compose
+- [x] Extend docker compose to allow mounting local code to the code location within docker to allow making changes locally and test them immediately. *Achieved out-of-the-box: the agent server runs on the host under `langgraph dev` and reads source directly from the local filesystem (native hot reload). Docker holds only infra + chat UI. See [docs/debugging-locally.md](docs/debugging-locally.md).*
+- [x] Add configuration to allow debugging python code when docker compose is launched. Options (In order of preference):
+    - VS Code Dev containers (mount code directory to sync changes)
+    - Using VSCode debugging in docker (attach to running container, mount code directory to sync changes)
+    - Running muffin agent server outside of docker compose with vscode debuger (having separate docker compose file for development that uses server hosted outside)
+    - Running muffin agent server outside of docker compose with `langgraph dev` (or alternative) and attach to running process with vscode (having separate docker compose file for development that uses server hosted outside)
+    -  Using normal VSCode python debugger to execute muffin-cli, just connect it to other services hosted within docker compose (least preferred)
+
+    *Implemented via option 4 (`LangGraph Dev Server (Debug)` launch config; `docker-compose.dev.yml` overlay hides `langgraph-api` behind a `production` profile so host port 8123 is free for `langgraph dev`, publishes MCP host ports, and swaps the OpenSandbox config for host-reachable sandbox endpoints) and option 5 (per-agent CLI debug — 26 existing launch configs). Options 1-2 remain as future enhancements for fully in-container development. See [docs/debugging-locally.md](docs/debugging-locally.md).*
 
 ### Documentation
 - [ ] Document Data Validation agent and add launch.json config
@@ -62,7 +65,7 @@
 ##### For Server options:
 - [x] Setup self-hosted [Standalone Agent Server](https://docs.langchain.com/langsmith/deploy-standalone-server#docker-compose) accept 1M node executions limit for development purpose. Build image with [langgraph cli](https://docs.langchain.com/langsmith/cli#build)
 - [x] Docker Compose: all 13 infrastructure services start healthy (`firecrawl-api` requires `--start-docker` flag + dedicated `firecrawl-postgres` using `ghcr.io/firecrawl/nuq-postgres:latest` with `NUQ_DATABASE_URL` set; healthcheck uses root `/` endpoint not `/health`)
-- [ ] `langgraph-api` crashes on startup: `ImportError: attempted relative import with no known parent package` — graph.py loaded as script instead of package module; needs investigation
+- [x] `langgraph-api` crashes on startup: `ImportError: attempted relative import with no known parent package` — graph.py loaded as script instead of package module; needs investigation
 - [ ] ~~Setup [aegra](https://github.com/ibbybuilds/aegra)~~
 ##### For client:
 - [x] Setup client web app. For MVP we can go with [langchain-ai/agent-chat-ui](https://docs.langchain.com/oss/python/langchain/ui)
@@ -243,6 +246,8 @@
 - [ ] Share scripts between agent calls.
 - [ ] Once authentication is enabled - store scripts per user in persistent storage and pre-populated sandboxes with them.
 - [ ] Think about having separate Coding agent instead of writing scripts within each agent.
+- [ ] Migrate `SandboxFactory` from sync to async `opensandbox` client so `langgraph dev` no longer needs `--allow-blocking` (sync `socket.connect` is flagged under ASGI).
+- [ ] Make `opensandbox-server` advertise a dual-addressable sandbox endpoint (loopback for host callers + `host.docker.internal` for container callers) so the dev workflow no longer needs a separate `config.dev.toml` + [docker-compose.dev.yml](docker-compose.dev.yml) overlay. When done, delete [extras/opensandbox/config.dev.toml](extras/opensandbox/config.dev.toml) and [docker-compose.dev.yml](docker-compose.dev.yml), and drop the `-f docker-compose.dev.yml` flag from [.vscode/tasks.json](.vscode/tasks.json).
 
 ### DX
 - [ ] Add Claude Code skills for Spec driven development
