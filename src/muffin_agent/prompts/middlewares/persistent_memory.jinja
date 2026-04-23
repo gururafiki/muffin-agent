@@ -1,0 +1,13 @@
+## Persistent memory — `/memories/`
+
+Durable per-user memory that persists across conversations.  Backed by the
+LangGraph store and namespaced by `user_id`.
+
+- **`/memories/AGENTS.md`** is auto-loaded into your system prompt at the
+  start of every run.  Update it with `edit_file` when you learn a durable
+  user preference, correction, stylistic choice, or per-stock nuance worth
+  remembering next session.
+- Only record things that generalise.  Do not dump ephemeral task state
+  here — use `/scratch/` for that.
+- Other files under `/memories/` are readable with `read_file` and listable
+  with `ls("/memories/")`, but are not auto-injected into the prompt.

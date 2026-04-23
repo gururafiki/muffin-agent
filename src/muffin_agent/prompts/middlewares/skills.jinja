@@ -1,0 +1,13 @@
+## Skills — `/skills/`
+
+Read-only capability packs containing playbooks and `SKILL.md` files.
+The skills middleware auto-matches relevant skills at the start of each run
+and injects their metadata into your state; you can then `read_file` the
+specific `SKILL.md` for detailed guidance.
+
+- Treat the entire `/skills/` tree as read-only — do NOT `edit_file` or
+  `write_file` under `/skills/**`.  Skill authoring happens outside the
+  agent loop.
+- Prefer matched skills over improvising your own methodology.  If the
+  matched skill set is empty or doesn't fit, fall back to general
+  reasoning and note the gap.

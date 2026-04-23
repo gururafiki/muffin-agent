@@ -247,25 +247,27 @@ Agent starts with flat classification keys in input state
 ### Integration
 
 ```python
-from ..middlewares import SkillFilterMiddleware, ToolResultCacheMiddleware
-from ..utils.backends import get_skills_backend
+from ..middlewares import SkillFilterMiddleware
+from ..utils.agent_builder import MuffinAgentBuilder
 
-return create_deep_agent(
-    model=llm,
-    system_prompt=prompt,
-    subagents=subagents,
-    backend=get_skills_backend,
-    skills=["/skills/valuation/"],  # Built-in SkillsMiddleware
-    store=store,
-    middleware=[
-        ToolResultCacheMiddleware(),
-        SkillFilterMiddleware[TickerClassification](),
-    ],
-    response_format=AutoStrategy(schema=CriteriaDefinitionOutput),
+return (
+    MuffinAgentBuilder(llm, name="criteria_definition")
+    .with_system_prompt(prompt)
+    .with_sandbox()
+    .with_short_term_memory()
+    .with_persistent_memory()
+    .with_skills(
+        ["/skills/valuation/"],
+        filter_middleware=SkillFilterMiddleware[TickerClassification](),
+    )
+    .with_subagents(subagents)
+    .with_response_format(AutoStrategy(schema=CriteriaDefinitionOutput))
+    .with_store(store)
+    .build_deep_agent()
 )
 ```
 
-`skills=` adds the built-in `SkillsMiddleware` which parses SKILL.md files and writes `skills_metadata` to state. `SkillFilterMiddleware[TickerClassification]()` runs after it, filtering `skills_metadata` in `abefore_agent` so only matched skills appear. `get_skills_backend` (from `utils/backends.py`) routes `/skills/` reads to local filesystem.
+`.with_skills(paths, filter_middleware=...)` does three things in one call: (a) mounts `/skills/` on a read-only `FilesystemBackend` in the composite backend, (b) forwards the skill paths to `create_deep_agent(skills=...)` so the built-in `SkillsMiddleware` parses SKILL.md files and writes `skills_metadata` to state, and (c) appends the supplied `filter_middleware` to the middleware stack. `SkillFilterMiddleware[TickerClassification]()` runs after `SkillsMiddleware`, filtering `skills_metadata` in `abefore_agent` so only matched skills appear, and injecting classification context into the system prompt in `awrap_model_call`.
 
 ### Reusing for other agents
 
@@ -273,9 +275,8 @@ return create_deep_agent(
 
 1. Define an `AgentState` subclass with `NotRequired[str]` fields for each category key
 2. Add `metadata` tags to the agent's SKILL.md files
-3. Pass `skills=[...]` to `create_deep_agent` for standard skill parsing
-4. Pass `backend=get_skills_backend` from `utils/backends.py`
-5. Add `SkillFilterMiddleware[YourSchema]()` to the middleware list
+3. Call `.with_skills([paths], filter_middleware=SkillFilterMiddleware[YourSchema]())` on `MuffinAgentBuilder`
+4. Terminate with `.build_deep_agent()` (skills are deep-agent-only)
 
 ### Verification
 

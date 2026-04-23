@@ -153,8 +153,6 @@ class SkillFilterMiddleware(AgentMiddleware):
         classification = self._get_classification(request.state)
         if classification:
             context = self._format_context(classification)
-            new_sys = append_to_system_message(
-                request.system_message, context
-            )
+            new_sys = append_to_system_message(request.system_message, context)
             return await handler(request.override(system_message=new_sys))
         return await handler(request)

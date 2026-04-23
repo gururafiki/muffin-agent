@@ -229,6 +229,11 @@ services:
       OPENBB_MCP_URL: http://openbb-mcp:8001/mcp
       OPENSANDBOX_URL: opensandbox-server:8080
       FIRECRAWL_MCP_URL: http://firecrawl-mcp:3000/mcp
+      # Debug-only: collapses all anonymous traffic onto a single
+      # /memories/ namespace so agent-chat-ui (which does not yet
+      # populate configurable.user_id) can exercise persistent memory.
+      # Leave unset in multi-user deployments.
+      MEMORY_DEBUG_USER_ID: ${MEMORY_DEBUG_USER_ID:-}
     networks:
       - muffin-net
 

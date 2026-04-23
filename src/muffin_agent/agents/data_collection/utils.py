@@ -1,12 +1,9 @@
 """Shared utilities for data collection agents."""
 
-from deepagents.middleware.filesystem import FilesystemMiddleware
 from langchain_core.runnables import RunnableConfig
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from ...mcp_config import McpConfiguration
-from ...middlewares import ToolErrorHandlerMiddleware, ToolResultCacheMiddleware
-from ...sandbox import get_backend
 
 
 async def get_tools(
@@ -29,18 +26,3 @@ async def get_tools(
     else:
         mcp_tools = []
     return mcp_tools + (custom_tools or [])
-
-
-def data_collection_middleware(cacheable_tools: list[str]) -> list:
-    """Build the standard middleware stack for data collection agents.
-
-    Order: ToolErrorHandler (outer) → FilesystemMiddleware →
-    ToolResultCacheMiddleware (inner).
-    """
-    return [
-        ToolErrorHandlerMiddleware(),
-        FilesystemMiddleware(backend=get_backend),
-        ToolResultCacheMiddleware(
-            cacheable_tools=frozenset(cacheable_tools),
-        ),
-    ]

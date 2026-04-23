@@ -380,7 +380,7 @@ class TestCreateAgent:
                 return_value=config,
             ),
             patch(
-                "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
+                "muffin_agent.utils.agent_builder.create_deep_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(
@@ -409,7 +409,7 @@ class TestCreateAgent:
                 return_value=config,
             ),
             patch(
-                "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
+                "muffin_agent.utils.agent_builder.create_deep_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(
@@ -422,35 +422,6 @@ class TestCreateAgent:
 
             call_kwargs = mock_create.call_args.kwargs
             assert isinstance(call_kwargs["response_format"], AutoStrategy)
-
-    @pytest.mark.asyncio
-    async def test_passes_sandbox_backend(self):
-        from muffin_agent.sandbox import get_backend
-
-        mock_agent = MagicMock()
-        config = MagicMock()
-        config.get_llm.return_value = MagicMock()
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.risk_assessment"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=config,
-            ),
-            patch(
-                "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
-                return_value=mock_agent,
-            ) as mock_create,
-            patch(
-                "muffin_agent.agents.investment.risk_assessment._build_risk_assessment_subagents",
-                new_callable=AsyncMock,
-                return_value=[MagicMock()] * 7,
-            ),
-        ):
-            await create_risk_assessment_agent(config)
-
-            call_kwargs = mock_create.call_args.kwargs
-            assert call_kwargs["backend"] is get_backend
 
     @pytest.mark.asyncio
     async def test_store_forwarded_to_create_deep_agent(self):
@@ -466,7 +437,7 @@ class TestCreateAgent:
                 return_value=config,
             ),
             patch(
-                "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
+                "muffin_agent.utils.agent_builder.create_deep_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(
@@ -494,7 +465,7 @@ class TestCreateAgent:
                 return_value=config,
             ),
             patch(
-                "muffin_agent.agents.investment.risk_assessment.create_deep_agent",
+                "muffin_agent.utils.agent_builder.create_deep_agent",
                 return_value=mock_agent,
             ) as mock_create,
             patch(

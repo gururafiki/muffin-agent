@@ -25,7 +25,7 @@ dependencies = [
     "rich",
     # Observability
     "langfuse",
-    "deepagents",
+    "deepagents>=0.5.3",
     # Checkpointing (CLI persistence)
     "langgraph-checkpoint-sqlite",
     # Sandbox

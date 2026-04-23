@@ -312,18 +312,14 @@ class TestSkillsDirectory:
     def test_each_sector_has_common_skill(self):
         for sector in _EXPECTED_SECTORS:
             skill_path = _SKILLS_DIR / sector / "SKILL.md"
-            assert skill_path.is_file(), (
-                f"Missing common skill for sector: {sector}"
-            )
+            assert skill_path.is_file(), f"Missing common skill for sector: {sector}"
 
     def test_each_sector_has_developed_value_skill(self):
         for sector in _EXPECTED_SECTORS:
             # Insurance has subsectors instead of a single developed-value skill
             if sector == "insurance":
                 continue
-            skill_path = (
-                _SKILLS_DIR / f"{sector}-developed-value" / "SKILL.md"
-            )
+            skill_path = _SKILLS_DIR / f"{sector}-developed-value" / "SKILL.md"
             assert skill_path.is_file(), (
                 f"Missing developed-value skill for sector: {sector}"
             )
@@ -332,18 +328,14 @@ class TestSkillsDirectory:
         for sector in _EXPECTED_SECTORS:
             if sector == "insurance":
                 continue
-            skill_path = (
-                _SKILLS_DIR / f"{sector}-developed-growth" / "SKILL.md"
-            )
+            skill_path = _SKILLS_DIR / f"{sector}-developed-growth" / "SKILL.md"
             assert skill_path.is_file(), (
                 f"Missing developed-growth skill for sector: {sector}"
             )
 
     def test_each_sector_has_emerging_value_skill(self):
         for sector in _EXPECTED_SECTORS:
-            skill_path = (
-                _SKILLS_DIR / f"{sector}-emerging-value" / "SKILL.md"
-            )
+            skill_path = _SKILLS_DIR / f"{sector}-emerging-value" / "SKILL.md"
             assert skill_path.is_file(), (
                 f"Missing emerging-value skill for sector: {sector}"
             )
@@ -353,9 +345,7 @@ class TestSkillsDirectory:
             # Insurance has subsectors; REITs have no EM growth variant
             if sector in ("insurance", "reits"):
                 continue
-            skill_path = (
-                _SKILLS_DIR / f"{sector}-emerging-growth" / "SKILL.md"
-            )
+            skill_path = _SKILLS_DIR / f"{sector}-emerging-growth" / "SKILL.md"
             assert skill_path.is_file(), (
                 f"Missing emerging-growth skill for sector: {sector}"
             )
@@ -371,12 +361,8 @@ class TestSkillsDirectory:
         """Every SKILL.md must start with --- frontmatter containing name."""
         for skill_file in _SKILLS_DIR.glob("*/SKILL.md"):
             content = skill_file.read_text()
-            assert content.startswith("---"), (
-                f"{skill_file} missing YAML frontmatter"
-            )
-            assert "name:" in content, (
-                f"{skill_file} missing 'name' in frontmatter"
-            )
+            assert content.startswith("---"), f"{skill_file} missing YAML frontmatter"
+            assert "name:" in content, f"{skill_file} missing 'name' in frontmatter"
             assert "description:" in content, (
                 f"{skill_file} missing 'description' in frontmatter"
             )
@@ -401,9 +387,7 @@ class TestSkillsDirectory:
 
     def test_telecommunications_emerging_common_skill_exists(self):
         """Telecommunications has a common EM skill."""
-        skill_path = (
-            _SKILLS_DIR / "telecommunications-emerging" / "SKILL.md"
-        )
+        skill_path = _SKILLS_DIR / "telecommunications-emerging" / "SKILL.md"
         assert skill_path.is_file()
 
     def test_tagged_skills_have_metadata(self):
@@ -421,9 +405,7 @@ class TestSkillsDirectory:
                 # Universal — no metadata expected
                 assert "metadata" not in frontmatter or not frontmatter["metadata"]
                 continue
-            assert "metadata" in frontmatter, (
-                f"{name} missing metadata in frontmatter"
-            )
+            assert "metadata" in frontmatter, f"{name} missing metadata in frontmatter"
             meta = frontmatter["metadata"]
             assert isinstance(meta, dict), f"{name} metadata is not a dict"
             # Must have at least one category key
@@ -542,7 +524,7 @@ class TestCreateCriteriaDefinitionAgent:
                     runnable=mock_validation,
                 ),
             ),
-            patch(f"{_MOD}.create_deep_agent") as mock_create,
+            patch("muffin_agent.utils.agent_builder.create_deep_agent") as mock_create,
         ):
             mock_create.return_value = MagicMock()
 
@@ -585,7 +567,7 @@ class TestCreateCriteriaDefinitionAgent:
             for p in _mock_subagent_patches():
                 stack.enter_context(p)
             mock_create = stack.enter_context(
-                patch(f"{_MOD}.create_deep_agent")
+                patch("muffin_agent.utils.agent_builder.create_deep_agent")
             )
             mock_create.return_value = MagicMock()
 
@@ -603,35 +585,6 @@ class TestCreateCriteriaDefinitionAgent:
             assert response_format.schema is CriteriaDefinitionOutput
 
     @pytest.mark.asyncio
-    async def test_uses_skills_backend(self):
-        config = MagicMock()
-        config.get_llm.return_value = MagicMock()
-
-        with ExitStack() as stack:
-            stack.enter_context(
-                patch(
-                    f"{_MOD}.ModelConfiguration.from_runnable_config",
-                    return_value=config,
-                )
-            )
-            for p in _mock_subagent_patches():
-                stack.enter_context(p)
-            mock_create = stack.enter_context(
-                patch(f"{_MOD}.create_deep_agent")
-            )
-            mock_create.return_value = MagicMock()
-
-            from muffin_agent.agents.criteria_definition import (
-                create_criteria_definition_agent,
-            )
-            from muffin_agent.utils.backends import get_skills_backend
-
-            await create_criteria_definition_agent(config)
-
-            call_kwargs = mock_create.call_args
-            assert call_kwargs.kwargs["backend"] is get_skills_backend
-
-    @pytest.mark.asyncio
     async def test_passes_skills_param(self):
         """Default SkillsMiddleware is used via skills= parameter."""
         config = MagicMock()
@@ -647,7 +600,7 @@ class TestCreateCriteriaDefinitionAgent:
             for p in _mock_subagent_patches():
                 stack.enter_context(p)
             mock_create = stack.enter_context(
-                patch(f"{_MOD}.create_deep_agent")
+                patch("muffin_agent.utils.agent_builder.create_deep_agent")
             )
             mock_create.return_value = MagicMock()
 
@@ -676,7 +629,7 @@ class TestCreateCriteriaDefinitionAgent:
             for p in _mock_subagent_patches():
                 stack.enter_context(p)
             mock_create = stack.enter_context(
-                patch(f"{_MOD}.create_deep_agent")
+                patch("muffin_agent.utils.agent_builder.create_deep_agent")
             )
             mock_create.return_value = MagicMock()
 
@@ -704,7 +657,7 @@ class TestCreateCriteriaDefinitionAgent:
             for p in _mock_subagent_patches():
                 stack.enter_context(p)
             mock_create = stack.enter_context(
-                patch(f"{_MOD}.create_deep_agent")
+                patch("muffin_agent.utils.agent_builder.create_deep_agent")
             )
             mock_create.return_value = MagicMock()
 
@@ -716,50 +669,17 @@ class TestCreateCriteriaDefinitionAgent:
 
             call_kwargs = mock_create.call_args
             middleware = call_kwargs.kwargs["middleware"]
-            assert len(middleware) == 2
             from muffin_agent.middlewares import (
                 SkillFilterMiddleware,
+                ToolErrorHandlerMiddleware,
                 ToolResultCacheMiddleware,
             )
 
-            assert isinstance(middleware[0], ToolResultCacheMiddleware)
-            assert isinstance(middleware[1], SkillFilterMiddleware)
-            assert middleware[1].state_schema is TickerClassification
-
-
-# ── get_skills_backend tests ─────────────────────────────────────────────────
-
-_BACKEND_MOD = "muffin_agent.utils.backends"
-
-
-@pytest.mark.unit
-class TestGetSkillsBackend:
-    """Test the get_skills_backend factory function."""
-
-    def test_returns_composite_backend(self):
-        mock_runtime = MagicMock()
-
-        with (
-            patch(f"{_BACKEND_MOD}.get_backend") as mock_get_backend,
-            patch(f"{_BACKEND_MOD}.FilesystemBackend") as mock_fs_backend,
-            patch(f"{_BACKEND_MOD}.CompositeBackend") as mock_composite,
-        ):
-            mock_get_backend.return_value = MagicMock()
-            mock_fs_backend.return_value = MagicMock()
-
-            from muffin_agent.utils.backends import get_skills_backend
-
-            result = get_skills_backend(mock_runtime)
-
-            mock_get_backend.assert_called_once_with(mock_runtime)
-            mock_fs_backend.assert_called_once_with(
-                root_dir=_SKILLS_ROOT, virtual_mode=True
-            )
-            mock_composite.assert_called_once_with(
-                default=mock_get_backend.return_value,
-                routes={"/skills/": mock_fs_backend.return_value},
-            )
-            assert result is mock_composite.return_value
+            assert len(middleware) == 3
+            assert isinstance(middleware[0], ToolErrorHandlerMiddleware)
+            assert isinstance(middleware[1], ToolResultCacheMiddleware)
+            assert isinstance(middleware[2], SkillFilterMiddleware)
+            assert middleware[2].state_schema is TickerClassification
 
 
 # ── Classification schema tests ──────────────────────────────────────────────

@@ -21,5 +21,3 @@ IMPORTANT — Error handling rules:
 - If a tool fails due to missing credentials or unsupported parameters, that tool CANNOT work with these parameters — try different arguments, don't repeat calls with the same arguments.
 - Instead of retrying with the same arguments, try: (a) a different tool, (b) different parameters, or (c) report the data as unavailable.
 - Do NOT apologize or explain at length when a tool fails. State what failed briefly, then continue with available tools.
-
-{% include 'middlewares/tool_result_cache.jinja' %}

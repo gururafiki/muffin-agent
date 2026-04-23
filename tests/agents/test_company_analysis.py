@@ -596,9 +596,7 @@ class TestCreateCompanyAnalysisAgent:
                     runnable=MagicMock(),
                 ),
             ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis.create_deep_agent"
-            ) as mock_create,
+            patch("muffin_agent.utils.agent_builder.create_deep_agent") as mock_create,
         ):
             mock_create.return_value = MagicMock()
             await create_company_analysis_agent(config)
@@ -657,9 +655,7 @@ class TestCreateCompanyAnalysisAgent:
                     runnable=MagicMock(),
                 ),
             ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis.create_deep_agent"
-            ) as mock_create,
+            patch("muffin_agent.utils.agent_builder.create_deep_agent") as mock_create,
         ):
             mock_create.return_value = MagicMock()
             await create_company_analysis_agent(config)
@@ -674,69 +670,6 @@ class TestCreateCompanyAnalysisAgent:
                 "discovery-screening",
                 "data-validation",
             ]
-
-    @pytest.mark.asyncio
-    async def test_passes_get_backend(self):
-        config = MagicMock()
-        config.get_llm.return_value = MagicMock()
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=config,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_equity_fundamentals_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_equity_ownership_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_regulatory_filings_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_news_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_discovery_screening_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".build_validation_subagent",
-                new_callable=AsyncMock,
-                return_value=CompiledSubAgent(
-                    name="data-validation",
-                    description="mock validation",
-                    runnable=MagicMock(),
-                ),
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis.create_deep_agent"
-            ) as mock_create,
-            patch(
-                "muffin_agent.agents.investment.company_analysis.get_backend"
-            ) as mock_backend,
-        ):
-            mock_create.return_value = MagicMock()
-            await create_company_analysis_agent(config)
-
-            assert mock_create.call_args.kwargs["backend"] is mock_backend
 
     @pytest.mark.asyncio
     async def test_uses_auto_strategy_response_format(self):
@@ -789,9 +722,7 @@ class TestCreateCompanyAnalysisAgent:
                     runnable=MagicMock(),
                 ),
             ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis.create_deep_agent"
-            ) as mock_create,
+            patch("muffin_agent.utils.agent_builder.create_deep_agent") as mock_create,
         ):
             mock_create.return_value = MagicMock()
             await create_company_analysis_agent(config)

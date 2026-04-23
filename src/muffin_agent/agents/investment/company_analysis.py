@@ -2,17 +2,14 @@
 
 from typing import Any, Literal
 
-from deepagents import CompiledSubAgent, create_deep_agent
+from deepagents import CompiledSubAgent
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from ...middlewares.tool_result_cache import ToolResultCacheMiddleware
 from ...model_config import ModelConfiguration
-from ...prompts import render_template
-from ...sandbox import get_backend
 from ...tools.credit_risk import (
     compute_altman_z_score,
     compute_interest_coverage,
@@ -23,6 +20,7 @@ from ...tools.profitability import (
     compute_revenue_cagr,
     compute_roic,
 )
+from ...utils.agent_builder import MuffinAgentBuilder
 from ..data_collection import (
     create_discovery_screening_data_collection_agent,
     create_equity_fundamentals_data_collection_agent,
@@ -401,40 +399,28 @@ async def create_company_analysis_agent(
     ``result["structured_response"]`` instead of free-form text.
     """
     subagents = await _build_company_analysis_subagents(config)
-    prompt = render_template("investment/company_analysis.jinja")
-    model_config = ModelConfiguration.from_runnable_config(config)
-    llm = model_config.get_llm()
+    llm = ModelConfiguration.from_runnable_config(config).get_llm()
 
-    return create_deep_agent(
-        model=llm,
-        system_prompt=prompt,
-        subagents=subagents,
-        tools=[
-            compute_roic,
-            compute_fcf_conversion,
-            compute_net_debt_to_ebitda,
-            compute_interest_coverage,
-            compute_revenue_cagr,
-            compute_altman_z_score,
-        ],
-        backend=get_backend,
-        store=store,
-        middleware=[
-            ToolResultCacheMiddleware(
-                cacheable_tools=frozenset(
-                    {
-                        "compute_roic",
-                        "compute_fcf_conversion",
-                        "compute_net_debt_to_ebitda",
-                        "compute_interest_coverage",
-                        "compute_revenue_cagr",
-                        "compute_altman_z_score",
-                    }
-                ),
-            ),
-        ],
-        response_format=AutoStrategy(schema=CompanyAnalysisOutput),
+    builder = (
+        MuffinAgentBuilder(llm, name="company_analysis")
+        .with_system_prompt_template("investment/company_analysis.jinja")
+        .with_sandbox()
+        .with_short_term_memory()
+        .with_persistent_memory()
+        .with_subagents(subagents)
+        .with_response_format(AutoStrategy(schema=CompanyAnalysisOutput))
+        .with_store(store)
     )
+    for tool in (
+        compute_roic,
+        compute_fcf_conversion,
+        compute_net_debt_to_ebitda,
+        compute_interest_coverage,
+        compute_revenue_cagr,
+        compute_altman_z_score,
+    ):
+        builder = builder.with_tool(tool)
+    return builder.build_deep_agent()
 
 
 # ── Node ──────────────────────────────────────────────────────────────────────

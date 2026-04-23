@@ -38,12 +38,12 @@ Before writing any code, read these files to understand the current state and fi
 ReAct agent that retrieves {description of what the agent does} via OpenBB MCP tools.
 """
 
-from langchain.agents import create_agent
 from langchain_core.runnables import RunnableConfig
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
-from .utils import data_collection_middleware, get_tools
+from ...utils.agent_builder import MuffinAgentBuilder
+from .utils import get_tools
 
 MCP_TOOLS = [
     # sorted alphabetically
@@ -58,18 +58,20 @@ async def create_{name}_data_collection_agent(config: RunnableConfig):
     prompt = render_template("data_collection/{name}.jinja")
     model_config = ModelConfiguration.from_runnable_config(config)
     llm = model_config.get_llm()
-    return create_agent(
-        model=llm,
-        tools=tools,
-        system_prompt=prompt,
-        middleware=data_collection_middleware(MCP_TOOLS),
+    builder = (
+        MuffinAgentBuilder(llm, name="{name}")
+        .with_system_prompt(prompt)
+        .with_short_term_memory()
     )
+    for tool in tools:
+        builder = builder.with_tool(tool)
+    return builder.build_react_agent()
 ```
 
 **Rules:**
 - `MCP_TOOLS` must be sorted alphabetically
-- Use `create_agent` from `langchain.agents` — **never** `create_react_agent` from `langgraph.prebuilt`
-- Always include `middleware=data_collection_middleware(MCP_TOOLS)`
+- Use `MuffinAgentBuilder(...).build_react_agent()` — **never** call `create_agent` or `create_react_agent` directly
+- Tools registered via `.with_tool(tool)` are cacheable by default; pass `is_cacheable=False` only when the result must not be cached
 - Google-style imperative-mood docstring on the function (e.g. "Build the …")
 
 ---

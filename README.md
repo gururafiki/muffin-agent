@@ -267,16 +267,42 @@ Runs **sequentially** after Group 2 barrier (forecasting + risk_assessment); out
 
 ### Middleware
 
-Middleware components are plugged into agents via the `middleware=` parameter on `create_deep_agent` or `create_agent`. Each middleware implements hooks (`abefore_agent`, `awrap_model_call`, `awrap_tool_call`) and optionally registers tools.
+Agents are composed via `MuffinAgentBuilder`, which wires universal middleware for every agent and opt-in middleware per capability. The builder is fully typed: `with_system_prompt` accepts `str | SystemMessage`, `with_permission` accepts a real `FilesystemPermission` (deep-agent only), and the tool / subagent / middleware signatures forward exactly the types expected by `create_deep_agent` and `create_agent`.
+
+**Universal middleware** (always added):
 
 | Middleware | Purpose | Tools |
 |-----------|---------|-------|
-| **`ToolResultCacheMiddleware`** | Caches successful tool results in-memory for cross-agent deduplication. On cache hit, returns the cached content without re-executing the tool. | `discover_cached_tool_outputs`, `get_tool_output_schema`, `write_cached_tool_output_to_backend` |
-| **`SkillFilterMiddleware`** | Schema-driven skill pre-filtering for progressive prompt disclosure. Parameterised via `__class_getitem__` with an `AgentState` subclass whose extra fields become category keys. Filters `skills_metadata` in `abefore_agent` and injects classification context into the system prompt. Supports multiple skill directories with different or overlapping metadata keys. | None |
-| **`StoreAccessMiddleware`** | Provides namespace-scoped CRUD access to a `BaseStore` for persistent data sharing between agents. | `store_get`, `store_put`, `store_delete`, `store_search`, `store_list_namespaces` |
 | **`ToolErrorHandlerMiddleware`** | Catches tool exceptions and blocks duplicate permanent failures via graph state. | None |
+| **`ToolResultCacheMiddleware`** | Caches successful tool results in-memory for cross-agent deduplication. On cache hit, returns the cached content without re-executing the tool. | `discover_cached_tool_outputs`, `get_tool_output_schema`, `write_cached_tool_output_to_backend` |
 
-**SkillFilterMiddleware usage**:
+**Opt-in middleware** (added when a specific `with_*` method is called):
+
+| Method | Middleware added | Purpose |
+|---|---|---|
+| `.with_short_term_memory()` (ReAct) | `FilesystemMiddleware` | Exposes `/scratch/` file tools to ReAct agents. (Deep agents receive the composite via `backend=`.) |
+| `.with_persistent_memory()` (ReAct) | `MemoryMiddleware` | Auto-loads `/memories/AGENTS.md` into the system prompt each turn. Deep agents get the same middleware implicitly via `create_deep_agent(memory=[...])`. |
+| `.with_skills(..., filter_middleware=SkillFilterMiddleware[TickerClassification]())` | `SkillFilterMiddleware` | Schema-driven skill pre-filtering. Parameterised via `__class_getitem__` with an `AgentState` subclass whose extra fields become category keys. Filters `skills_metadata` and injects classification context into the system prompt. |
+| `.with_middleware(m)` | Caller middleware | Appended after universal and capability middleware. |
+
+Other middleware in the codebase (not builder-wired but available): `StoreAccessMiddleware` provides namespace-scoped CRUD access to a `BaseStore` for structured shared data — pass via `.with_middleware(StoreAccessMiddleware())` when you want the 5 store tools alongside path-addressed filesystem tools.
+
+### Memory
+
+Filesystem routes are composed opt-in through `MuffinAgentBuilder`:
+
+| Prefix | Backend | Lifetime | Purpose | Enabled by |
+|---|---|---|---|---|
+| (no prefix) | `OpenSandboxBackend` | thread (container recycles) | `execute_python` + ephemeral workspace. Auto-offloaded tool outputs (>20k tokens) land here. | `.with_sandbox()` |
+| `/scratch/` | `StateBackend` | thread (checkpointed) | Short-term notes that survive sandbox recycling. | `.with_short_term_memory()` |
+| `/skills/` | `FilesystemBackend` (read-only) | static | Shipped skill files, auto-matched by built-in `SkillsMiddleware`. | `.with_skills(paths)` |
+| `/memories/` | `StoreBackend`, ns `("memories", user_id)` | cross-thread, per-user | Long-term memory (AGENTS.md). Auto-loaded into system prompt by `MemoryMiddleware` (stock deepagents middleware); LLM updates via `edit_file`. | `.with_persistent_memory()` |
+
+`user_id` is required in `RunnableConfig["configurable"]` for `/memories/` access: it's the namespace key that isolates each user's persistent memory. Pass `--user <id>` on `muffin analyze` / `muffin screen` to populate it; on LangGraph Platform, set `configurable.user_id` per request (add an `@auth.authenticate` hook once multi-user isolation is required). CLI ships `InMemoryStore`; LangGraph Platform injects managed Postgres automatically.
+
+**Debugging against `agent-chat-ui`** — the UI does not yet populate `configurable.user_id`, so a request without the fallback would raise `MemoryUnavailableError`. For local debugging set `MEMORY_DEBUG_USER_ID=<id>` (or `configurable.memory_debug_user_id`) — this value is consulted by `_memories_namespace` as a fallback before raising, pinning all anonymous traffic to a single `("memories", <id>)` namespace. `docker-compose.yml` passes the env var through to the `langgraph-api` service; just set it in your shell or `.env`. **Do NOT set it in multi-user deployments** — it collapses every request onto a shared namespace.
+
+**Builder example**:
 
 ```python
 class TickerClassification(AgentState):
@@ -284,11 +310,20 @@ class TickerClassification(AgentState):
     market: NotRequired[str]
     stock_type: NotRequired[str]
 
-create_deep_agent(
-    ...,
-    skills=["/skills/valuation/"],
-    backend=get_skills_backend,
-    middleware=[SkillFilterMiddleware[TickerClassification]()],
+agent = (
+    MuffinAgentBuilder(llm, name="criteria_definition")
+    .with_system_prompt_template("criteria_definition.jinja")
+    .with_sandbox()
+    .with_short_term_memory()
+    .with_persistent_memory()
+    .with_skills(
+        ["/skills/valuation/"],
+        filter_middleware=SkillFilterMiddleware[TickerClassification](),
+    )
+    .with_subagents(subagents)
+    .with_response_format(AutoStrategy(schema=CriteriaDefinitionOutput))
+    .with_context_schema(TickerClassification)
+    .build_deep_agent()
 )
 
 # Invoke with flat state keys

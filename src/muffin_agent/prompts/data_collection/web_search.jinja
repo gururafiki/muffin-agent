@@ -41,5 +41,3 @@ IMPORTANT — Error handling rules:
 - Instead of retrying with the same arguments, try: (a) a different tool, (b) different parameters, or (c) report the data as unavailable.
 - Do NOT apologize or explain at length when a tool fails. State what failed briefly, then continue with available tools.
 - If ``firecrawl_scrape`` fails for a URL, try ``firecrawl_search`` with the site's domain as a query instead.
-
-{% include 'middlewares/tool_result_cache.jinja' %}

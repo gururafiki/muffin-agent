@@ -7,17 +7,16 @@ evaluation criteria with target ranges and methodology guidance.
 
 from typing import Literal, NotRequired
 
-from deepagents import CompiledSubAgent, create_deep_agent
+from deepagents import CompiledSubAgent
 from langchain.agents import AgentState
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 
-from ..middlewares import SkillFilterMiddleware, ToolResultCacheMiddleware
+from ..middlewares import SkillFilterMiddleware
 from ..model_config import ModelConfiguration
-from ..prompts import render_template
-from ..utils.backends import get_skills_backend
+from ..utils.agent_builder import MuffinAgentBuilder
 from .data_collection import (
     create_discovery_screening_data_collection_agent,
     create_economy_macro_data_collection_agent,
@@ -118,11 +117,11 @@ async def _build_criteria_subagents(
     the data needed to classify a ticker by sector, market type, and stock type.
     """
     etf_index_agent = await create_etf_index_data_collection_agent(config)
-    equity_fundamentals_agent = (
-        await create_equity_fundamentals_data_collection_agent(config)
+    equity_fundamentals_agent = await create_equity_fundamentals_data_collection_agent(
+        config
     )
-    discovery_screening_agent = (
-        await create_discovery_screening_data_collection_agent(config)
+    discovery_screening_agent = await create_discovery_screening_data_collection_agent(
+        config
     )
     economy_macro_agent = await create_economy_macro_data_collection_agent(config)
     validation_subagent = await build_validation_subagent(config)
@@ -186,27 +185,28 @@ async def create_criteria_definition_agent(
     matching valuation skill(s) to produce sector-specific evaluation
     criteria.
 
-    Uses ``get_skills_backend`` to route ``/skills/`` reads to the local
-    filesystem while code execution goes through the sandbox.
+    The muffin composite backend routes ``/skills/`` reads to the local
+    filesystem while code execution goes through the sandbox; ``/memories/``
+    and ``/scratch/`` provide long-term and short-term memory.
 
     ``response_format=AutoStrategy(CriteriaDefinitionOutput)`` ensures
     the agent returns a validated Pydantic model.
     """
     subagents = await _build_criteria_subagents(config)
-    prompt = render_template("criteria_definition.jinja")
-    model_config = ModelConfiguration.from_runnable_config(config)
-    llm = model_config.get_llm()
+    llm = ModelConfiguration.from_runnable_config(config).get_llm()
 
-    return create_deep_agent(
-        model=llm,
-        system_prompt=prompt,
-        subagents=subagents,
-        backend=get_skills_backend,
-        skills=["/skills/valuation/"],
-        store=store,
-        middleware=[
-            ToolResultCacheMiddleware(),
-            SkillFilterMiddleware[TickerClassification](),
-        ],
-        response_format=AutoStrategy(schema=CriteriaDefinitionOutput),
+    return (
+        MuffinAgentBuilder(llm, name="criteria_definition")
+        .with_system_prompt_template("criteria_definition.jinja")
+        .with_sandbox()
+        .with_short_term_memory()
+        .with_persistent_memory()
+        .with_skills(
+            ["/skills/valuation/"],
+            filter_middleware=SkillFilterMiddleware[TickerClassification](),
+        )
+        .with_subagents(subagents)
+        .with_response_format(AutoStrategy(schema=CriteriaDefinitionOutput))
+        .with_store(store)
+        .build_deep_agent()
     )

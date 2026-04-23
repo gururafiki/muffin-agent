@@ -4,32 +4,30 @@ Deep agent that orchestrates data collection subagents, validates collected
 data, and produces a scored stock assessment with reasoning.
 """
 
-from deepagents import create_deep_agent
 from langchain_core.runnables import RunnableConfig
 
 from ..model_config import ModelConfiguration
-from ..prompts import render_template
-from ..sandbox import get_backend
+from ..utils.agent_builder import MuffinAgentBuilder
 from .subagents import build_analysis_subagents
 
 
 async def create_stock_evaluation_agent(config: RunnableConfig):
     """Build the stock evaluation deep agent.
 
-    Create a deep agent that delegates data collection to specialized
-    subagents, then validates, analyzes, and scores the stock.
-    ``get_backend`` discovers or creates a sandbox container per conversation
-    by ``thread_id`` metadata for Python computations (DCF, WACC, technical
-    indicators).
+    Delegates data collection to specialized subagents, then validates,
+    analyzes, and scores the stock.  The muffin composite backend provides
+    ``/scratch/``, ``/memories/`` and a per-thread sandbox for Python
+    computations (DCF, WACC, technical indicators).
     """
     subagents = await build_analysis_subagents(config)
-    prompt = render_template("stock_evaluation.jinja")
-    model_config = ModelConfiguration.from_runnable_config(config)
-    llm = model_config.get_llm()
+    llm = ModelConfiguration.from_runnable_config(config).get_llm()
 
-    return create_deep_agent(
-        model=llm,
-        system_prompt=prompt,
-        subagents=subagents,
-        backend=get_backend,
+    return (
+        MuffinAgentBuilder(llm, name="stock_evaluation")
+        .with_system_prompt_template("stock_evaluation.jinja")
+        .with_sandbox()
+        .with_short_term_memory()
+        .with_persistent_memory()
+        .with_subagents(subagents)
+        .build_deep_agent()
     )

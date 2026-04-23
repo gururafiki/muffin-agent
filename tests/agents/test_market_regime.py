@@ -489,9 +489,7 @@ class TestCreateMarketRegimeAgent:
                     runnable=mock_validation,
                 ),
             ),
-            patch(
-                "muffin_agent.agents.investment.market_regime.create_deep_agent"
-            ) as mock_create,
+            patch("muffin_agent.utils.agent_builder.create_deep_agent") as mock_create,
         ):
             mock_create.return_value = MagicMock()
 
@@ -527,76 +525,6 @@ class TestCreateMarketRegimeAgent:
 
             assert isinstance(response_format, AutoStrategy)
             assert response_format.schema is MarketRegimeOutput
-
-    @pytest.mark.asyncio
-    async def test_uses_backend(self):
-        """Verify that get_backend is passed as sandbox backend."""
-        config = MagicMock()
-        config.get_llm.return_value = MagicMock()
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.market_regime"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=config,
-            ),
-            patch(
-                "muffin_agent.agents.investment.market_regime"
-                ".create_economy_macro_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.market_regime"
-                ".create_fixed_income_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.market_regime"
-                ".create_fama_french_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.market_regime"
-                ".create_currency_commodities_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.market_regime"
-                ".create_etf_index_data_collection_agent",
-                new_callable=AsyncMock,
-                return_value=MagicMock(),
-            ),
-            patch(
-                "muffin_agent.agents.investment.market_regime"
-                ".build_validation_subagent",
-                new_callable=AsyncMock,
-                return_value=CompiledSubAgent(
-                    name="data-validation",
-                    description="mock validation",
-                    runnable=MagicMock(),
-                ),
-            ),
-            patch(
-                "muffin_agent.agents.investment.market_regime.create_deep_agent"
-            ) as mock_create,
-            patch(
-                "muffin_agent.agents.investment.market_regime.get_backend"
-            ) as mock_backend,
-        ):
-            mock_create.return_value = MagicMock()
-
-            from muffin_agent.agents.investment.market_regime import (
-                create_market_regime_agent,
-            )
-
-            await create_market_regime_agent(config)
-
-            call_kwargs = mock_create.call_args
-            assert call_kwargs.kwargs["backend"] is mock_backend
 
 
 # ── market_regime_node tests ───────────────────────────────────────────────────
