@@ -42,13 +42,16 @@ class ModelConfiguration(BaseConfiguration):
         description="Default LLM provider to use",
     )
 
-    llm_max_retries: int = Field(
+    llm_sdk_retries: int = Field(
         default=6,
         ge=0,
         le=10,
         description=(
-            "Retries for transient LLM errors (e.g. HTTP 429 rate limits). "
-            "Both ChatOpenAI and ChatAnthropic use exponential backoff."
+            "SDK-level retries for connect-time LLM errors (network, timeouts, "
+            "5xx/429 before any response body arrives). Forwarded to "
+            "ChatOpenAI/ChatAnthropic via max_retries=. Does NOT cover errors "
+            "raised mid-stream after a 200 OK — those are retried by the "
+            "upstream ModelRetryMiddleware wired by MuffinAgentBuilder."
         ),
     )
 
@@ -100,7 +103,7 @@ class ModelConfiguration(BaseConfiguration):
                 api_key=self.openai_api_key,
                 base_url=self.openai_site_url,
                 default_headers={"HTTP-Referer": self.openai_site_url or ""},
-                max_retries=self.llm_max_retries,
+                max_retries=self.llm_sdk_retries,
                 **kwargs,
             )
         elif self.llm_provider == "anthropic":
@@ -113,7 +116,7 @@ class ModelConfiguration(BaseConfiguration):
                 model=model,
                 temperature=temperature,
                 api_key=self.anthropic_api_key,
-                max_retries=self.llm_max_retries,
+                max_retries=self.llm_sdk_retries,
                 **kwargs,
             )
         else:

@@ -17,12 +17,16 @@ Deep-agent-only capabilities (``with_subagents``, ``with_skills``,
 Universal middleware defaults — added automatically by every ``build_*``
 call before caller-supplied middleware:
 
-1. :class:`ToolErrorHandlerMiddleware`
-2. :class:`ToolResultCacheMiddleware`
-3. *(ReAct only)* :class:`FilesystemMiddleware` — wires the composite
+1. :class:`langchain.agents.middleware.ModelRetryMiddleware` — retries
+   transient and mid-stream LLM provider errors that escape the SDK's
+   connect-time retry budget.  Filtered via :func:`_should_retry_llm_call`
+   to skip permanent (auth/perm/validation) errors.
+2. :class:`ToolErrorHandlerMiddleware`
+3. :class:`ToolResultCacheMiddleware`
+4. *(ReAct only)* :class:`FilesystemMiddleware` — wires the composite
    backend into the filesystem tools.  Deep agents receive the composite
    through the ``backend=`` kwarg instead.
-4. *(ReAct only, conditional)* :class:`MemoryMiddleware` — added when
+5. *(ReAct only, conditional)* :class:`MemoryMiddleware` — added when
    :meth:`with_persistent_memory` was called.  Deep agents get the same
    middleware implicitly via ``create_deep_agent(memory=...)``.
 """
@@ -34,6 +38,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Self
 
+import anthropic
+import openai
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend
 from deepagents.backends.protocol import BackendFactory, BackendProtocol
@@ -44,6 +50,7 @@ from deepagents.middleware.memory import MemoryMiddleware
 from deepagents.middleware.permissions import FilesystemPermission
 from deepagents.middleware.subagents import CompiledSubAgent, SubAgent
 from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRetryMiddleware
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain.agents.structured_output import ResponseFormat
 from langchain_core.language_models import BaseChatModel
@@ -53,10 +60,48 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
 
-from ..middlewares import ToolErrorHandlerMiddleware, ToolResultCacheMiddleware
+from ..middlewares import (
+    ToolErrorHandlerMiddleware,
+    ToolResultCacheMiddleware,
+)
 from ..prompts import render_template
 from ..sandbox import get_backend
 from .backends import _SKILLS_ROOT, _memories_namespace
+
+# Permanent provider errors — never retry. Checked first because most are
+# subclasses of ``APIError`` and would otherwise be caught by the transient
+# tuple below.
+_PERMANENT_LLM_ERRORS: tuple[type[BaseException], ...] = (
+    openai.AuthenticationError,
+    openai.PermissionDeniedError,
+    openai.BadRequestError,
+    anthropic.AuthenticationError,
+    anthropic.PermissionDeniedError,
+    anthropic.BadRequestError,
+)
+
+# Transient provider errors — retry. ``APIConnectionError`` covers
+# ``APITimeoutError``. Bare ``APIError`` is included to catch mid-stream
+# "Provider returned error" cases raised directly by the SDK's stream
+# iterator (the SDK's own ``max_retries`` does not cover these).
+_TRANSIENT_LLM_ERRORS: tuple[type[BaseException], ...] = (
+    openai.APIConnectionError,
+    openai.RateLimitError,
+    openai.InternalServerError,
+    openai.APIError,
+    anthropic.APIConnectionError,
+    anthropic.RateLimitError,
+    anthropic.InternalServerError,
+    anthropic.APIError,
+)
+
+
+def _should_retry_llm_call(exc: Exception) -> bool:
+    """Filter for ``ModelRetryMiddleware``: only transient provider errors."""
+    if isinstance(exc, _PERMANENT_LLM_ERRORS):
+        return False
+    return isinstance(exc, _TRANSIENT_LLM_ERRORS)
+
 
 # Prompt partials registered by each capability.  Rendered once and appended
 # to the caller's system prompt in insertion order, with duplicates removed.
@@ -436,19 +481,35 @@ class MuffinAgentBuilder:
         """Assemble the final middleware stack.
 
         Order:
-        1. :class:`ToolErrorHandlerMiddleware` (universal)
-        2. :class:`ToolResultCacheMiddleware` (universal)
-        3. *(ReAct only)* :class:`FilesystemMiddleware` when a backend is
+        1. :class:`ModelRetryMiddleware` (LangChain upstream, universal,
+           outermost) — retries transient and mid-stream LLM provider
+           errors that escape the SDK's connect-time retry budget.
+           Filters via :func:`_should_retry_llm_call` to skip permanent
+           errors (auth/perm/validation).  ``on_failure="error"``
+           propagates the exception after exhaustion rather than
+           swallowing it as an ``AIMessage``.
+        2. :class:`ToolErrorHandlerMiddleware` (universal)
+        3. :class:`ToolResultCacheMiddleware` (universal)
+        4. *(ReAct only)* :class:`FilesystemMiddleware` when a backend is
            configured.
-        4. *(ReAct only, conditional)* :class:`MemoryMiddleware` when
+        5. *(ReAct only, conditional)* :class:`MemoryMiddleware` when
            :meth:`with_persistent_memory` was called.  Deep agents get
            the same middleware implicitly via
            ``create_deep_agent(memory=...)``.
-        5. Optional skill-filter middleware registered via
+        6. Optional skill-filter middleware registered via
            :meth:`with_skills`.
-        6. Caller-supplied middleware (via :meth:`with_middleware`).
+        7. Caller-supplied middleware (via :meth:`with_middleware`).
         """
         stack: list[AnyMiddleware] = [
+            ModelRetryMiddleware(
+                max_retries=3,
+                retry_on=_should_retry_llm_call,
+                on_failure="error",
+                backoff_factor=2.0,
+                initial_delay=1.0,
+                max_delay=30.0,
+                jitter=True,
+            ),
             ToolErrorHandlerMiddleware(),
             ToolResultCacheMiddleware(cacheable_tools=self._tools.cacheable_frozen),
         ]

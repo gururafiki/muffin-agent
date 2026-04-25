@@ -27,6 +27,8 @@ def _react_kwargs(mock_create_agent):
 class TestMinimalBuilders:
     def test_minimal_deep_agent_no_backend_universal_middleware(self):
         """Bare builder forwards model and universal middleware, no backend."""
+        from langchain.agents.middleware import ModelRetryMiddleware
+
         from muffin_agent.middlewares import (
             ToolErrorHandlerMiddleware,
             ToolResultCacheMiddleware,
@@ -42,10 +44,11 @@ class TestMinimalBuilders:
         assert kwargs["backend"] is None
         assert kwargs["system_prompt"] is None
         mw = kwargs["middleware"]
-        assert len(mw) == 2
-        assert isinstance(mw[0], ToolErrorHandlerMiddleware)
-        assert isinstance(mw[1], ToolResultCacheMiddleware)
-        assert mw[1]._cacheable_tools is None
+        assert len(mw) == 3
+        assert isinstance(mw[0], ModelRetryMiddleware)
+        assert isinstance(mw[1], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[2], ToolResultCacheMiddleware)
+        assert mw[2]._cacheable_tools is None
 
     def test_minimal_react_agent_no_filesystem_middleware(self):
         """No routes → no ``FilesystemMiddleware`` wired on a ReAct agent."""
@@ -187,6 +190,8 @@ class TestSkills:
 
     def test_with_skills_filter_middleware_optional(self, tmp_path):
         """Omitting ``filter_middleware`` does not add extra middleware."""
+        from langchain.agents.middleware import ModelRetryMiddleware
+
         from muffin_agent.middlewares import (
             ToolErrorHandlerMiddleware,
             ToolResultCacheMiddleware,
@@ -201,10 +206,11 @@ class TestSkills:
             )
 
         mw = _deep_kwargs(mock_cda)["middleware"]
-        # Only the two universal middlewares, no filter middleware.
-        assert len(mw) == 2
-        assert isinstance(mw[0], ToolErrorHandlerMiddleware)
-        assert isinstance(mw[1], ToolResultCacheMiddleware)
+        # Only the three universal middlewares, no filter middleware.
+        assert len(mw) == 3
+        assert isinstance(mw[0], ModelRetryMiddleware)
+        assert isinstance(mw[1], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[2], ToolResultCacheMiddleware)
 
     def test_with_skills_called_twice_raises(self, tmp_path):
         """Calling ``with_skills`` twice raises ``ValueError``."""
@@ -375,6 +381,7 @@ class TestPermissionsAndMiddleware:
 
     def test_with_middleware_appended_after_defaults(self):
         """Caller middleware lands after universal defaults."""
+        from langchain.agents.middleware import ModelRetryMiddleware
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
@@ -394,18 +401,55 @@ class TestPermissionsAndMiddleware:
             )
 
         mw = _deep_kwargs(mock_cda)["middleware"]
-        assert isinstance(mw[0], ToolErrorHandlerMiddleware)
-        assert isinstance(mw[1], ToolResultCacheMiddleware)
+        assert isinstance(mw[0], ModelRetryMiddleware)
+        assert isinstance(mw[1], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert mw[-2] is x
         assert mw[-1] is y
 
 
 @pytest.mark.unit
+class TestModelRetryWiring:
+    def test_wired_with_filter_and_on_failure_error(self):
+        """Retry middleware is wired with the right filter and propagates errors."""
+        import httpx
+        import openai
+        from langchain.agents.middleware import ModelRetryMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        retry_mw = next(m for m in mw if isinstance(m, ModelRetryMiddleware))
+
+        assert retry_mw.max_retries == 3
+        assert retry_mw.on_failure == "error"
+        assert retry_mw.backoff_factor == 2.0
+        assert retry_mw.initial_delay == 1.0
+        assert retry_mw.max_delay == 30.0
+        assert retry_mw.jitter is True
+
+        retry_on = retry_mw.retry_on
+        assert callable(retry_on)
+        request = httpx.Request("POST", "https://example.test/v1")
+        api_err = openai.APIError("Provider returned error", request=request, body=None)
+        auth_err = openai.AuthenticationError(
+            "bad key", response=httpx.Response(401, request=request), body=None
+        )
+        assert retry_on(api_err) is True
+        assert retry_on(auth_err) is False
+        assert retry_on(ValueError("unrelated")) is False
+
+
+@pytest.mark.unit
 class TestMiddlewareOrder:
     def test_react_order(self):
-        """Order: ToolErrorHandler, Cache, Filesystem, Memory, caller."""
+        """Order: Retry, ToolError, Cache, Filesystem, Memory, caller."""
         from deepagents.middleware.filesystem import FilesystemMiddleware
         from deepagents.middleware.memory import MemoryMiddleware
+        from langchain.agents.middleware import ModelRetryMiddleware
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
@@ -425,11 +469,12 @@ class TestMiddlewareOrder:
             )
 
         mw = _react_kwargs(mock_ca)["middleware"]
-        assert isinstance(mw[0], ToolErrorHandlerMiddleware)
-        assert isinstance(mw[1], ToolResultCacheMiddleware)
-        assert isinstance(mw[2], FilesystemMiddleware)
-        assert isinstance(mw[3], MemoryMiddleware)
-        assert mw[4] is caller_mw
+        assert isinstance(mw[0], ModelRetryMiddleware)
+        assert isinstance(mw[1], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[2], ToolResultCacheMiddleware)
+        assert isinstance(mw[3], FilesystemMiddleware)
+        assert isinstance(mw[4], MemoryMiddleware)
+        assert mw[5] is caller_mw
 
 
 @pytest.mark.unit
