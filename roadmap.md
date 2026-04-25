@@ -172,6 +172,7 @@
 - [ ] Explore agents from https://github.com/virattt/ai-hedge-fund
 
 ### Other improvements
+- [ ] Web search returns "Tool result too large, the result of this tool call" and got looped.
 - [x] Rework tool results cache. Use ToolRuntime.store (share InMemoryStore across all agents). Add tool: `write_cached_tool_output_to_backend` that will write tool output to backend from store for further manipulations. Within middleware check if tool output is already in cache (store) and if it's return it instead of reading it from sandbox. Update prompts to teach them about new tool and workflow to manipulate with data: check cached tool output using `discover_cached_tool_outputs` -> use tool to get output schema -> use `write_cached_tool_output_to_backend` to save output in backend -> execute custom code to manipulate with output.
 - [ ] Explore `langchain.agents.middleware.context_editing.ContextEditingMiddleware` and `langchain.agents.middleware.summarization.SummarizationMiddleware`:
     - [ ] Clean failed tools and just summarize what agent shouldn't do based on failure messages
@@ -187,7 +188,13 @@
 - [ ] Agent self-improvement
 - [ ] Add an agent to analyze stock price gainers and reason why they have grown to incorporate this knowledge later
 - [x] For structure outputs explore response_format for agents — implemented in Market Regime Agent via `AutoStrategy(schema=MarketRegimeOutput)`
-- [ ] For cross-run memory - ask user to define it before run, so use defines style they need, depth of analysis, etc and later it's used for all interactions with agent
+- [x] For cross-run memory — implemented via `MuffinAgentBuilder` fluent API (`.with_sandbox()`, `.with_short_term_memory()`, `.with_persistent_memory()`, `.with_skills(...)`) that wires `MemoryMiddleware` with `memory=["/memories/AGENTS.md"]` and a composite backend exposing `/memories/` (`StoreBackend`, per-user namespace `("memories", user_id)`), `/scratch/` (`StateBackend`, thread-scoped), and read-only `/skills/` (`FilesystemBackend`). CLI passes `--user` → `configurable={"user_id": ...}`; `user_id` is required (raises `ValueError` if missing).
+- [ ] Memory follow-ups:
+    - [ ] Per-ticker memory route (`/ticker-memories/` namespaced `("memories", user_id, ticker)`) — add if single AGENTS.md per user balloons or per-stock recall becomes a real need.
+    - [ ] Postgres-backed `BaseStore` for self-hosted production (CLI ships `InMemoryStore`; LangGraph Platform injects managed Postgres automatically).
+    - [ ] Consolidate tool-result-cache under the composite backend (today it uses `BaseStore` directly at `("cache", tool_name)`).
+    - [ ] External skill roots via `make_agent_backend(skills_root=...)` — the parameter exists but no agent uses a non-default root yet.
+    - [ ] Seed `/memories/AGENTS.md` with defaults (style, depth, preferred valuation methods) collected in a one-time onboarding flow.
 - [ ] Explore additional Valuation methodologies:
     - [ ] Precedent Transactions — zero coverage. No M&A deal data source exists in OpenBB's MCP tools, so there's no subagent to collect transaction multiples, control premiums, or deal environment context. We'd need an external M&A data provider first. OpenBB doesn't expose M&A deal databases (that's typically Bloomberg/Capital IQ/Refinitiv territory). Without deal data, there's nothing to compute on.
     - [ ] SOTP (Sum-of-the-Parts) — schema field exists (sum_of_parts: dict | None) but is explicitly None / v1 placeholder. Would need segment-level revenue/EBITDA extraction (from 10-K MD&A), per-segment peer multiples, and a new aggregation tool. Needs segment-level financials. The regulatory-filings subagent can fetch 10-K filings, but parsing segment tables from SEC filings is a non-trivial extraction problem.

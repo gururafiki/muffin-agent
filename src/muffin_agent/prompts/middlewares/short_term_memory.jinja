@@ -1,0 +1,14 @@
+## Short-term memory — `/scratch/`
+
+Thread-scoped notes backed by graph state.  Files under `/scratch/` survive
+sandbox container recycling within the current thread but are lost when the
+thread ends.
+
+Use for:
+- Intermediate reasoning artifacts you want to re-read after an
+  `execute_python` restart.
+- Handing off context to a downstream sub-agent in the same thread.
+
+Access via the standard filesystem tools: `read_file`, `edit_file`,
+`write_file`, `ls`.  Files under `/scratch/` are not visible to other users
+or future conversations.

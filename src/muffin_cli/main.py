@@ -1,6 +1,7 @@
 """Muffin CLI — command-line interface for stock analysis agents."""
 
 import asyncio
+import os
 from typing import Annotated
 
 import typer
@@ -584,11 +585,7 @@ async def _stream_web_search(query: str, ticker: str | None) -> None:
     callbacks = setup_tracing(session_id=session_id)
     agent = await create_web_search_data_collection_agent(config)
 
-    prompt = (
-        f"Ticker: {ticker}. {query}"
-        if ticker
-        else query
-    )
+    prompt = f"Ticker: {ticker}. {query}" if ticker else query
 
     printer = StreamPrinter()
     async for chunk, _metadata in agent.astream(
@@ -709,7 +706,7 @@ def _get_checkpointer() -> BaseCheckpointSaver:
     return SqliteSaver(sqlite3.connect(str(db_path)))
 
 
-async def _run_analyze(ticker: str, query: str | None) -> None:
+async def _run_analyze(ticker: str, query: str | None, user: str) -> None:
     """Run the full analysis pipeline for a single ticker and print final thesis."""
     import json
 
@@ -732,7 +729,7 @@ async def _run_analyze(ticker: str, query: str | None) -> None:
         {"ticker": ticker, "query": mandate},
         config=RunnableConfig(
             callbacks=callbacks,
-            configurable={"thread_id": ticker},
+            configurable={"thread_id": ticker, "user_id": user},
         ),
     )
 
@@ -747,6 +744,14 @@ def analyze(
         str | None,
         typer.Option("--query", "-q", help="Investment mandate / analysis focus"),
     ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
 ) -> None:
     """Run the full 7-stage investment analysis pipeline for a given ticker.
 
@@ -757,10 +762,10 @@ def analyze(
 
     NOTE: individual stages are not yet implemented (NotImplementedError).
     """
-    asyncio.run(_run_analyze(ticker, query))
+    asyncio.run(_run_analyze(ticker, query, user))
 
 
-async def _run_screen(query: str, max_tickers: int) -> None:
+async def _run_screen(query: str, max_tickers: int, user: str) -> None:
     """Run the screening pipeline and print comparison results."""
     import json
 
@@ -782,7 +787,11 @@ async def _run_screen(query: str, max_tickers: int) -> None:
         {"query": query, "tickers": [], "theses": []},
         config=RunnableConfig(
             callbacks=callbacks,
-            configurable={"thread_id": session_id, "max_tickers": max_tickers},
+            configurable={
+                "thread_id": session_id,
+                "max_tickers": max_tickers,
+                "user_id": user,
+            },
         ),
     )
 
@@ -800,6 +809,14 @@ def screen(
         int,
         typer.Option("--max-tickers", "-n", help="Max candidates to evaluate in depth"),
     ] = 5,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
 ) -> None:
     """Auto-discover investment ideas and run the full pipeline on each candidate.
 
@@ -811,7 +828,7 @@ def screen(
 
     NOTE: individual stages are not yet implemented (NotImplementedError).
     """
-    asyncio.run(_run_screen(query, max_tickers))
+    asyncio.run(_run_screen(query, max_tickers, user))
 
 
 async def _stream_criteria(
@@ -889,9 +906,7 @@ def criteria(
 
         muffin criteria AAPL --sector software-saas -m developed
     """
-    asyncio.run(
-        _stream_criteria(ticker, query, sector, sub_sector, market, stock_type)
-    )
+    asyncio.run(_stream_criteria(ticker, query, sector, sub_sector, market, stock_type))
 
 
 def main() -> None:

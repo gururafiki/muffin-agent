@@ -162,17 +162,19 @@ Python tools are checked first (fast, in-memory). MCP fallback only runs if no P
 
 ### Prompt integration
 
-Agents receive instructions about cached data via Jinja2 partials:
+Agents receive instructions about cached data via Jinja2 partials appended automatically by `MuffinAgentBuilder`:
 
-- **Data collection**: `{% include 'middlewares/tool_result_cache.jinja' %}` — explains store-based caching, the 3 middleware tools, and the standard discover → schema → write → load workflow.
-- **Investment**: `{% include 'middlewares/tool_result_cache.jinja' %}` + `{% include 'sandbox.jinja' %}` — cache workflow plus sandbox execution and store↔sandbox bridge tools.
+- **Data collection** (ReAct, `.with_tool(...)`): `middlewares/tool_result_cache.jinja` — explains store-based caching, the 3 middleware tools, and the standard discover → schema → write → load workflow.
+- **Investment** (deep agent, `.with_tool(...)` + `.with_sandbox()`): `middlewares/tool_result_cache.jinja` + `sandbox.jinja` — cache workflow plus sandbox execution and store↔sandbox bridge tools.
+
+Prompt files no longer `{% include %}` these partials by hand — the builder appends them once when the matching `with_*` method is called.
 
 ## Files
 
 | File | Change |
 |------|--------|
 | `src/muffin_agent/middlewares/tool_result_cache/middleware.py` | `ToolResultCacheMiddleware` (store-based), `get_args_hash()`, `is_error_content()` |
-| `src/muffin_agent/agents/data_collection/utils.py` | `data_collection_middleware()` helper |
+| `src/muffin_agent/utils/agent_builder.py` | `MuffinAgentBuilder` wires `ToolResultCacheMiddleware` as a universal default and auto-appends the cache prompt partial |
 | `src/muffin_agent/middlewares/tool_result_cache/tools.py` | `discover_cached_tool_outputs`, `write_cached_tool_output_to_backend`, `get_tool_output_schema` tools |
 | `src/muffin_agent/sandbox/__init__.py` | Exports `execute_python`, `get_backend`, `get_sandbox`, `aget_sandbox` |
 | `src/muffin_agent/agents/investment/utils.py` | `run_deep_agent_node()` with `store` param |
@@ -180,7 +182,7 @@ Agents receive instructions about cached data via Jinja2 partials:
 | `src/muffin_agent/agents/investment_analysis.py` | `build_investment_analysis_graph(store=store)` |
 | `src/muffin_agent/agents/equity_screening.py` | `build_equity_screening_graph(store=store)` |
 | `src/muffin_cli/main.py` | Create `InMemoryStore()` and pass to graph builders |
-| 13 data collection agent files | Use `data_collection_middleware(MCP_TOOLS)` |
+| 14 data collection agent files | Compose via `MuffinAgentBuilder(...).with_short_term_memory().with_tool(...).build_react_agent()` |
 | `src/muffin_agent/prompts/middlewares/tool_result_cache.jinja` | Cache workflow instructions (all agents) |
 | `src/muffin_agent/prompts/sandbox.jinja` | Sandbox execution + store↔sandbox bridge (investment agents) |
 | `tests/middlewares/tool_result_cache/test_middleware.py` | 17 tests (store-based cache) |

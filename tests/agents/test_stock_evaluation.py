@@ -160,8 +160,7 @@ class TestCreateStockEvaluationAgent:
                 return_value=mock_fama_french_agent,
             ),
             patch(
-                "muffin_agent.agents.subagents"
-                ".create_web_search_data_collection_agent",
+                "muffin_agent.agents.subagents.create_web_search_data_collection_agent",
                 new_callable=AsyncMock,
                 return_value=mock_web_search_agent,
             ),
@@ -175,9 +174,7 @@ class TestCreateStockEvaluationAgent:
                 ".from_runnable_config",
                 return_value=MagicMock(get_llm=config.get_llm),
             ),
-            patch(
-                "muffin_agent.agents.stock_evaluation.create_deep_agent"
-            ) as mock_create,
+            patch("muffin_agent.utils.agent_builder.create_deep_agent") as mock_create,
         ):
             mock_create.return_value = MagicMock()
 

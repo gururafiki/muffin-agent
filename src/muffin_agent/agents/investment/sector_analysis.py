@@ -2,21 +2,19 @@
 
 from typing import Any, Literal
 
-from deepagents import CompiledSubAgent, create_deep_agent
+from deepagents import CompiledSubAgent
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from ...middlewares import ToolResultCacheMiddleware
 from ...model_config import ModelConfiguration
-from ...prompts import render_template
-from ...sandbox import get_backend
 from ...tools.sector import (
     compute_peer_dispersion,
     compute_sector_relative_performance,
 )
+from ...utils.agent_builder import MuffinAgentBuilder
 from ..data_collection import (
     create_discovery_screening_data_collection_agent,
     create_equity_estimates_data_collection_agent,
@@ -302,32 +300,21 @@ async def create_sector_analysis_agent(
     instead of free-form text.
     """
     subagents = await _build_sector_subagents(config)
-    prompt = render_template("investment/sector_analysis.jinja")
-    model_config = ModelConfiguration.from_runnable_config(config)
-    llm = model_config.get_llm()
+    llm = ModelConfiguration.from_runnable_config(config).get_llm()
 
-    return create_deep_agent(
-        model=llm,
-        system_prompt=prompt,
-        subagents=subagents,
-        tools=[
-            compute_sector_relative_performance,
-            compute_peer_dispersion,
-        ],
-        backend=get_backend,
-        store=store,
-        middleware=[
-            ToolResultCacheMiddleware(
-                cacheable_tools=frozenset(
-                    {
-                        "compute_sector_relative_performance",
-                        "compute_peer_dispersion",
-                    }
-                ),
-            ),
-        ],
-        response_format=AutoStrategy(schema=SectorViewOutput),
+    builder = (
+        MuffinAgentBuilder(llm, name="sector_analysis")
+        .with_system_prompt_template("investment/sector_analysis.jinja")
+        .with_sandbox()
+        .with_short_term_memory()
+        .with_persistent_memory()
+        .with_subagents(subagents)
+        .with_response_format(AutoStrategy(schema=SectorViewOutput))
+        .with_store(store)
     )
+    for tool in (compute_sector_relative_performance, compute_peer_dispersion):
+        builder = builder.with_tool(tool)
+    return builder.build_deep_agent()
 
 
 # ── Node ──────────────────────────────────────────────────────────────────────

@@ -211,12 +211,8 @@ class TestFilterSkills:
         )
         names = [s["name"] for s in result]
         # Universal (0) → value (1) → banking (1) → banking-dm-value (3)
-        assert names.index("guidelines") < names.index(
-            "banking-developed-value"
-        )
-        assert names.index("value") < names.index(
-            "banking-developed-value"
-        )
+        assert names.index("guidelines") < names.index("banking-developed-value")
+        assert names.index("value") < names.index("banking-developed-value")
 
     def test_unknown_keys_ignored(self):
         result = self.mw._filter_skills(

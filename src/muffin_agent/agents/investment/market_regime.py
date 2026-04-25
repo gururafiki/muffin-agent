@@ -2,23 +2,21 @@
 
 from typing import Any, Literal
 
-from deepagents import CompiledSubAgent, create_deep_agent
+from deepagents import CompiledSubAgent
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from ...middlewares import ToolResultCacheMiddleware
 from ...model_config import ModelConfiguration
-from ...prompts import render_template
-from ...sandbox import get_backend
 from ...tools.macro import (
     compute_factor_zscore,
     compute_vix_regime,
     compute_yield_curve_metrics,
 )
 from ...tools.sector import compute_sector_relative_performance
+from ...utils.agent_builder import MuffinAgentBuilder
 from ..data_collection import (
     create_currency_commodities_data_collection_agent,
     create_economy_macro_data_collection_agent,
@@ -264,9 +262,9 @@ async def create_market_regime_agent(
     inflation, monetary policy, liquidity/risk appetite), and produces factor
     tilt and positioning guidance.
 
-    ``get_backend`` discovers or creates a sandbox container per conversation
-    by ``thread_id`` metadata for Python computations (yield curve slope,
-    factor Z-scores, composite indicators).
+    The muffin composite backend provides ``/skills/``, ``/scratch/``,
+    ``/memories/`` and a per-thread sandbox for Python computations (yield
+    curve slope, factor Z-scores, composite indicators).
 
     ``response_format=AutoStrategy(MarketRegimeOutput)`` instructs the agent
     to call a structured output tool as its final act, returning a validated
@@ -274,36 +272,26 @@ async def create_market_regime_agent(
     instead of free-form text.
     """
     subagents = await _build_macro_subagents(config)
-    prompt = render_template("investment/market_regime.jinja")
-    model_config = ModelConfiguration.from_runnable_config(config)
-    llm = model_config.get_llm()
+    llm = ModelConfiguration.from_runnable_config(config).get_llm()
 
-    return create_deep_agent(
-        model=llm,
-        system_prompt=prompt,
-        subagents=subagents,
-        tools=[
-            compute_yield_curve_metrics,
-            compute_factor_zscore,
-            compute_vix_regime,
-            compute_sector_relative_performance,
-        ],
-        backend=get_backend,
-        store=store,
-        middleware=[
-            ToolResultCacheMiddleware(
-                cacheable_tools=frozenset(
-                    {
-                        "compute_yield_curve_metrics",
-                        "compute_factor_zscore",
-                        "compute_vix_regime",
-                        "compute_sector_relative_performance",
-                    }
-                ),
-            ),
-        ],
-        response_format=AutoStrategy(schema=MarketRegimeOutput),
+    builder = (
+        MuffinAgentBuilder(llm, name="market_regime")
+        .with_system_prompt_template("investment/market_regime.jinja")
+        .with_sandbox()
+        .with_short_term_memory()
+        .with_persistent_memory()
+        .with_subagents(subagents)
+        .with_response_format(AutoStrategy(schema=MarketRegimeOutput))
+        .with_store(store)
     )
+    for tool in (
+        compute_yield_curve_metrics,
+        compute_factor_zscore,
+        compute_vix_regime,
+        compute_sector_relative_performance,
+    ):
+        builder = builder.with_tool(tool)
+    return builder.build_deep_agent()
 
 
 # ── Node ──────────────────────────────────────────────────────────────────────

@@ -5,12 +5,11 @@ Firecrawl's search engine (via ``SEARXNG_ENDPOINT`` in docker-compose) rather
 than as a separate LangChain tool, keeping the tool surface minimal.
 """
 
-from langchain.agents import create_agent
 from langchain_core.runnables import RunnableConfig
 
 from ...model_config import ModelConfiguration
-from ...prompts import render_template
-from .utils import data_collection_middleware, get_tools
+from ...utils.agent_builder import MuffinAgentBuilder
+from .utils import get_tools
 
 # Firecrawl MCP tools to load — names must match what the MCP server exposes.
 FIRECRAWL_MCP_TOOLS: list[str] = [
@@ -26,11 +25,13 @@ FIRECRAWL_MCP_TOOLS: list[str] = [
 async def create_web_search_data_collection_agent(config: RunnableConfig):
     """Build the web search & crawling ReAct agent."""
     tools = await get_tools(config, allowed_tools=FIRECRAWL_MCP_TOOLS)
-    prompt = render_template("data_collection/web_search.jinja")
-    model_config = ModelConfiguration.from_runnable_config(config)
-    return create_agent(
-        model=model_config.get_llm(),
-        tools=tools,
-        system_prompt=prompt,
-        middleware=data_collection_middleware(FIRECRAWL_MCP_TOOLS),
+    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+
+    builder = (
+        MuffinAgentBuilder(llm, name="web_search")
+        .with_system_prompt_template("data_collection/web_search.jinja")
+        .with_short_term_memory()
     )
+    for tool in tools:
+        builder = builder.with_tool(tool)
+    return builder.build_react_agent()

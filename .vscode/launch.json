@@ -19,7 +19,10 @@
             "console": "integratedTerminal",
             "envFile": "${workspaceFolder}/.env",
             "env": {
-                "FIRECRAWL_MCP_URL": "http://127.0.0.1:3100/mcp"
+                "OPENSANDBOX_URL": "http://127.0.0.1:8080",
+                "OPENBB_MCP_URL": "http://127.0.0.1:8001/mcp",
+                "FIRECRAWL_MCP_URL": "http://127.0.0.1:3100/mcp",
+                "MEMORY_DEBUG_USER_ID": "test-user-id"
             },
             "justMyCode": false,
             "python": "${workspaceFolder}/.venv/bin/python",

@@ -2,17 +2,14 @@
 
 from typing import Any, Literal
 
-from deepagents import CompiledSubAgent, create_deep_agent
+from deepagents import CompiledSubAgent
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from ...middlewares import ToolResultCacheMiddleware
 from ...model_config import ModelConfiguration
-from ...prompts import render_template
-from ...sandbox import get_backend
 from ...tools.profitability import (
     compute_accruals_ratio,
     compute_revenue_cagr,
@@ -21,6 +18,7 @@ from ...tools.projections import (
     compute_sensitivity,
     project_three_year_financials,
 )
+from ...utils.agent_builder import MuffinAgentBuilder
 from ..data_collection import (
     create_currency_commodities_data_collection_agent,
     create_economy_macro_data_collection_agent,
@@ -409,42 +407,32 @@ async def create_forecasting_agent(
     base_p, bull_p, bear_p = _PROBABILITY_ANCHORS.get(
         company_signal or "pass", _PROBABILITY_ANCHORS["pass"]
     )
-    prompt = render_template(
-        "investment/forecasting.jinja",
-        base_probability=base_p,
-        bull_probability=bull_p,
-        bear_probability=bear_p,
-        company_signal=company_signal or "pass",
-    )
-    model_config = ModelConfiguration.from_runnable_config(config)
-    llm = model_config.get_llm()
+    llm = ModelConfiguration.from_runnable_config(config).get_llm()
 
-    return create_deep_agent(
-        model=llm,
-        system_prompt=prompt,
-        subagents=subagents,
-        tools=[
-            project_three_year_financials,
-            compute_sensitivity,
-            compute_accruals_ratio,
-            compute_revenue_cagr,
-        ],
-        backend=get_backend,
-        store=store,
-        middleware=[
-            ToolResultCacheMiddleware(
-                cacheable_tools=frozenset(
-                    {
-                        "project_three_year_financials",
-                        "compute_sensitivity",
-                        "compute_accruals_ratio",
-                        "compute_revenue_cagr",
-                    }
-                ),
-            ),
-        ],
-        response_format=AutoStrategy(schema=ForecastOutput),
+    builder = (
+        MuffinAgentBuilder(llm, name="forecasting")
+        .with_system_prompt_template(
+            "investment/forecasting.jinja",
+            base_probability=base_p,
+            bull_probability=bull_p,
+            bear_probability=bear_p,
+            company_signal=company_signal or "pass",
+        )
+        .with_sandbox()
+        .with_short_term_memory()
+        .with_persistent_memory()
+        .with_subagents(subagents)
+        .with_response_format(AutoStrategy(schema=ForecastOutput))
+        .with_store(store)
     )
+    for tool in (
+        project_three_year_financials,
+        compute_sensitivity,
+        compute_accruals_ratio,
+        compute_revenue_cagr,
+    ):
+        builder = builder.with_tool(tool)
+    return builder.build_deep_agent()
 
 
 # ── Node ──────────────────────────────────────────────────────────────────────
