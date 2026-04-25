@@ -9,17 +9,17 @@ from muffin_agent.model_config import ModelConfiguration
 
 @pytest.mark.unit
 class TestGetLlmRetries:
-    """Test that get_llm forwards max_retries to LLM constructors."""
+    """Test that get_llm forwards SDK-level retries to LLM constructors."""
 
-    def test_default_max_retries_is_6(self):
+    def test_default_sdk_retries_is_6(self):
         config = ModelConfiguration(llm_provider="openai", openai_api_key="test-key")
-        assert config.llm_max_retries == 6
+        assert config.llm_sdk_retries == 6
 
-    def test_openai_gets_max_retries(self):
+    def test_openai_gets_sdk_retries(self):
         config = ModelConfiguration(
             llm_provider="openai",
             openai_api_key="test-key",
-            llm_max_retries=5,
+            llm_sdk_retries=5,
         )
         with patch("langchain_openai.ChatOpenAI") as mock_cls:
             mock_cls.return_value = MagicMock()
@@ -27,11 +27,11 @@ class TestGetLlmRetries:
         _, kwargs = mock_cls.call_args
         assert kwargs["max_retries"] == 5
 
-    def test_anthropic_gets_max_retries(self):
+    def test_anthropic_gets_sdk_retries(self):
         config = ModelConfiguration(
             llm_provider="anthropic",
             anthropic_api_key="test-key",
-            llm_max_retries=2,
+            llm_sdk_retries=2,
         )
         with patch("langchain_anthropic.ChatAnthropic") as mock_cls:
             mock_cls.return_value = MagicMock()
@@ -40,6 +40,7 @@ class TestGetLlmRetries:
         assert kwargs["max_retries"] == 2
 
     def test_env_var_overrides_default(self, monkeypatch):
-        monkeypatch.setenv("LLM_MAX_RETRIES", "7")
+        monkeypatch.setenv("LLM_SDK_RETRIES", "7")
         config = ModelConfiguration.from_runnable_config({"configurable": {}})
-        assert config.llm_max_retries == 7
+        assert config.llm_sdk_retries == 7
+
