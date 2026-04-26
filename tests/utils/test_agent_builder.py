@@ -504,6 +504,111 @@ class TestModelFallbackWiring:
 
 
 @pytest.mark.unit
+class TestContextEditingWiring:
+    def test_default_omits_context_editing(self):
+        """Without ``with_context_editing`` the middleware is absent."""
+        from langchain.agents.middleware import ContextEditingMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        assert not any(isinstance(m, ContextEditingMiddleware) for m in mw)
+
+    def test_with_context_editing_wires_clear_tool_uses(self):
+        """``with_context_editing`` registers a ``ClearToolUsesEdit`` strategy."""
+        from langchain.agents.middleware import (
+            ClearToolUsesEdit,
+            ContextEditingMiddleware,
+        )
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_context_editing(trigger=12_000, keep=2)
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        ce = next(m for m in mw if isinstance(m, ContextEditingMiddleware))
+        assert len(ce.edits) == 1
+        edit = ce.edits[0]
+        assert isinstance(edit, ClearToolUsesEdit)
+        assert edit.trigger == 12_000
+        assert edit.keep == 2
+
+    def test_last_with_context_editing_call_wins(self):
+        """Calling twice replaces the prior configuration."""
+        from langchain.agents.middleware import ContextEditingMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_context_editing(trigger=10_000, keep=1)
+                .with_context_editing(trigger=20_000, keep=5)
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        ce = next(m for m in mw if isinstance(m, ContextEditingMiddleware))
+        assert ce.edits[0].trigger == 20_000
+        assert ce.edits[0].keep == 5
+
+
+@pytest.mark.unit
+class TestSummarizationWiring:
+    def test_default_omits_summarization(self):
+        """Without ``with_summarization`` the middleware is absent."""
+        from langchain.agents.middleware import SummarizationMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        assert not any(isinstance(m, SummarizationMiddleware) for m in mw)
+
+    def test_with_summarization_uses_primary_model_by_default(self):
+        """``with_summarization()`` defaults to the agent's primary model."""
+        from langchain.agents.middleware import SummarizationMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        primary = MagicMock(name="primary")
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(primary).with_summarization().build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        sm = next(m for m in mw if isinstance(m, SummarizationMiddleware))
+        assert sm.model is primary
+
+    def test_with_summarization_accepts_override_model(self):
+        """An explicit summariser model overrides the primary."""
+        from langchain.agents.middleware import SummarizationMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        summariser = MagicMock(name="summariser")
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock(name="primary"))
+                .with_summarization(summariser)
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        sm = next(m for m in mw if isinstance(m, SummarizationMiddleware))
+        assert sm.model is summariser
+
+
+@pytest.mark.unit
 class TestMiddlewareOrder:
     def test_react_order(self):
         """Order: Retry, ToolError, Cache, Filesystem, Memory, caller."""
@@ -535,6 +640,44 @@ class TestMiddlewareOrder:
         assert isinstance(mw[3], FilesystemMiddleware)
         assert isinstance(mw[4], MemoryMiddleware)
         assert mw[5] is caller_mw
+
+    def test_full_order_with_all_optionals(self):
+        """All optional middleware land in the documented order."""
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+        from deepagents.middleware.memory import MemoryMiddleware
+        from langchain.agents.middleware import (
+            ContextEditingMiddleware,
+            ModelFallbackMiddleware,
+            ModelRetryMiddleware,
+            SummarizationMiddleware,
+        )
+
+        from muffin_agent.middlewares import (
+            ToolErrorHandlerMiddleware,
+            ToolResultCacheMiddleware,
+        )
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_REACT_PATCH) as mock_ca:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_fallback_models(MagicMock(name="fb"))
+                .with_context_editing()
+                .with_summarization()
+                .with_short_term_memory()
+                .with_persistent_memory()
+                .build_react_agent()
+            )
+
+        mw = _react_kwargs(mock_ca)["middleware"]
+        assert isinstance(mw[0], ModelFallbackMiddleware)
+        assert isinstance(mw[1], ModelRetryMiddleware)
+        assert isinstance(mw[2], ContextEditingMiddleware)
+        assert isinstance(mw[3], SummarizationMiddleware)
+        assert isinstance(mw[4], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[5], ToolResultCacheMiddleware)
+        assert isinstance(mw[6], FilesystemMiddleware)
+        assert isinstance(mw[7], MemoryMiddleware)
 
     def test_react_order_with_fallback_models(self):
         """Fallback is outermost when configured."""

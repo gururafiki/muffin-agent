@@ -25,12 +25,20 @@ call before caller-supplied middleware:
    transient and mid-stream LLM provider errors that escape the SDK's
    connect-time retry budget.  Filtered via :func:`_should_retry_llm_call`
    to skip permanent (auth/perm/validation) errors.
-3. :class:`ToolErrorHandlerMiddleware`
-4. :class:`ToolResultCacheMiddleware`
-5. *(ReAct only)* :class:`FilesystemMiddleware` — wires the composite
+3. :class:`langchain.agents.middleware.ContextEditingMiddleware` —
+   *conditional*. Added only when :meth:`with_context_editing` was called.
+   Trims older tool outputs when the message-window token count exceeds
+   the trigger; cheap pre-summarisation cleanup.
+4. :class:`langchain.agents.middleware.SummarizationMiddleware` —
+   *conditional*. Added only when :meth:`with_summarization` was called.
+   Summarises older messages with an LLM when context-editing alone
+   cannot cap the window.
+5. :class:`ToolErrorHandlerMiddleware`
+6. :class:`ToolResultCacheMiddleware`
+7. *(ReAct only)* :class:`FilesystemMiddleware` — wires the composite
    backend into the filesystem tools.  Deep agents receive the composite
    through the ``backend=`` kwarg instead.
-6. *(ReAct only, conditional)* :class:`MemoryMiddleware` — added when
+8. *(ReAct only, conditional)* :class:`MemoryMiddleware` — added when
    :meth:`with_persistent_memory` was called.  Deep agents get the same
    middleware implicitly via ``create_deep_agent(memory=...)``.
 """
@@ -54,7 +62,14 @@ from deepagents.middleware.memory import MemoryMiddleware
 from deepagents.middleware.permissions import FilesystemPermission
 from deepagents.middleware.subagents import CompiledSubAgent, SubAgent
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelFallbackMiddleware, ModelRetryMiddleware
+from langchain.agents.middleware import (
+    ClearToolUsesEdit,
+    ContextEditingMiddleware,
+    ModelFallbackMiddleware,
+    ModelRetryMiddleware,
+    SummarizationMiddleware,
+)
+from langchain.agents.middleware.summarization import ContextSize
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain.agents.structured_output import ResponseFormat
 from langchain_core.language_models import BaseChatModel
@@ -244,6 +259,8 @@ class MuffinAgentBuilder:
         self._subagents: list[SubAgent | CompiledSubAgent] = []
         self._middleware: list[AnyMiddleware] = []
         self._fallback_models: list[str | BaseChatModel] = []
+        self._context_editing: ContextEditingMiddleware | None = None
+        self._summarization: SummarizationMiddleware | None = None
         self._permissions: list[FilesystemPermission] = []
         self._response_format: ResponseFormat[Any] | type | dict[str, Any] | None = None
         self._store: BaseStore | None = None
@@ -407,6 +424,62 @@ class MuffinAgentBuilder:
         self._fallback_models.extend(models)
         return self
 
+    def with_context_editing(
+        self,
+        *,
+        trigger: int = 40_000,
+        keep: int = 4,
+        clear_tool_inputs: bool = False,
+    ) -> Self:
+        """Wire :class:`ContextEditingMiddleware` with a ``ClearToolUsesEdit``.
+
+        When the message-window token count exceeds *trigger*, older tool
+        outputs are replaced with a ``[cleared]`` placeholder while the
+        most recent *keep* tool messages remain verbatim. Reduces context
+        bloat for tool-heavy agents (e.g. data-collection ReAct loops)
+        without an LLM call.
+
+        Last call wins; calling twice replaces the prior configuration.
+        """
+        self._context_editing = ContextEditingMiddleware(
+            edits=[
+                ClearToolUsesEdit(
+                    trigger=trigger,
+                    keep=keep,
+                    clear_tool_inputs=clear_tool_inputs,
+                )
+            ]
+        )
+        return self
+
+    def with_summarization(
+        self,
+        model: str | BaseChatModel | None = None,
+        *,
+        trigger: ContextSize | list[ContextSize] = ("tokens", 80_000),
+        keep: ContextSize = ("messages", 20),
+    ) -> Self:
+        """Wire upstream :class:`SummarizationMiddleware` as a fallback.
+
+        Summarises older messages with *model* (defaults to the agent's
+        primary model) when *trigger* is exceeded; preserves *keep* of
+        recent context. Use as a fallback after :meth:`with_context_editing`
+        — context-editing is cheaper (no LLM call) and runs first.
+
+        Deep agents already include their own summarisation middleware via
+        ``create_deep_agent``; calling this on a deep agent stacks them and
+        is rarely useful.
+
+        Last call wins.
+        """
+        summarisation_model = model if model is not None else self._model
+        self._summarization = SummarizationMiddleware(
+            model=summarisation_model,
+            trigger=trigger,
+            keep=keep,
+        )
+        return self
+
     # ─── Miscellaneous kwargs ────────────────────────────────────────────
 
     def with_response_format(
@@ -512,32 +585,46 @@ class MuffinAgentBuilder:
            (auth/perm/validation).  ``on_failure="error"`` propagates
            the exception after exhaustion so the outer fallback can
            switch models.
-        3. :class:`ToolErrorHandlerMiddleware` (universal)
-        4. :class:`ToolResultCacheMiddleware` (universal)
-        5. *(ReAct only)* :class:`FilesystemMiddleware` when a backend is
+        3. :class:`ContextEditingMiddleware` (conditional) — registered
+           only when :meth:`with_context_editing` was called.  Runs
+           inside the fallback/retry boundary so the same edited message
+           list is sent on every attempt.
+        4. :class:`SummarizationMiddleware` (conditional) — registered
+           only when :meth:`with_summarization` was called.  Sits
+           inside context-editing so cheap edits run first; the LLM
+           summarisation only fires when edits cannot cap the window.
+        5. :class:`ToolErrorHandlerMiddleware` (universal)
+        6. :class:`ToolResultCacheMiddleware` (universal)
+        7. *(ReAct only)* :class:`FilesystemMiddleware` when a backend is
            configured.
-        6. *(ReAct only, conditional)* :class:`MemoryMiddleware` when
+        8. *(ReAct only, conditional)* :class:`MemoryMiddleware` when
            :meth:`with_persistent_memory` was called.  Deep agents get
            the same middleware implicitly via
            ``create_deep_agent(memory=...)``.
-        7. Optional skill-filter middleware registered via
+        9. Optional skill-filter middleware registered via
            :meth:`with_skills`.
-        8. Caller-supplied middleware (via :meth:`with_middleware`).
+        10. Caller-supplied middleware (via :meth:`with_middleware`).
         """
         stack: list[AnyMiddleware] = []
         if self._fallback_models:
             stack.append(ModelFallbackMiddleware(*self._fallback_models))
+        stack.append(
+            ModelRetryMiddleware(
+                max_retries=3,
+                retry_on=_should_retry_llm_call,
+                on_failure="error",
+                backoff_factor=2.0,
+                initial_delay=1.0,
+                max_delay=30.0,
+                jitter=True,
+            )
+        )
+        if self._context_editing is not None:
+            stack.append(self._context_editing)
+        if self._summarization is not None:
+            stack.append(self._summarization)
         stack.extend(
             [
-                ModelRetryMiddleware(
-                    max_retries=3,
-                    retry_on=_should_retry_llm_call,
-                    on_failure="error",
-                    backoff_factor=2.0,
-                    initial_delay=1.0,
-                    max_delay=30.0,
-                    jitter=True,
-                ),
                 ToolErrorHandlerMiddleware(),
                 ToolResultCacheMiddleware(cacheable_tools=self._tools.cacheable_frozen),
             ]
