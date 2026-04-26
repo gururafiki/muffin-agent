@@ -17,30 +17,35 @@ Deep-agent-only capabilities (``with_subagents``, ``with_skills``,
 Universal middleware defaults — added automatically by every ``build_*``
 call before caller-supplied middleware:
 
-1. :class:`langchain.agents.middleware.ModelFallbackMiddleware` —
+1. :class:`langchain.agents.middleware.ModelCallLimitMiddleware` —
+   *conditional*. Added only when :meth:`with_model_call_limit` was called.
+   Caps total LLM calls per run/thread before any other middleware runs.
+2. :class:`langchain.agents.middleware.ToolCallLimitMiddleware` —
+   *conditional, may repeat*. Added once per :meth:`with_tool_call_limit`
+   call so per-tool and global caps can co-exist.
+3. :class:`langchain.agents.middleware.ModelFallbackMiddleware` —
    *conditional*. Added only when :meth:`with_fallback_models` was called.
    Tries the primary model; on exception, walks the fallback chain.
-   Outermost so it wraps :class:`ModelRetryMiddleware`.
-2. :class:`langchain.agents.middleware.ModelRetryMiddleware` — retries
+4. :class:`langchain.agents.middleware.ModelRetryMiddleware` — retries
    transient and mid-stream LLM provider errors that escape the SDK's
    connect-time retry budget.  Filtered via :func:`_should_retry_llm_call`
    to skip permanent (auth/perm/validation) errors.
-3. :class:`langchain.agents.middleware.ContextEditingMiddleware` —
+5. :class:`langchain.agents.middleware.ContextEditingMiddleware` —
    *conditional*. Added only when :meth:`with_context_editing` was called.
    Trims older tool outputs when the message-window token count exceeds
    the trigger; cheap pre-summarisation cleanup.
-4. :class:`langchain.agents.middleware.SummarizationMiddleware` —
+6. :class:`langchain.agents.middleware.SummarizationMiddleware` —
    *conditional*. Added only when :meth:`with_summarization` was called.
    Summarises older messages with an LLM when context-editing alone
    cannot cap the window.
-5. :class:`ToolErrorHandlerMiddleware`
-6. :class:`ToolResultCacheMiddleware`
-7. *(ReAct only)* :class:`FilesystemMiddleware` — wires the composite
+7. :class:`ToolErrorHandlerMiddleware`
+8. :class:`ToolResultCacheMiddleware`
+9. *(ReAct only)* :class:`FilesystemMiddleware` — wires the composite
    backend into the filesystem tools.  Deep agents receive the composite
    through the ``backend=`` kwarg instead.
-8. *(ReAct only, conditional)* :class:`MemoryMiddleware` — added when
-   :meth:`with_persistent_memory` was called.  Deep agents get the same
-   middleware implicitly via ``create_deep_agent(memory=...)``.
+10. *(ReAct only, conditional)* :class:`MemoryMiddleware` — added when
+    :meth:`with_persistent_memory` was called.  Deep agents get the same
+    middleware implicitly via ``create_deep_agent(memory=...)``.
 """
 
 from __future__ import annotations
@@ -48,7 +53,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 import anthropic
 import openai
@@ -65,9 +70,11 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
+    ModelCallLimitMiddleware,
     ModelFallbackMiddleware,
     ModelRetryMiddleware,
     SummarizationMiddleware,
+    ToolCallLimitMiddleware,
 )
 from langchain.agents.middleware.summarization import ContextSize
 from langchain.agents.middleware.types import AgentMiddleware
@@ -261,6 +268,8 @@ class MuffinAgentBuilder:
         self._fallback_models: list[str | BaseChatModel] = []
         self._context_editing: ContextEditingMiddleware | None = None
         self._summarization: SummarizationMiddleware | None = None
+        self._model_call_limit: ModelCallLimitMiddleware | None = None
+        self._tool_call_limits: list[ToolCallLimitMiddleware] = []
         self._permissions: list[FilesystemPermission] = []
         self._response_format: ResponseFormat[Any] | type | dict[str, Any] | None = None
         self._store: BaseStore | None = None
@@ -377,19 +386,51 @@ class MuffinAgentBuilder:
         self._subagents.extend(subagents)
         return self
 
-    def with_tool(self, tool: ToolLike, *, is_cacheable: bool = True) -> Self:
-        """Register a single tool.
+    def with_tool(
+        self,
+        tool: ToolLike,
+        *,
+        is_cacheable: bool = True,
+        run_limit: int | None = None,
+        thread_limit: int | None = None,
+        exit_behavior: Literal["continue", "end", "error"] = "continue",
+    ) -> Self:
+        """Register a single tool, optionally with per-tool policy.
 
         Tools are cacheable by default — their name is added to the
         :class:`ToolResultCacheMiddleware` cacheable set.  Pass
         ``is_cacheable=False`` to keep the tool but exclude it from
         caching.
+
+        Pass ``run_limit`` and/or ``thread_limit`` to cap how many times
+        this specific tool may be called per run / per thread.  When a
+        cap is set the builder appends a dedicated
+        :class:`ToolCallLimitMiddleware` scoped to this tool's name.
+        Use :meth:`with_tool_call_limit` (no ``tool_name``) for global
+        caps that span all tools.
+
+        Limits require the tool to expose a string ``.name`` attribute
+        (i.e. a real :class:`BaseTool`); raw provider-tool dicts cannot
+        be limited per-tool — apply a global cap instead.
         """
         self._tools.tools.append(tool)
-        if is_cacheable:
-            name = getattr(tool, "name", None)
-            if isinstance(name, str):
-                self._tools.cacheable_names.add(name)
+        name = getattr(tool, "name", None)
+        if is_cacheable and isinstance(name, str):
+            self._tools.cacheable_names.add(name)
+        if run_limit is not None or thread_limit is not None:
+            if not isinstance(name, str):
+                raise ValueError(
+                    "Per-tool call limits require a tool with a `.name` attribute. "
+                    "Use with_tool_call_limit(...) for a global cap instead."
+                )
+            self._tool_call_limits.append(
+                ToolCallLimitMiddleware(
+                    tool_name=name,
+                    run_limit=run_limit,
+                    thread_limit=thread_limit,
+                    exit_behavior=exit_behavior,
+                )
+            )
         self._prompt.add_partial(_PARTIAL_TOOL_RESULT_CACHE)
         return self
 
@@ -477,6 +518,61 @@ class MuffinAgentBuilder:
             model=summarisation_model,
             trigger=trigger,
             keep=keep,
+        )
+        return self
+
+    def with_model_call_limit(
+        self,
+        *,
+        run_limit: int | None = None,
+        thread_limit: int | None = None,
+        exit_behavior: Literal["end", "error"] = "end",
+    ) -> Self:
+        """Cap the number of model calls per run and/or per thread.
+
+        Wires upstream :class:`ModelCallLimitMiddleware`. When the cap is
+        hit with ``exit_behavior="end"`` the agent stops gracefully with
+        an injected ``AIMessage`` describing the limit; with ``"error"``
+        it raises ``ModelCallLimitExceededError``.
+
+        Last call wins.
+        """
+        self._model_call_limit = ModelCallLimitMiddleware(
+            run_limit=run_limit,
+            thread_limit=thread_limit,
+            exit_behavior=exit_behavior,
+        )
+        return self
+
+    def with_tool_call_limit(
+        self,
+        *,
+        tool_name: str | None = None,
+        run_limit: int | None = None,
+        thread_limit: int | None = None,
+        exit_behavior: Literal["continue", "end", "error"] = "continue",
+    ) -> Self:
+        """Cap tool calls globally or for a specific tool name.
+
+        Wires upstream :class:`ToolCallLimitMiddleware`. With no
+        ``tool_name`` the cap spans every tool in the agent; with a name
+        the cap is per-tool. Multiple calls accumulate so global and
+        per-tool caps can co-exist.
+
+        For per-tool caps on tools you're registering yourself, prefer
+        the ``run_limit`` / ``thread_limit`` kwargs on :meth:`with_tool`
+        — they keep the policy declared at the same site as the tool.
+        Reach for this method when capping all tools at once or capping
+        a tool you don't register through :meth:`with_tool` (e.g. the
+        deep-agent ``task`` tool injected by the framework).
+        """
+        self._tool_call_limits.append(
+            ToolCallLimitMiddleware(
+                tool_name=tool_name,
+                run_limit=run_limit,
+                thread_limit=thread_limit,
+                exit_behavior=exit_behavior,
+            )
         )
         return self
 
@@ -574,38 +670,50 @@ class MuffinAgentBuilder:
         """Assemble the final middleware stack.
 
         Order:
-        1. :class:`ModelFallbackMiddleware` (outermost, conditional) —
-           tries the primary model; on exception, walks the
-           caller-supplied fallback chain.  Registered only when
+        1. :class:`ModelCallLimitMiddleware` (outermost, conditional) —
+           registered only when :meth:`with_model_call_limit` was called.
+           Caps total LLM calls per run/thread; on cap, jumps to end
+           with an injected ``AIMessage`` (or raises) before any other
+           middleware runs.
+        2. :class:`ToolCallLimitMiddleware` (conditional, may repeat) —
+           registered once per :meth:`with_tool_call_limit` call.
+           Multiple instances co-exist so per-tool and global caps can
+           be combined.
+        3. :class:`ModelFallbackMiddleware` (conditional) — tries the
+           primary model; on exception, walks the caller-supplied
+           fallback chain.  Registered only when
            :meth:`with_fallback_models` was called.
-        2. :class:`ModelRetryMiddleware` (LangChain upstream, universal) —
+        4. :class:`ModelRetryMiddleware` (LangChain upstream, universal) —
            retries transient and mid-stream LLM provider errors that
            escape the SDK's connect-time retry budget.  Filters via
            :func:`_should_retry_llm_call` to skip permanent errors
            (auth/perm/validation).  ``on_failure="error"`` propagates
            the exception after exhaustion so the outer fallback can
            switch models.
-        3. :class:`ContextEditingMiddleware` (conditional) — registered
+        5. :class:`ContextEditingMiddleware` (conditional) — registered
            only when :meth:`with_context_editing` was called.  Runs
            inside the fallback/retry boundary so the same edited message
            list is sent on every attempt.
-        4. :class:`SummarizationMiddleware` (conditional) — registered
+        6. :class:`SummarizationMiddleware` (conditional) — registered
            only when :meth:`with_summarization` was called.  Sits
            inside context-editing so cheap edits run first; the LLM
            summarisation only fires when edits cannot cap the window.
-        5. :class:`ToolErrorHandlerMiddleware` (universal)
-        6. :class:`ToolResultCacheMiddleware` (universal)
-        7. *(ReAct only)* :class:`FilesystemMiddleware` when a backend is
+        7. :class:`ToolErrorHandlerMiddleware` (universal)
+        8. :class:`ToolResultCacheMiddleware` (universal)
+        9. *(ReAct only)* :class:`FilesystemMiddleware` when a backend is
            configured.
-        8. *(ReAct only, conditional)* :class:`MemoryMiddleware` when
-           :meth:`with_persistent_memory` was called.  Deep agents get
-           the same middleware implicitly via
-           ``create_deep_agent(memory=...)``.
-        9. Optional skill-filter middleware registered via
-           :meth:`with_skills`.
-        10. Caller-supplied middleware (via :meth:`with_middleware`).
+        10. *(ReAct only, conditional)* :class:`MemoryMiddleware` when
+            :meth:`with_persistent_memory` was called.  Deep agents get
+            the same middleware implicitly via
+            ``create_deep_agent(memory=...)``.
+        11. Optional skill-filter middleware registered via
+            :meth:`with_skills`.
+        12. Caller-supplied middleware (via :meth:`with_middleware`).
         """
         stack: list[AnyMiddleware] = []
+        if self._model_call_limit is not None:
+            stack.append(self._model_call_limit)
+        stack.extend(self._tool_call_limits)
         if self._fallback_models:
             stack.append(ModelFallbackMiddleware(*self._fallback_models))
         stack.append(

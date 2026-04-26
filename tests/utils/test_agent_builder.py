@@ -609,6 +609,157 @@ class TestSummarizationWiring:
 
 
 @pytest.mark.unit
+class TestCallLimitWiring:
+    def test_default_omits_call_limits(self):
+        """Without builder methods the call-limit middleware are absent."""
+        from langchain.agents.middleware import (
+            ModelCallLimitMiddleware,
+            ToolCallLimitMiddleware,
+        )
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        assert not any(isinstance(m, ModelCallLimitMiddleware) for m in mw)
+        assert not any(isinstance(m, ToolCallLimitMiddleware) for m in mw)
+
+    def test_with_model_call_limit_wires_outermost(self):
+        """``with_model_call_limit`` is registered before all other middleware."""
+        from langchain.agents.middleware import ModelCallLimitMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_model_call_limit(run_limit=20, thread_limit=100)
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        assert isinstance(mw[0], ModelCallLimitMiddleware)
+        assert mw[0].run_limit == 20
+        assert mw[0].thread_limit == 100
+        assert mw[0].exit_behavior == "end"
+
+    def test_with_tool_call_limit_accumulates_multiple(self):
+        """Multiple ``with_tool_call_limit`` calls produce multiple middlewares."""
+        from langchain.agents.middleware import ToolCallLimitMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_tool_call_limit(run_limit=40)  # global cap
+                .with_tool_call_limit(tool_name="task", run_limit=10)
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        limits = [m for m in mw if isinstance(m, ToolCallLimitMiddleware)]
+        assert len(limits) == 2
+        assert limits[0].tool_name is None and limits[0].run_limit == 40
+        assert limits[1].tool_name == "task" and limits[1].run_limit == 10
+
+    def test_with_tool_inline_run_limit_appends_per_tool_middleware(self):
+        """``with_tool(..., run_limit=N)`` adds a per-tool call-limit middleware."""
+        from langchain.agents.middleware import ToolCallLimitMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        my_tool = MagicMock(name="task")
+        my_tool.name = "task"
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_tool(my_tool, run_limit=10, thread_limit=50)
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        limits = [m for m in mw if isinstance(m, ToolCallLimitMiddleware)]
+        assert len(limits) == 1
+        assert limits[0].tool_name == "task"
+        assert limits[0].run_limit == 10
+        assert limits[0].thread_limit == 50
+
+    def test_with_tool_no_limits_omits_middleware(self):
+        """``with_tool`` without limit kwargs does not register a tool-call limit."""
+        from langchain.agents.middleware import ToolCallLimitMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        my_tool = MagicMock()
+        my_tool.name = "noop"
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).with_tool(my_tool).build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        assert not any(isinstance(m, ToolCallLimitMiddleware) for m in mw)
+
+    def test_with_tool_per_tool_and_global_limits_coexist(self):
+        """Inline per-tool limits compose with a global ``with_tool_call_limit`` cap."""
+        from langchain.agents.middleware import ToolCallLimitMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        a = MagicMock()
+        a.name = "tool_a"
+        b = MagicMock()
+        b.name = "tool_b"
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_tool(a, run_limit=3)
+                .with_tool(b)
+                .with_tool_call_limit(run_limit=20)  # global cap
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        limits = [m for m in mw if isinstance(m, ToolCallLimitMiddleware)]
+        assert {(lim.tool_name, lim.run_limit) for lim in limits} == {
+            ("tool_a", 3),
+            (None, 20),
+        }
+
+    def test_with_tool_inline_limit_requires_tool_name(self):
+        """Per-tool limits raise when the tool lacks a string ``.name``."""
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        anonymous_tool: dict = {"type": "provider", "id": "x"}  # no `.name`
+        with pytest.raises(ValueError, match="Per-tool call limits require"):
+            MuffinAgentBuilder(MagicMock()).with_tool(
+                anonymous_tool, run_limit=5
+            )
+
+    def test_last_with_model_call_limit_call_wins(self):
+        """Calling ``with_model_call_limit`` twice keeps only the last."""
+        from langchain.agents.middleware import ModelCallLimitMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_model_call_limit(run_limit=10)
+                .with_model_call_limit(run_limit=25, exit_behavior="error")
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        limits = [m for m in mw if isinstance(m, ModelCallLimitMiddleware)]
+        assert len(limits) == 1
+        assert limits[0].run_limit == 25
+        assert limits[0].exit_behavior == "error"
+
+
+@pytest.mark.unit
 class TestMiddlewareOrder:
     def test_react_order(self):
         """Order: Retry, ToolError, Cache, Filesystem, Memory, caller."""
