@@ -40,10 +40,13 @@ call before caller-supplied middleware:
    cannot cap the window.
 7. :class:`ToolErrorHandlerMiddleware`
 8. :class:`ToolResultCacheMiddleware`
-9. *(ReAct only)* :class:`FilesystemMiddleware` — wires the composite
-   backend into the filesystem tools.  Deep agents receive the composite
-   through the ``backend=`` kwarg instead.
-10. *(ReAct only, conditional)* :class:`MemoryMiddleware` — added when
+9. :class:`langchain.agents.middleware.ToolRetryMiddleware` — retries
+   transient tool errors (HTTP 5xx, gateway, network) via
+   :func:`_should_retry_tool_call`.
+10. *(ReAct only)* :class:`FilesystemMiddleware` — wires the composite
+    backend into the filesystem tools.  Deep agents receive the composite
+    through the ``backend=`` kwarg instead.
+11. *(ReAct only, conditional)* :class:`MemoryMiddleware` — added when
     :meth:`with_persistent_memory` was called.  Deep agents get the same
     middleware implicitly via ``create_deep_agent(memory=...)``.
 """
@@ -75,13 +78,14 @@ from langchain.agents.middleware import (
     ModelRetryMiddleware,
     SummarizationMiddleware,
     ToolCallLimitMiddleware,
+    ToolRetryMiddleware,
 )
 from langchain.agents.middleware.summarization import ContextSize
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain.agents.structured_output import ResponseFormat
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, ToolException
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
@@ -127,6 +131,42 @@ def _should_retry_llm_call(exc: Exception) -> bool:
     if isinstance(exc, _PERMANENT_LLM_ERRORS):
         return False
     return isinstance(exc, _TRANSIENT_LLM_ERRORS)
+
+
+# Substrings in ``ToolException.args[0]`` that mark a transient tool failure
+# worth retrying (server-side / network hiccups). Argument-validation and
+# missing-credential errors do NOT appear here — they are permanent for the
+# given call shape and re-firing them just burns budget.
+_TRANSIENT_TOOL_HINTS: tuple[str, ...] = (
+    "http error 500",
+    "http error 502",
+    "http error 503",
+    "http error 504",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+    "internal server error",
+    "connection error",
+    "connection reset",
+    "connection refused",
+    "timeout",
+    "timed out",
+)
+
+
+def _should_retry_tool_call(exc: Exception) -> bool:
+    """Filter for ``ToolRetryMiddleware``: only transient tool errors.
+
+    ``langchain-mcp-adapters`` wraps MCP-side HTTP failures in
+    :class:`ToolException` whose string body includes the upstream HTTP
+    status (e.g. ``"HTTP error 502: Bad Gateway"``). Match on canonical
+    5xx codes plus obvious network errors. Anything else (4xx, validation,
+    missing credential) propagates so the LLM can adapt.
+    """
+    if isinstance(exc, ToolException):
+        message = str(exc).lower()
+        return any(hint in message for hint in _TRANSIENT_TOOL_HINTS)
+    return isinstance(exc, TimeoutError | ConnectionError)
 
 
 # Prompt partials registered by each capability.  Rendered once and appended
@@ -700,15 +740,20 @@ class MuffinAgentBuilder:
            summarisation only fires when edits cannot cap the window.
         7. :class:`ToolErrorHandlerMiddleware` (universal)
         8. :class:`ToolResultCacheMiddleware` (universal)
-        9. *(ReAct only)* :class:`FilesystemMiddleware` when a backend is
-           configured.
-        10. *(ReAct only, conditional)* :class:`MemoryMiddleware` when
+        9. :class:`langchain.agents.middleware.ToolRetryMiddleware`
+           (universal) — retries transient tool errors (HTTP 5xx /
+           gateway timeouts / network) via :func:`_should_retry_tool_call`.
+           Sits below the cache so cache hits short-circuit and don't
+           consume retry budget.
+        10. *(ReAct only)* :class:`FilesystemMiddleware` when a backend is
+            configured.
+        11. *(ReAct only, conditional)* :class:`MemoryMiddleware` when
             :meth:`with_persistent_memory` was called.  Deep agents get
             the same middleware implicitly via
             ``create_deep_agent(memory=...)``.
-        11. Optional skill-filter middleware registered via
+        12. Optional skill-filter middleware registered via
             :meth:`with_skills`.
-        12. Caller-supplied middleware (via :meth:`with_middleware`).
+        13. Caller-supplied middleware (via :meth:`with_middleware`).
         """
         stack: list[AnyMiddleware] = []
         if self._model_call_limit is not None:
@@ -735,6 +780,15 @@ class MuffinAgentBuilder:
             [
                 ToolErrorHandlerMiddleware(),
                 ToolResultCacheMiddleware(cacheable_tools=self._tools.cacheable_frozen),
+                ToolRetryMiddleware(
+                    max_retries=1,
+                    retry_on=_should_retry_tool_call,
+                    on_failure="continue",
+                    initial_delay=1.0,
+                    max_delay=10.0,
+                    backoff_factor=2.0,
+                    jitter=True,
+                ),
             ]
         )
         if not is_deep and backend_factory is not None:

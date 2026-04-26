@@ -669,7 +669,10 @@ class TestCreateCriteriaDefinitionAgent:
 
             call_kwargs = mock_create.call_args
             middleware = call_kwargs.kwargs["middleware"]
-            from langchain.agents.middleware import ModelRetryMiddleware
+            from langchain.agents.middleware import (
+                ModelRetryMiddleware,
+                ToolRetryMiddleware,
+            )
 
             from muffin_agent.middlewares import (
                 SkillFilterMiddleware,
@@ -677,12 +680,13 @@ class TestCreateCriteriaDefinitionAgent:
                 ToolResultCacheMiddleware,
             )
 
-            assert len(middleware) == 4
+            assert len(middleware) == 5
             assert isinstance(middleware[0], ModelRetryMiddleware)
             assert isinstance(middleware[1], ToolErrorHandlerMiddleware)
             assert isinstance(middleware[2], ToolResultCacheMiddleware)
-            assert isinstance(middleware[3], SkillFilterMiddleware)
-            assert middleware[3].state_schema is TickerClassification
+            assert isinstance(middleware[3], ToolRetryMiddleware)
+            assert isinstance(middleware[4], SkillFilterMiddleware)
+            assert middleware[4].state_schema is TickerClassification
 
 
 # ── Classification schema tests ──────────────────────────────────────────────

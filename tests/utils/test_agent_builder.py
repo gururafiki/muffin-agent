@@ -27,7 +27,10 @@ def _react_kwargs(mock_create_agent):
 class TestMinimalBuilders:
     def test_minimal_deep_agent_no_backend_universal_middleware(self):
         """Bare builder forwards model and universal middleware, no backend."""
-        from langchain.agents.middleware import ModelRetryMiddleware
+        from langchain.agents.middleware import (
+            ModelRetryMiddleware,
+            ToolRetryMiddleware,
+        )
 
         from muffin_agent.middlewares import (
             ToolErrorHandlerMiddleware,
@@ -44,11 +47,12 @@ class TestMinimalBuilders:
         assert kwargs["backend"] is None
         assert kwargs["system_prompt"] is None
         mw = kwargs["middleware"]
-        assert len(mw) == 3
+        assert len(mw) == 4
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], ToolErrorHandlerMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert mw[2]._cacheable_tools is None
+        assert isinstance(mw[3], ToolRetryMiddleware)
 
     def test_minimal_react_agent_no_filesystem_middleware(self):
         """No routes → no ``FilesystemMiddleware`` wired on a ReAct agent."""
@@ -190,7 +194,10 @@ class TestSkills:
 
     def test_with_skills_filter_middleware_optional(self, tmp_path):
         """Omitting ``filter_middleware`` does not add extra middleware."""
-        from langchain.agents.middleware import ModelRetryMiddleware
+        from langchain.agents.middleware import (
+            ModelRetryMiddleware,
+            ToolRetryMiddleware,
+        )
 
         from muffin_agent.middlewares import (
             ToolErrorHandlerMiddleware,
@@ -206,11 +213,12 @@ class TestSkills:
             )
 
         mw = _deep_kwargs(mock_cda)["middleware"]
-        # Only the three universal middlewares, no filter middleware.
-        assert len(mw) == 3
+        # Only the four universal middlewares, no filter middleware.
+        assert len(mw) == 4
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], ToolErrorHandlerMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
+        assert isinstance(mw[3], ToolRetryMiddleware)
 
     def test_with_skills_called_twice_raises(self, tmp_path):
         """Calling ``with_skills`` twice raises ``ValueError``."""
@@ -406,6 +414,68 @@ class TestPermissionsAndMiddleware:
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert mw[-2] is x
         assert mw[-1] is y
+
+
+@pytest.mark.unit
+class TestToolRetryWiring:
+    def test_tool_retry_universal_with_muffin_defaults(self):
+        """``ToolRetryMiddleware`` is wired with muffin defaults."""
+        from langchain.agents.middleware import ToolRetryMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        retry = next(m for m in mw if isinstance(m, ToolRetryMiddleware))
+        assert retry.max_retries == 1
+        assert retry.on_failure == "continue"
+        assert retry.initial_delay == 1.0
+        assert retry.max_delay == 10.0
+        assert retry.backoff_factor == 2.0
+        assert retry.jitter is True
+
+    def test_filter_retries_on_5xx_tool_exceptions(self):
+        """The filter accepts HTTP 5xx / gateway / network errors only."""
+        from langchain_core.tools import ToolException
+
+        from muffin_agent.utils.agent_builder import _should_retry_tool_call
+
+        # Transient — should retry.
+        for body in (
+            "Error calling tool 'X': HTTP error 502: Bad Gateway",
+            "Error calling tool 'Y': HTTP error 503: Service Unavailable",
+            "Error calling tool 'Z': HTTP error 504: Gateway Timeout",
+            "Error calling tool 'A': HTTP error 500: Internal Server Error",
+            "Connection error to MCP server",
+            "Request timed out after 30s",
+        ):
+            assert _should_retry_tool_call(ToolException(body)) is True, body
+
+        # Permanent — should NOT retry.
+        for body in (
+            "HTTP error 422: Unprocessable Entity ... limit must be ≤ 5",
+            "HTTP error 400: Bad Request ... Missing credential 'intrinio_api_key'",
+            "HTTP error 401: Unauthorized",
+            "HTTP error 404: Not Found",
+            "No estimates data was returned for: AMZN",
+        ):
+            assert _should_retry_tool_call(ToolException(body)) is False, body
+
+    def test_filter_retries_network_errors(self):
+        """Plain TimeoutError / ConnectionError also retry."""
+        from muffin_agent.utils.agent_builder import _should_retry_tool_call
+
+        assert _should_retry_tool_call(TimeoutError("read timeout")) is True
+        assert _should_retry_tool_call(ConnectionError("conn reset")) is True
+
+    def test_filter_does_not_retry_unrelated_exceptions(self):
+        """``ValueError`` / ``RuntimeError`` etc. propagate without retry."""
+        from muffin_agent.utils.agent_builder import _should_retry_tool_call
+
+        assert _should_retry_tool_call(ValueError("boom")) is False
+        assert _should_retry_tool_call(RuntimeError("nope")) is False
 
 
 @pytest.mark.unit
@@ -762,10 +832,13 @@ class TestCallLimitWiring:
 @pytest.mark.unit
 class TestMiddlewareOrder:
     def test_react_order(self):
-        """Order: Retry, ToolError, Cache, Filesystem, Memory, caller."""
+        """ReAct stack: ModelRetry → ToolError → Cache → ToolRetry → FS → Memory."""
         from deepagents.middleware.filesystem import FilesystemMiddleware
         from deepagents.middleware.memory import MemoryMiddleware
-        from langchain.agents.middleware import ModelRetryMiddleware
+        from langchain.agents.middleware import (
+            ModelRetryMiddleware,
+            ToolRetryMiddleware,
+        )
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
@@ -788,9 +861,10 @@ class TestMiddlewareOrder:
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], ToolErrorHandlerMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
-        assert isinstance(mw[3], FilesystemMiddleware)
-        assert isinstance(mw[4], MemoryMiddleware)
-        assert mw[5] is caller_mw
+        assert isinstance(mw[3], ToolRetryMiddleware)
+        assert isinstance(mw[4], FilesystemMiddleware)
+        assert isinstance(mw[5], MemoryMiddleware)
+        assert mw[6] is caller_mw
 
     def test_full_order_with_all_optionals(self):
         """All optional middleware land in the documented order."""
@@ -801,6 +875,7 @@ class TestMiddlewareOrder:
             ModelFallbackMiddleware,
             ModelRetryMiddleware,
             SummarizationMiddleware,
+            ToolRetryMiddleware,
         )
 
         from muffin_agent.middlewares import (
@@ -827,8 +902,9 @@ class TestMiddlewareOrder:
         assert isinstance(mw[3], SummarizationMiddleware)
         assert isinstance(mw[4], ToolErrorHandlerMiddleware)
         assert isinstance(mw[5], ToolResultCacheMiddleware)
-        assert isinstance(mw[6], FilesystemMiddleware)
-        assert isinstance(mw[7], MemoryMiddleware)
+        assert isinstance(mw[6], ToolRetryMiddleware)
+        assert isinstance(mw[7], FilesystemMiddleware)
+        assert isinstance(mw[8], MemoryMiddleware)
 
     def test_react_order_with_fallback_models(self):
         """Fallback is outermost when configured."""
@@ -837,6 +913,7 @@ class TestMiddlewareOrder:
         from langchain.agents.middleware import (
             ModelFallbackMiddleware,
             ModelRetryMiddleware,
+            ToolRetryMiddleware,
         )
         from langchain.agents.middleware.types import AgentMiddleware
 
@@ -862,9 +939,10 @@ class TestMiddlewareOrder:
         assert isinstance(mw[1], ModelRetryMiddleware)
         assert isinstance(mw[2], ToolErrorHandlerMiddleware)
         assert isinstance(mw[3], ToolResultCacheMiddleware)
-        assert isinstance(mw[4], FilesystemMiddleware)
-        assert isinstance(mw[5], MemoryMiddleware)
-        assert mw[6] is caller_mw
+        assert isinstance(mw[4], ToolRetryMiddleware)
+        assert isinstance(mw[5], FilesystemMiddleware)
+        assert isinstance(mw[6], MemoryMiddleware)
+        assert mw[7] is caller_mw
 
 
 @pytest.mark.unit
