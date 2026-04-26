@@ -3,6 +3,17 @@
 ``ToolResultCacheMiddleware`` caches successful tool results in a shared
 ``InMemoryStore`` so that identical calls across different agents are
 deduplicated automatically.
+
+**Strict content invariant** — the middleware never mutates
+``ToolMessage.content``. Cache provenance lives in
+``additional_kwargs["cache"]`` so downstream consumers that
+``json.loads(message.content)`` keep working.
+
+Size-based offloading of oversized tool results is *not* this middleware's
+job: ``deepagents.middleware.filesystem.FilesystemMiddleware`` already
+evicts large results to ``{root}/large_tool_results/<tool_call_id>``
+(default threshold 20K tokens). Both middlewares run together; this one
+handles deduplication, the other handles size.
 """
 
 import hashlib
@@ -38,6 +49,22 @@ def is_error_content(content: str) -> bool:
         return False
     lower = content.lower()
     return lower.startswith("error") or lower.startswith("duplicate call blocked")
+
+
+def _cache_metadata(
+    *,
+    hit: bool,
+    tool_name: str,
+    args_hash: str,
+    byte_size: int,
+) -> dict[str, Any]:
+    """Build the ``additional_kwargs['cache']`` metadata payload."""
+    return {
+        "hit": hit,
+        "tool_name": tool_name,
+        "args_hash": args_hash,
+        "byte_size": byte_size,
+    }
 
 
 class ToolResultCacheMiddleware(AgentMiddleware):
@@ -88,14 +115,19 @@ class ToolResultCacheMiddleware(AgentMiddleware):
         try:
             item = await store.aget(namespace, key)
             if item is not None and item.value.get("content"):
-                cached = item.value["content"]
+                cached: str = item.value["content"]
                 logger.debug("Cache HIT for %s → %s/%s", tool_name, namespace, key)
                 return ToolMessage(
-                    content=(
-                        f"[Cached result — tool: {tool_name}, "
-                        f"args_hash: {key}]\n\n{cached}"
-                    ),
+                    content=cached,
                     tool_call_id=request.tool_call["id"],
+                    additional_kwargs={
+                        "cache": _cache_metadata(
+                            hit=True,
+                            tool_name=tool_name,
+                            args_hash=key,
+                            byte_size=len(cached),
+                        )
+                    },
                 )
         except Exception:
             pass  # store read failed → treat as miss
@@ -103,38 +135,45 @@ class ToolResultCacheMiddleware(AgentMiddleware):
         # ── Cache miss: execute tool ────────────────────────────────
         result = await handler(request)
 
-        # Only cache successful ToolMessage results with string content.
         if (
-            isinstance(result, ToolMessage)
-            and isinstance(result.content, str)
-            and not is_error_content(result.content)
+            not isinstance(result, ToolMessage)
+            or not isinstance(result.content, str)
+            or is_error_content(result.content)
         ):
-            try:
-                await store.aput(
-                    namespace,
-                    key,
-                    {
-                        "content": result.content,
-                        "tool_name": tool_name,
-                        "args": args,
-                        "cached_at": datetime.now(UTC).isoformat(),
-                        "content_size": len(result.content),
-                    },
-                )
-                logger.debug("Cache WRITE for %s → %s/%s", tool_name, namespace, key)
-                result = ToolMessage(
-                    content=(
-                        f"{result.content}\n\n"
-                        f"[Data cached — tool: {tool_name}, args_hash: {key}]"
-                    ),
-                    tool_call_id=result.tool_call_id,
-                    name=result.name,
-                )
-            except Exception:
-                logger.debug(
-                    "Store write failed for %s, returning original result",
-                    tool_name,
-                    exc_info=True,
-                )
+            return result
 
-        return result
+        try:
+            await store.aput(
+                namespace,
+                key,
+                {
+                    "content": result.content,
+                    "tool_name": tool_name,
+                    "args": args,
+                    "cached_at": datetime.now(UTC).isoformat(),
+                    "content_size": len(result.content),
+                },
+            )
+            logger.debug("Cache WRITE for %s → %s/%s", tool_name, namespace, key)
+        except Exception:
+            logger.debug(
+                "Store write failed for %s, returning original result",
+                tool_name,
+                exc_info=True,
+            )
+            return result
+
+        return ToolMessage(
+            content=result.content,
+            tool_call_id=result.tool_call_id,
+            name=result.name,
+            additional_kwargs={
+                **result.additional_kwargs,
+                "cache": _cache_metadata(
+                    hit=False,
+                    tool_name=tool_name,
+                    args_hash=key,
+                    byte_size=len(result.content),
+                ),
+            },
+        )

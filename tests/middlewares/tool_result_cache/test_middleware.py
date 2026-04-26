@@ -117,12 +117,13 @@ class TestToolResultCacheMiddleware:
 
     @pytest.mark.asyncio
     async def test_cache_miss_executes_handler_and_writes_to_store(self):
-        """First call: handler executes, result cached to store, annotation appended."""
+        """First call: handler executes, result cached, content stays strict."""
         store = AsyncMock()
         store.aget = AsyncMock(return_value=None)
         store.aput = AsyncMock()
 
-        handler_result = ToolMessage(content="price data here", tool_call_id="tc_1")
+        original = '{"price": 123.45}'
+        handler_result = ToolMessage(content=original, tool_call_id="tc_1")
         handler = AsyncMock(return_value=handler_result)
 
         mw = ToolResultCacheMiddleware()
@@ -139,18 +140,22 @@ class TestToolResultCacheMiddleware:
         call_args = store.aput.call_args
         assert call_args.args[0] == ("cache", "equity_price_historical")
         assert call_args.args[1] == get_args_hash({"symbol": "AAPL"})
-        assert call_args.args[2]["content"] == "price data here"
+        assert call_args.args[2]["content"] == original
         assert call_args.args[2]["tool_name"] == "equity_price_historical"
-        assert "[Data cached" in result.content
-        assert "price data here" in result.content
+        # Strict-content invariant: returned content is byte-for-byte the original.
+        assert result.content == original
+        # Cache provenance lives in additional_kwargs.
+        cache_meta = result.additional_kwargs["cache"]
+        assert cache_meta["hit"] is False
+        assert cache_meta["tool_name"] == "equity_price_historical"
+        assert cache_meta["byte_size"] == len(original)
 
     @pytest.mark.asyncio
-    async def test_cache_hit_returns_cached_without_executing(self):
-        """Duplicate call: returns cached content, handler NOT called."""
+    async def test_cache_hit_returns_cached_strict_content(self):
+        """Cache hit returns the cached payload byte-for-byte (strict content)."""
+        cached = '{"data": [1, 2, 3]}'
         store = AsyncMock()
-        store.aget = AsyncMock(
-            return_value=_make_store_item("cached price data"),
-        )
+        store.aget = AsyncMock(return_value=_make_store_item(cached))
 
         handler = AsyncMock()
 
@@ -164,9 +169,9 @@ class TestToolResultCacheMiddleware:
         result = await mw.awrap_tool_call(request, handler)
 
         handler.assert_not_awaited()
-        assert "[Cached result" in result.content
-        assert "cached price data" in result.content
+        assert result.content == cached
         assert result.tool_call_id == "tc_1"
+        assert result.additional_kwargs["cache"]["hit"] is True
 
     @pytest.mark.asyncio
     async def test_error_results_not_cached(self):
@@ -185,6 +190,7 @@ class TestToolResultCacheMiddleware:
 
         store.aput.assert_not_awaited()
         assert result.content == "Error: unauthorized"
+        assert "cache" not in result.additional_kwargs
 
     @pytest.mark.asyncio
     async def test_cacheable_tools_whitelist_passes_through(self):
@@ -210,7 +216,8 @@ class TestToolResultCacheMiddleware:
         store.aget = AsyncMock(return_value=None)
         store.aput = AsyncMock()
 
-        handler_result = ToolMessage(content="data", tool_call_id="tc_1")
+        original = "data"
+        handler_result = ToolMessage(content=original, tool_call_id="tc_1")
         handler = AsyncMock(return_value=handler_result)
 
         mw = ToolResultCacheMiddleware(cacheable_tools=frozenset({"tool_a"}))
@@ -220,7 +227,8 @@ class TestToolResultCacheMiddleware:
 
         handler.assert_awaited_once()
         store.aput.assert_awaited_once()
-        assert "[Data cached" in result.content
+        assert result.content == original
+        assert result.additional_kwargs["cache"]["hit"] is False
 
     @pytest.mark.asyncio
     async def test_none_cacheable_tools_caches_all(self):
@@ -229,7 +237,8 @@ class TestToolResultCacheMiddleware:
         store.aget = AsyncMock(return_value=None)
         store.aput = AsyncMock()
 
-        handler_result = ToolMessage(content="any data", tool_call_id="tc_1")
+        original = "any data"
+        handler_result = ToolMessage(content=original, tool_call_id="tc_1")
         handler = AsyncMock(return_value=handler_result)
 
         mw = ToolResultCacheMiddleware()
@@ -238,11 +247,12 @@ class TestToolResultCacheMiddleware:
         result = await mw.awrap_tool_call(request, handler)
 
         store.aput.assert_awaited_once()
-        assert "[Data cached" in result.content
+        assert result.content == original
+        assert result.additional_kwargs["cache"]["hit"] is False
 
     @pytest.mark.asyncio
-    async def test_store_write_failure_returns_original(self):
-        """If store write fails, return original result without annotation."""
+    async def test_store_write_failure_returns_original_unannotated(self):
+        """If store write fails, return the original handler result untouched."""
         store = AsyncMock()
         store.aget = AsyncMock(return_value=None)
         store.aput = AsyncMock(side_effect=Exception("write failed"))
@@ -255,8 +265,9 @@ class TestToolResultCacheMiddleware:
 
         result = await mw.awrap_tool_call(request, handler)
 
-        assert result.content == "data"
-        assert "[Data cached" not in result.content
+        # Original message passes through unchanged.
+        assert result is handler_result
+        assert "cache" not in result.additional_kwargs
 
     @pytest.mark.asyncio
     async def test_empty_store_read_treated_as_miss(self):
@@ -265,7 +276,8 @@ class TestToolResultCacheMiddleware:
         store.aget = AsyncMock(return_value=_make_store_item(""))
         store.aput = AsyncMock()
 
-        handler_result = ToolMessage(content="fresh data", tool_call_id="tc_1")
+        original = "fresh data"
+        handler_result = ToolMessage(content=original, tool_call_id="tc_1")
         handler = AsyncMock(return_value=handler_result)
 
         mw = ToolResultCacheMiddleware()
@@ -274,7 +286,8 @@ class TestToolResultCacheMiddleware:
         result = await mw.awrap_tool_call(request, handler)
 
         handler.assert_awaited_once()
-        assert "[Data cached" in result.content
+        assert result.content == original
+        assert result.additional_kwargs["cache"]["hit"] is False
 
     @pytest.mark.asyncio
     async def test_command_results_not_cached(self):
@@ -330,3 +343,53 @@ class TestToolResultCacheMiddleware:
         assert "cached_at" in store_value
         assert store_value["content_size"] == len("some data")
         assert store_value["content"] == "some data"
+
+
+@pytest.mark.unit
+class TestStrictContentInvariant:
+    """Verify the cache never injects prose / markers into ``content``.
+
+    Size-based offload of oversized payloads is delegated to
+    ``deepagents.middleware.filesystem.FilesystemMiddleware``, so this
+    middleware's only job is to keep tool content byte-for-byte and stash
+    cache provenance in ``additional_kwargs``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_large_payload_passes_through_unchanged(self):
+        """A 50 KB JSON payload is cached and returned byte-for-byte."""
+        store = AsyncMock()
+        store.aget = AsyncMock(return_value=None)
+        store.aput = AsyncMock()
+
+        large = '{"rows":[' + ",".join(str(i) for i in range(10_000)) + "]}"
+        handler = AsyncMock(return_value=ToolMessage(content=large, tool_call_id="tc"))
+        mw = ToolResultCacheMiddleware()
+        request = _make_request("tool_a", store=store)
+
+        result = await mw.awrap_tool_call(request, handler)
+
+        assert result.content == large
+        cache_meta = result.additional_kwargs["cache"]
+        assert cache_meta["hit"] is False
+        assert cache_meta["byte_size"] == len(large)
+        # Full payload landed in the store; no descriptor / preview shenanigans.
+        assert store.aput.call_args.args[2]["content"] == large
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_returns_byte_identical_payload(self):
+        """Cache hits replay the cached content exactly, no prefix/suffix."""
+        large = "y" * 50_000
+        store = AsyncMock()
+        store.aget = AsyncMock(return_value=_make_store_item(large))
+        handler = AsyncMock()
+
+        mw = ToolResultCacheMiddleware()
+        request = _make_request("tool_a", store=store)
+
+        result = await mw.awrap_tool_call(request, handler)
+
+        handler.assert_not_awaited()
+        assert result.content == large
+        assert result.additional_kwargs["cache"]["hit"] is True
+        assert result.additional_kwargs["cache"]["byte_size"] == len(large)

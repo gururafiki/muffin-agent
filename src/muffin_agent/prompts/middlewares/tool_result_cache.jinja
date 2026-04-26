@@ -6,8 +6,6 @@ Tool results are automatically cached to a shared in-memory store by the ToolRes
 - On duplicate call (same tool + args): cached result is returned immediately (no MCP call).
 - Other agents in this session share the same store and benefit from your cached results.
 
-If a result shows `[Cached result — ...]`, the data was fetched earlier by another agent.
-
 ### Cache Tools
 
 1. **Discover available data**: Call `discover_cached_tool_outputs` (no arguments) to get a JSON array
