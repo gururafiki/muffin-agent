@@ -444,6 +444,66 @@ class TestModelRetryWiring:
 
 
 @pytest.mark.unit
+class TestModelFallbackWiring:
+    def test_no_fallback_models_means_no_fallback_middleware(self):
+        """Without ``with_fallback_models`` the fallback middleware is absent."""
+        from langchain.agents.middleware import ModelFallbackMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        assert not any(isinstance(m, ModelFallbackMiddleware) for m in mw)
+
+    def test_with_fallback_models_wires_outermost(self):
+        """``with_fallback_models`` registers ``ModelFallbackMiddleware`` first."""
+        from langchain.agents.middleware import (
+            ModelFallbackMiddleware,
+            ModelRetryMiddleware,
+        )
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        primary = MagicMock(name="primary")
+        fb1 = MagicMock(name="fallback-1")
+        fb2 = MagicMock(name="fallback-2")
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(primary)
+                .with_fallback_models(fb1, fb2)
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        assert isinstance(mw[0], ModelFallbackMiddleware)
+        assert mw[0].models == [fb1, fb2]
+        # Retry must remain inside the fallback boundary so retries happen
+        # on the current model before fallback switches.
+        assert isinstance(mw[1], ModelRetryMiddleware)
+
+    def test_with_fallback_models_accumulates_across_calls(self):
+        """Multiple ``with_fallback_models`` calls extend the chain."""
+        from langchain.agents.middleware import ModelFallbackMiddleware
+
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        a, b, c = MagicMock(), MagicMock(), MagicMock()
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_fallback_models(a)
+                .with_fallback_models(b, c)
+                .build_deep_agent()
+            )
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        fallback = next(m for m in mw if isinstance(m, ModelFallbackMiddleware))
+        assert fallback.models == [a, b, c]
+
+
+@pytest.mark.unit
 class TestMiddlewareOrder:
     def test_react_order(self):
         """Order: Retry, ToolError, Cache, Filesystem, Memory, caller."""
@@ -475,6 +535,42 @@ class TestMiddlewareOrder:
         assert isinstance(mw[3], FilesystemMiddleware)
         assert isinstance(mw[4], MemoryMiddleware)
         assert mw[5] is caller_mw
+
+    def test_react_order_with_fallback_models(self):
+        """Fallback is outermost when configured."""
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+        from deepagents.middleware.memory import MemoryMiddleware
+        from langchain.agents.middleware import (
+            ModelFallbackMiddleware,
+            ModelRetryMiddleware,
+        )
+        from langchain.agents.middleware.types import AgentMiddleware
+
+        from muffin_agent.middlewares import (
+            ToolErrorHandlerMiddleware,
+            ToolResultCacheMiddleware,
+        )
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        caller_mw = MagicMock(spec=AgentMiddleware)
+        with patch(_REACT_PATCH) as mock_ca:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_fallback_models(MagicMock(name="fb"))
+                .with_short_term_memory()
+                .with_persistent_memory()
+                .with_middleware(caller_mw)
+                .build_react_agent()
+            )
+
+        mw = _react_kwargs(mock_ca)["middleware"]
+        assert isinstance(mw[0], ModelFallbackMiddleware)
+        assert isinstance(mw[1], ModelRetryMiddleware)
+        assert isinstance(mw[2], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[3], ToolResultCacheMiddleware)
+        assert isinstance(mw[4], FilesystemMiddleware)
+        assert isinstance(mw[5], MemoryMiddleware)
+        assert mw[6] is caller_mw
 
 
 @pytest.mark.unit

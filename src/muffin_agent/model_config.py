@@ -7,7 +7,12 @@ from pydantic import Field
 
 from .utils.base_config import BaseConfiguration
 
-DEFAULT_MODEL = "openai/gpt-oss-120b:free"
+# NOTE: do NOT default to a `:free` OpenRouter route. Free routes have
+# aggressive rate limits, frequent mid-stream chunk-merge bugs, and no
+# guaranteed availability — they are unsafe as a production default.
+# Override per-deployment via the ``MODEL`` env var (or per-role via
+# ``ORCHESTRATOR_MODELS`` / ``COLLECTOR_MODELS`` / ``REASONER_MODELS``).
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 Role = Literal["orchestrator", "collector", "reasoner"]
 
