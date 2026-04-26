@@ -2,92 +2,49 @@
 
 from typing import Any, Literal
 
+from langchain_core.language_models import BaseChatModel
 from pydantic import Field
 
 from .utils.base_config import BaseConfiguration
 
 DEFAULT_MODEL = "openai/gpt-oss-120b:free"
 
+Role = Literal["orchestrator", "collector", "reasoner"]
+
 
 class ModelConfiguration(BaseConfiguration):
     """LangGraph-compatible configuration for LLM provider selection.
 
-    Model string format: "provider/model-name" where provider is one of:
-    openai, anthropic, openrouter.
+    Two construction paths:
 
-    For OpenRouter models, use "openrouter/provider/model" format
-    (e.g. "openrouter/google/gemini-2.0-flash-001").
-
-    Usage:
-        configuration = Configuration.from_runnable_config(config)
-        llm = configuration.get_llm(temperature=0.1)
+    * :meth:`get_llm` — single-model legacy path (uses ``llm_provider``).
+    * :meth:`get_llm_for_role` — role-aware path. Returns the ordered model
+      chain for *role*: the first entry is the primary, the rest are fallbacks.
+      Each entry is a bare model name resolved through :meth:`get_llm`, so all
+      entries share the configured provider. For mixed-provider chains, set
+      ``llm_provider="openrouter"`` and list different OpenRouter model IDs.
+      When the role chain is empty, returns a single-element list with the
+      legacy default model.
     """
 
-    # ==================== Core Settings ====================
+    model: str = Field(default=DEFAULT_MODEL)
+    temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    llm_provider: Literal["openai", "anthropic", "openrouter"] = "openai"
+    llm_sdk_retries: int = Field(default=6, ge=0, le=10)
 
-    model: str = Field(
-        default=DEFAULT_MODEL,
-        description="Default model name (provider-specific)",
-    )
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    openai_site_url: str | None = None
 
-    temperature: float = Field(
-        default=0.1,
-        ge=0.0,
-        le=2.0,
-        description="LLM temperature for analysis tasks (lower = more deterministic)",
-    )
-
-    llm_provider: Literal["openai", "anthropic"] = Field(
-        default="openai",
-        description="Default LLM provider to use",
-    )
-
-    llm_sdk_retries: int = Field(
-        default=6,
-        ge=0,
-        le=10,
-        description=(
-            "SDK-level retries for connect-time LLM errors (network, timeouts, "
-            "5xx/429 before any response body arrives). Forwarded to "
-            "ChatOpenAI/ChatAnthropic via max_retries=. Does NOT cover errors "
-            "raised mid-stream after a 200 OK — those are retried by the "
-            "upstream ModelRetryMiddleware wired by MuffinAgentBuilder."
-        ),
-    )
-
-    # ==================== API Keys ====================
-
-    openai_api_key: str | None = Field(
-        default=None,
-        description="OpenAI API key",
-    )
-
-    anthropic_api_key: str | None = Field(
-        default=None,
-        description="Anthropic API key",
-    )
-
-    openai_site_url: str | None = Field(
-        default=None,
-        description="OpenRouter site URL (for backward compatibility)",
-    )
+    orchestrator_models: list[str] = Field(default_factory=list)
+    collector_models: list[str] = Field(default_factory=list)
+    reasoner_models: list[str] = Field(default_factory=list)
 
     def get_llm(
-        self, model: str | None = None, temperature: float | None = None, **kwargs
-    ) -> Any:
-        """Get LLM instance based on configuration.
-
-        Args:
-            model: Override default model
-            temperature: Override default temperature
-            **kwargs: Additional arguments to pass to LLM constructor
-
-        Returns:
-            Initialized LLM instance (ChatOpenAI, ChatAnthropic, etc.)
-
-        Raises:
-            ValueError: If provider not supported or API key missing
-        """
+        self, model: str | None = None, temperature: float | None = None, **kwargs: Any
+    ) -> BaseChatModel:
+        """Get a single LLM instance based on ``llm_provider``."""
         model = model or self.model
         temperature = temperature if temperature is not None else self.temperature
 
@@ -96,7 +53,6 @@ class ModelConfiguration(BaseConfiguration):
 
             if not self.openai_api_key:
                 raise ValueError("OpenAI API key not configured")
-
             return ChatOpenAI(
                 model=model,
                 temperature=temperature,
@@ -106,12 +62,11 @@ class ModelConfiguration(BaseConfiguration):
                 max_retries=self.llm_sdk_retries,
                 **kwargs,
             )
-        elif self.llm_provider == "anthropic":
+        if self.llm_provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
 
             if not self.anthropic_api_key:
                 raise ValueError("Anthropic API key not configured")
-
             return ChatAnthropic(
                 model=model,
                 temperature=temperature,
@@ -119,5 +74,36 @@ class ModelConfiguration(BaseConfiguration):
                 max_retries=self.llm_sdk_retries,
                 **kwargs,
             )
-        else:
-            raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
+        if self.llm_provider == "openrouter":
+            from langchain_openrouter import ChatOpenRouter
+
+            if not self.openrouter_api_key:
+                raise ValueError("OpenRouter API key not configured")
+            return ChatOpenRouter(
+                model=model,
+                temperature=temperature,
+                openrouter_api_key=self.openrouter_api_key,
+                max_retries=self.llm_sdk_retries,
+                **kwargs,
+            )
+        raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
+
+    def get_llm_for_role(
+        self,
+        role: Role,
+        *,
+        temperature: float | None = None,
+        **kwargs: Any,
+    ) -> list[BaseChatModel]:
+        """Return the ordered model chain for *role*.
+
+        First entry is the primary; remainder are fallbacks. Always non-empty —
+        if the role chain is unset, returns ``[self.get_llm(...)]``.
+        """
+        chain = getattr(self, f"{role}_models")
+        if not chain:
+            return [self.get_llm(temperature=temperature, **kwargs)]
+        return [
+            self.get_llm(model=entry, temperature=temperature, **kwargs)
+            for entry in chain
+        ]
