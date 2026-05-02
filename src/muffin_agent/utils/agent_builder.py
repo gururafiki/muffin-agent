@@ -38,7 +38,7 @@ call before caller-supplied middleware:
    *conditional*. Added only when :meth:`with_summarization` was called.
    Summarises older messages with an LLM when context-editing alone
    cannot cap the window.
-7. :class:`ToolErrorHandlerMiddleware`
+7. :class:`ToolKnowledgeMiddleware`
 8. :class:`ToolResultCacheMiddleware`
 9. :class:`langchain.agents.middleware.ToolRetryMiddleware` — retries
    transient tool errors (HTTP 5xx, gateway, network) via
@@ -91,7 +91,7 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
 
 from ..middlewares import (
-    ToolErrorHandlerMiddleware,
+    ToolKnowledgeMiddleware,
     ToolResultCacheMiddleware,
 )
 from ..prompts import render_template
@@ -310,6 +310,7 @@ class MuffinAgentBuilder:
         self._summarization: SummarizationMiddleware | None = None
         self._model_call_limit: ModelCallLimitMiddleware | None = None
         self._tool_call_limits: list[ToolCallLimitMiddleware] = []
+        self._knowledge_summariser: BaseChatModel | None = None
         self._permissions: list[FilesystemPermission] = []
         self._response_format: ResponseFormat[Any] | type | dict[str, Any] | None = None
         self._store: BaseStore | None = None
@@ -584,6 +585,23 @@ class MuffinAgentBuilder:
         )
         return self
 
+    def with_tool_knowledge(
+        self,
+        summariser: BaseChatModel,
+    ) -> Self:
+        """Use *summariser* to generate one-line lessons from tool failures.
+
+        :class:`ToolKnowledgeMiddleware` is universal — it always runs.
+        By default lessons are recorded as a deterministic ``tool: error``
+        fallback string. Pass a small/cheap chat model here (e.g. Haiku
+        4.5) to upgrade fallback strings to LLM-summarised, action-
+        oriented hints. The summariser is called at most once per unique
+        ``(tool, error_class)`` pair per session — repeat errors hit the
+        store cache and pay zero LLM cost.
+        """
+        self._knowledge_summariser = summariser
+        return self
+
     def with_tool_call_limit(
         self,
         *,
@@ -738,7 +756,10 @@ class MuffinAgentBuilder:
            only when :meth:`with_summarization` was called.  Sits
            inside context-editing so cheap edits run first; the LLM
            summarisation only fires when edits cannot cap the window.
-        7. :class:`ToolErrorHandlerMiddleware` (universal)
+        7. :class:`ToolKnowledgeMiddleware` (universal) — catches tool
+           errors, blocks duplicates, and learns one-line lessons
+           (LLM-summarised when a summariser is configured via
+           :meth:`with_tool_knowledge`).
         8. :class:`ToolResultCacheMiddleware` (universal)
         9. :class:`langchain.agents.middleware.ToolRetryMiddleware`
            (universal) — retries transient tool errors (HTTP 5xx /
@@ -778,7 +799,7 @@ class MuffinAgentBuilder:
             stack.append(self._summarization)
         stack.extend(
             [
-                ToolErrorHandlerMiddleware(),
+                ToolKnowledgeMiddleware(summariser=self._knowledge_summariser),
                 ToolResultCacheMiddleware(cacheable_tools=self._tools.cacheable_frozen),
                 ToolRetryMiddleware(
                     max_retries=1,

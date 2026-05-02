@@ -33,7 +33,7 @@ class TestMinimalBuilders:
         )
 
         from muffin_agent.middlewares import (
-            ToolErrorHandlerMiddleware,
+            ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
@@ -49,7 +49,7 @@ class TestMinimalBuilders:
         mw = kwargs["middleware"]
         assert len(mw) == 4
         assert isinstance(mw[0], ModelRetryMiddleware)
-        assert isinstance(mw[1], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[1], ToolKnowledgeMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert mw[2]._cacheable_tools is None
         assert isinstance(mw[3], ToolRetryMiddleware)
@@ -200,7 +200,7 @@ class TestSkills:
         )
 
         from muffin_agent.middlewares import (
-            ToolErrorHandlerMiddleware,
+            ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
@@ -216,7 +216,7 @@ class TestSkills:
         # Only the four universal middlewares, no filter middleware.
         assert len(mw) == 4
         assert isinstance(mw[0], ModelRetryMiddleware)
-        assert isinstance(mw[1], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[1], ToolKnowledgeMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert isinstance(mw[3], ToolRetryMiddleware)
 
@@ -393,7 +393,7 @@ class TestPermissionsAndMiddleware:
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
-            ToolErrorHandlerMiddleware,
+            ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
@@ -410,7 +410,7 @@ class TestPermissionsAndMiddleware:
 
         mw = _deep_kwargs(mock_cda)["middleware"]
         assert isinstance(mw[0], ModelRetryMiddleware)
-        assert isinstance(mw[1], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[1], ToolKnowledgeMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert mw[-2] is x
         assert mw[-1] is y
@@ -842,7 +842,7 @@ class TestMiddlewareOrder:
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
-            ToolErrorHandlerMiddleware,
+            ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
@@ -859,7 +859,7 @@ class TestMiddlewareOrder:
 
         mw = _react_kwargs(mock_ca)["middleware"]
         assert isinstance(mw[0], ModelRetryMiddleware)
-        assert isinstance(mw[1], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[1], ToolKnowledgeMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert isinstance(mw[3], ToolRetryMiddleware)
         assert isinstance(mw[4], FilesystemMiddleware)
@@ -879,7 +879,7 @@ class TestMiddlewareOrder:
         )
 
         from muffin_agent.middlewares import (
-            ToolErrorHandlerMiddleware,
+            ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
@@ -900,7 +900,7 @@ class TestMiddlewareOrder:
         assert isinstance(mw[1], ModelRetryMiddleware)
         assert isinstance(mw[2], ContextEditingMiddleware)
         assert isinstance(mw[3], SummarizationMiddleware)
-        assert isinstance(mw[4], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[4], ToolKnowledgeMiddleware)
         assert isinstance(mw[5], ToolResultCacheMiddleware)
         assert isinstance(mw[6], ToolRetryMiddleware)
         assert isinstance(mw[7], FilesystemMiddleware)
@@ -918,7 +918,7 @@ class TestMiddlewareOrder:
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
-            ToolErrorHandlerMiddleware,
+            ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
@@ -937,7 +937,7 @@ class TestMiddlewareOrder:
         mw = _react_kwargs(mock_ca)["middleware"]
         assert isinstance(mw[0], ModelFallbackMiddleware)
         assert isinstance(mw[1], ModelRetryMiddleware)
-        assert isinstance(mw[2], ToolErrorHandlerMiddleware)
+        assert isinstance(mw[2], ToolKnowledgeMiddleware)
         assert isinstance(mw[3], ToolResultCacheMiddleware)
         assert isinstance(mw[4], ToolRetryMiddleware)
         assert isinstance(mw[5], FilesystemMiddleware)

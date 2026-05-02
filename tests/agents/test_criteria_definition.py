@@ -676,13 +676,13 @@ class TestCreateCriteriaDefinitionAgent:
 
             from muffin_agent.middlewares import (
                 SkillFilterMiddleware,
-                ToolErrorHandlerMiddleware,
+                ToolKnowledgeMiddleware,
                 ToolResultCacheMiddleware,
             )
 
             assert len(middleware) == 5
             assert isinstance(middleware[0], ModelRetryMiddleware)
-            assert isinstance(middleware[1], ToolErrorHandlerMiddleware)
+            assert isinstance(middleware[1], ToolKnowledgeMiddleware)
             assert isinstance(middleware[2], ToolResultCacheMiddleware)
             assert isinstance(middleware[3], ToolRetryMiddleware)
             assert isinstance(middleware[4], SkillFilterMiddleware)
