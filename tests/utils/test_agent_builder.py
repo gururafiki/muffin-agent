@@ -479,6 +479,96 @@ class TestToolRetryWiring:
 
 
 @pytest.mark.unit
+class TestSubagentRefinementWiring:
+    def test_default_omits_middleware_and_partial(self):
+        """Without ``with_subagent_refinement`` no middleware/partial is added."""
+        from muffin_agent.middlewares import SubagentRefinementMiddleware
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).build_deep_agent()
+
+        kwargs = _deep_kwargs(mock_cda)
+        assert not any(
+            isinstance(m, SubagentRefinementMiddleware) for m in kwargs["middleware"]
+        )
+        # Default response_format is None.
+        assert kwargs["response_format"] is None
+
+    def test_child_role_wires_middleware_and_response_format(self):
+        """Subagent (no subagents wired) gets middleware + AutoStrategy."""
+        from langchain.agents.structured_output import AutoStrategy
+
+        from muffin_agent.middlewares import (
+            CollectionFindings,
+            SubagentRefinementMiddleware,
+        )
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_REACT_PATCH) as mock_ca:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_short_term_memory()  # backend route required
+                .with_subagent_refinement()
+                .build_react_agent()
+            )
+
+        kwargs = _react_kwargs(mock_ca)
+        mw = kwargs["middleware"]
+        assert any(isinstance(m, SubagentRefinementMiddleware) for m in mw)
+        rf = kwargs["response_format"]
+        assert isinstance(rf, AutoStrategy)
+        assert rf.schema is CollectionFindings
+
+    def test_parent_role_wires_parent_middleware(self):
+        """Parent (subagents wired) gets the parent middleware, not the child."""
+        from deepagents import CompiledSubAgent
+
+        from muffin_agent.middlewares import (
+            SubagentRefinementMiddleware,
+            SubagentRefinementParentMiddleware,
+        )
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        sub = CompiledSubAgent(
+            name="x",
+            description="x",
+            runnable=MagicMock(),
+        )
+        with patch(_DEEP_PATCH) as mock_cda:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_subagents([sub])
+                .with_subagent_refinement()
+                .build_deep_agent()
+            )
+
+        kwargs = _deep_kwargs(mock_cda)
+        mw = kwargs["middleware"]
+        # Parent class is registered; child class is not.
+        assert any(isinstance(m, SubagentRefinementParentMiddleware) for m in mw)
+        assert not any(isinstance(m, SubagentRefinementMiddleware) for m in mw)
+        # The agent_builder no longer touches the system_prompt for refinement.
+        assert kwargs["system_prompt"] is None
+
+    def test_caller_response_format_wins(self):
+        """An explicit ``with_response_format`` is preserved."""
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        sentinel = object()
+        with patch(_REACT_PATCH) as mock_ca:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_short_term_memory()
+                .with_response_format(sentinel)  # type: ignore[arg-type]
+                .with_subagent_refinement()
+                .build_react_agent()
+            )
+
+        assert _react_kwargs(mock_ca)["response_format"] is sentinel
+
+
+@pytest.mark.unit
 class TestModelRetryWiring:
     def test_wired_with_filter_and_on_failure_error(self):
         """Retry middleware is wired with the right filter and propagates errors."""

@@ -1,0 +1,12 @@
+## Prior call context
+You have already collected the following from a prior call (call_id={{ call_id }}). Treat these as known and do **not** re-fetch them; only attempt to fill the missing fields named in the new request.
+
+### Already obtained
+```json
+{{ obtained_json }}
+```
+
+### Gaps from the prior call
+{% if gap_lines %}{% for line in gap_lines %}{{ line }}
+{% endfor %}{% else %}(none)
+{% endif %}
