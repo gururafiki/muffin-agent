@@ -428,6 +428,7 @@ cp .env.example .env
 | `ORCHESTRATOR_MODELS` | No | Comma-separated model chain for orchestrator-role agents (first = primary, rest become `ModelFallbackMiddleware` chain). Each entry passed to `langchain.chat_models.init_chat_model`, so cross-provider chains work (e.g. `anthropic:claude-sonnet-4-6,openrouter:nvidia/nemotron-...:free`). | Default: empty (falls back to `MODEL`) |
 | `COLLECTOR_MODELS` | No | Same shape as `ORCHESTRATOR_MODELS`, for data-collection ReAct subagents. | Default: empty |
 | `REASONER_MODELS` | No | Same shape as `ORCHESTRATOR_MODELS`, for pure-reasoning agents (validation, valuation, risk). | Default: empty |
+| `SUMMARISER_MODEL` | No | Cheap fast model used by `ToolKnowledgeMiddleware` to LLM-summarise tool failures into one-line lessons. When unset, the middleware falls back to deterministic `<tool>: previous call failed — <error>` lesson strings. Recommended: `anthropic/claude-haiku-4-5`. | Default: empty |
 | `TEMPERATURE` | No | LLM temperature (0.0–2.0) | Default: `0.1` |
 | `LLM_SDK_RETRIES` | No | SDK-level retries for connect-time errors (network, timeouts, 5xx/429 before any response body arrives). Forwarded to `ChatOpenAI`/`ChatAnthropic`/`ChatOpenRouter` as `max_retries=`. Mid-stream errors are retried separately by LangChain's `ModelRetryMiddleware` (hardcoded defaults in `MuffinAgentBuilder`); transient tool errors are retried by `ToolRetryMiddleware`. | Default: `6` |
 | `OPENBB_MCP_URL` | No | OpenBB MCP server URL | Default: `http://127.0.0.1:8001/mcp` |

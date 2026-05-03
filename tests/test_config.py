@@ -129,3 +129,32 @@ class TestRoleModelChains:
             {"configurable": {"reasoner_models": ["a", "b"]}}
         )
         assert config.reasoner_models == ["a", "b"]
+
+
+@pytest.mark.unit
+class TestSummariserModel:
+    """Test the optional tool-failure summariser model."""
+
+    def test_returns_none_when_unset(self):
+        config = ModelConfiguration(llm_provider="openai", openai_api_key="test")
+        assert config.get_summariser() is None
+
+    def test_returns_chat_model_when_set(self):
+        config = ModelConfiguration(
+            llm_provider="openai",
+            openai_api_key="test",
+            summariser_model="haiku-cheap",
+        )
+        sentinel = MagicMock(name="summariser")
+        with patch.object(
+            ModelConfiguration, "get_llm", return_value=sentinel
+        ) as mock:
+            result = config.get_summariser()
+        assert result is sentinel
+        mock.assert_called_once()
+        assert mock.call_args.kwargs["model"] == "haiku-cheap"
+
+    def test_env_var_populates_summariser_model(self, monkeypatch):
+        monkeypatch.setenv("SUMMARISER_MODEL", "anthropic/claude-haiku-4-5")
+        config = ModelConfiguration.from_runnable_config({"configurable": {}})
+        assert config.summariser_model == "anthropic/claude-haiku-4-5"

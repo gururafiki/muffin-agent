@@ -46,6 +46,18 @@ class ModelConfiguration(BaseConfiguration):
     collector_models: list[str] = Field(default_factory=list)
     reasoner_models: list[str] = Field(default_factory=list)
 
+    summariser_model: str | None = Field(
+        default=None,
+        description=(
+            "Optional cheap-and-fast model used by ToolKnowledgeMiddleware "
+            "to LLM-summarise tool failures into one-line lessons. When "
+            "unset the middleware falls back to deterministic "
+            "'<tool>: <error>' lesson strings. Set via the "
+            "SUMMARISER_MODEL env var; instantiated through `get_llm` so "
+            "it shares `llm_provider` with the rest of the agent."
+        ),
+    )
+
     def get_llm(
         self, model: str | None = None, temperature: float | None = None, **kwargs: Any
     ) -> BaseChatModel:
@@ -112,3 +124,22 @@ class ModelConfiguration(BaseConfiguration):
             self.get_llm(model=entry, temperature=temperature, **kwargs)
             for entry in chain
         ]
+
+    def get_summariser(
+        self,
+        *,
+        temperature: float | None = None,
+        **kwargs: Any,
+    ) -> BaseChatModel | None:
+        """Return the summariser chat model, or ``None`` when unconfigured.
+
+        Used by callers wiring :meth:`MuffinAgentBuilder.with_tool_knowledge`.
+        When ``None``, the universal ``ToolKnowledgeMiddleware`` falls back to
+        deterministic ``<tool>: previous call failed — <error>`` lesson
+        strings — still useful, just not LLM-distilled.
+        """
+        if not self.summariser_model:
+            return None
+        return self.get_llm(
+            model=self.summariser_model, temperature=temperature, **kwargs
+        )
