@@ -273,13 +273,22 @@ Agents are composed via `MuffinAgentBuilder`, which wires universal middleware f
 
 | Middleware | Purpose | Tools |
 |-----------|---------|-------|
-| **`ToolErrorHandlerMiddleware`** | Catches tool exceptions and blocks duplicate permanent failures via graph state. | None |
-| **`ToolResultCacheMiddleware`** | Caches successful tool results in-memory for cross-agent deduplication. On cache hit, returns the cached content without re-executing the tool. | `discover_cached_tool_outputs`, `get_tool_output_schema`, `write_cached_tool_output_to_backend` |
+| **`ModelRetryMiddleware`** (upstream) | Retries transient/mid-stream LLM provider errors that escape the SDK's connect-time `max_retries` (`APIConnectionError`, `RateLimitError`, `InternalServerError`, bare mid-stream `APIError`). Filtered to skip permanent errors (auth, perm, validation). 3 retries with exponential backoff + jitter, `on_failure="error"` so `ModelFallbackMiddleware` can step in. | None |
+| **`ToolKnowledgeMiddleware`** | Catches tool exceptions and errored `ToolMessage`s; blocks identical-args repeats of permanent failures (`failed_tool_calls` state); records one lesson per unique `(tool, error_class)` pair into the shared store under `("tool_lessons", tool_name)`. With a configured summariser (`with_tool_knowledge(summariser)`) lessons are LLM-distilled one-liners; without one, deterministic fallback strings. `awrap_model_call` injects a `## Lessons learned …` block into the system prompt before every model call. | None |
+| **`ToolResultCacheMiddleware`** | Caches successful tool results in-memory for cross-agent deduplication. On cache hit returns the cached content without re-executing. **Strict-content invariant** — tool content is byte-for-byte original; cache provenance lives in `additional_kwargs["cache"]`. Size-based offload of oversized payloads is delegated to deepagents `FilesystemMiddleware._aintercept_large_tool_result` (default 20K-token threshold). | `discover_cached_tool_outputs`, `get_tool_output_schema`, `write_cached_tool_output_to_backend` |
+| **`ToolRetryMiddleware`** (upstream) | Retries transient tool errors (HTTP 5xx, gateway, network, timeout) via a custom filter that matches `ToolException` message substrings. 4xx, validation, and missing-credential errors propagate so the LLM (and `ToolKnowledgeMiddleware`) can adapt. 1 retry, `on_failure="continue"`. Sits below the cache so cache hits short-circuit and don't burn retry budget. | None |
 
 **Opt-in middleware** (added when a specific `with_*` method is called):
 
 | Method | Middleware added | Purpose |
 |---|---|---|
+| `.with_fallback_models(*models)` | `ModelFallbackMiddleware` (upstream, outermost) | Tries the primary model; on exception, walks the caller-supplied fallback chain. Each fallback model receives the same retry budget as the primary; fallback only kicks in after retries are exhausted. Pair with `ModelConfiguration.get_llm_for_role(role)` for cross-provider chains. |
+| `.with_context_editing(...)` | `ContextEditingMiddleware` (upstream) | Trims older tool outputs once the message-window token count exceeds the trigger (default 40K, keep 4 most-recent). |
+| `.with_summarization(...)` | `SummarizationMiddleware` (upstream) | LLM-summarises older messages when context-editing alone can't cap the window (default trigger 80K tokens, keep 20 messages). Defaults the summariser model to the agent's primary. |
+| `.with_model_call_limit(...)` | `ModelCallLimitMiddleware` (upstream, outermost) | Caps total LLM calls per run/thread; `exit_behavior="end"` (default) injects a graceful `AIMessage` rather than throwing. |
+| `.with_tool_call_limit(...)` and `.with_tool(..., run_limit=N, thread_limit=N)` | `ToolCallLimitMiddleware` (upstream) | Per-tool or global tool-call cap. The inline form on `with_tool(...)` declares per-tool policy at the same site as the tool itself. |
+| `.with_tool_knowledge(summariser)` | (no new middleware) | Configures the always-on `ToolKnowledgeMiddleware` to use *summariser* (a small/cheap chat model) for LLM-distilled lessons instead of the deterministic fallback. |
+| `.with_subagent_refinement()` | `SubagentRefinementMiddleware` (child) **or** `SubagentRefinementParentMiddleware` (parent) | Generic conversational refinement protocol. Role decided at build time: child (no subagents wired) gets the full middleware (`response_format=AutoStrategy(CollectionFindings)`, scratch-cache findings, prior-call prompt block); parent (subagents wired) gets the prompt-only parent middleware that teaches the orchestrator how to read `gaps` and re-issue with `prior_call_id=<id>`. |
 | `.with_short_term_memory()` (ReAct) | `FilesystemMiddleware` | Exposes `/scratch/` file tools to ReAct agents. (Deep agents receive the composite via `backend=`.) |
 | `.with_persistent_memory()` (ReAct) | `MemoryMiddleware` | Auto-loads `/memories/AGENTS.md` into the system prompt each turn. Deep agents get the same middleware implicitly via `create_deep_agent(memory=[...])`. |
 | `.with_skills(..., filter_middleware=SkillFilterMiddleware[TickerClassification]())` | `SkillFilterMiddleware` | Schema-driven skill pre-filtering. Parameterised via `__class_getitem__` with an `AgentState` subclass whose extra fields become category keys. Filters `skills_metadata` and injects classification context into the system prompt. |
@@ -410,13 +419,17 @@ cp .env.example .env
 
 | Variable | Required | Description | Where to get it |
 |----------|----------|-------------|-----------------|
-| `OPENAI_API_KEY` | Yes (OpenAI or OpenRouter) | LLM API key | [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys) |
-| `OPENAI_SITE_URL` | Only for OpenRouter | Base URL override | Set to `https://openrouter.ai/api/v1` |
+| `OPENAI_API_KEY` | Yes (OpenAI or OpenRouter via ChatOpenAI) | LLM API key | [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys) |
+| `OPENAI_SITE_URL` | Legacy: only for OpenRouter via `ChatOpenAI` | Base URL override | Set to `https://openrouter.ai/api/v1`. **New deployments** should set `LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY` instead — `ChatOpenRouter` knows the base URL. |
+| `OPENROUTER_API_KEY` | Yes when `LLM_PROVIDER=openrouter` | OpenRouter API key for `ChatOpenRouter` | [OpenRouter](https://openrouter.ai/keys) |
 | `ANTHROPIC_API_KEY` | Yes (if using Anthropic) | Anthropic API key | [Anthropic Console](https://console.anthropic.com/settings/keys) |
-| `MODEL` | No | Model in `provider/model` format | Default: `openai/gpt-oss-120b:free`. Browse [OpenRouter models](https://openrouter.ai/models) |
-| `LLM_PROVIDER` | No | `openai` or `anthropic` | Default: `openai` (also used for OpenRouter) |
+| `MODEL` | No | Model in `provider/model` format. Used by the legacy single-model `get_llm()` path. | Default: `openai/gpt-oss-120b` (note: no `:free` suffix — free OpenRouter routes are unsafe as production default). Browse [OpenRouter models](https://openrouter.ai/models). |
+| `LLM_PROVIDER` | No | `openai`, `anthropic`, or `openrouter` | Default: `openai` |
+| `ORCHESTRATOR_MODELS` | No | Comma-separated model chain for orchestrator-role agents (first = primary, rest become `ModelFallbackMiddleware` chain). Each entry passed to `langchain.chat_models.init_chat_model`, so cross-provider chains work (e.g. `anthropic:claude-sonnet-4-6,openrouter:nvidia/nemotron-...:free`). | Default: empty (falls back to `MODEL`) |
+| `COLLECTOR_MODELS` | No | Same shape as `ORCHESTRATOR_MODELS`, for data-collection ReAct subagents. | Default: empty |
+| `REASONER_MODELS` | No | Same shape as `ORCHESTRATOR_MODELS`, for pure-reasoning agents (validation, valuation, risk). | Default: empty |
 | `TEMPERATURE` | No | LLM temperature (0.0–2.0) | Default: `0.1` |
-| `LLM_SDK_RETRIES` | No | SDK-level retries for connect-time errors (network, timeouts, 5xx/429 before any response body arrives). Forwarded to `ChatOpenAI`/`ChatAnthropic` as `max_retries=`. Mid-stream errors are retried separately by LangChain's `ModelRetryMiddleware` (hardcoded defaults in `MuffinAgentBuilder`). | Default: `6` |
+| `LLM_SDK_RETRIES` | No | SDK-level retries for connect-time errors (network, timeouts, 5xx/429 before any response body arrives). Forwarded to `ChatOpenAI`/`ChatAnthropic`/`ChatOpenRouter` as `max_retries=`. Mid-stream errors are retried separately by LangChain's `ModelRetryMiddleware` (hardcoded defaults in `MuffinAgentBuilder`); transient tool errors are retried by `ToolRetryMiddleware`. | Default: `6` |
 | `OPENBB_MCP_URL` | No | OpenBB MCP server URL | Default: `http://127.0.0.1:8001/mcp` |
 | `OPENSANDBOX_URL` | No | OpenSandbox server address (`host:port`) | Default: `localhost:8080` |
 | `OPENSANDBOX_API_KEY` | No | OpenSandbox API key (omit if no auth) | — |
