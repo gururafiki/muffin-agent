@@ -13,7 +13,7 @@ dependencies = [
     "langchain",
     "langchain-openai",
     "langchain-anthropic",
-    "langchain-openrouter>=0.2.0",
+    "langchain-openrouter>=0.2.3",
     "python-dotenv",
     "langgraph-sdk",
     "langchain-mcp-adapters",
