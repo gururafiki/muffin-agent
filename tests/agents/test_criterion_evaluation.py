@@ -74,6 +74,15 @@ class TestPromptTemplate:
         assert "strong_negative" in result
         assert "neutral" in result
 
+    def test_template_contains_parallelism_rule(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "parallel" in result.lower()
+
+    def test_template_contains_graceful_stop_rule(self):
+        result = render_template("criterion_evaluation.jinja")
+        assert "Stop early" in result or "stop the collection" in result
+        assert "≥3" in result or "3 unrecoverable" in result
+
 
 @pytest.mark.unit
 class TestCreateCriterionEvaluationAgent:

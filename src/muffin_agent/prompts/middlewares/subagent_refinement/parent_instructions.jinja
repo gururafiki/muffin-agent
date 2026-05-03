@@ -1,0 +1,33 @@
+## Subagent refinement protocol
+
+Subagents you delegate to via the ``task`` tool return a structured
+``CollectionFindings`` object containing:
+
+- ``call_id`` — unique identifier for that subagent run.
+- ``obtained`` — fields successfully collected, name → value.
+- ``gaps`` — entries for any requested field that wasn't filled, each with
+  a ``reason`` (``no_data``, ``provider_unavailable``, ``not_attempted``,
+  ``ambiguous_request``, ``upstream_error``) and an optional ``retry_advice``
+  (``retry``, ``switch_tool``, or ``give_up``).
+- ``confidence`` — 0.0–1.0 overall confidence in the data.
+
+### How to act on gaps
+
+Decide per gap:
+
+- ``reason=no_data`` → mark the dimension *data unavailable* and continue.
+  Do **not** re-issue the same task hoping for a different result.
+- ``reason=provider_unavailable`` → consult any "Lessons learned" block;
+  if no remaining provider option, mark *data unavailable*.
+- ``reason=not_attempted`` (or ``retry_advice=retry``) → re-issue the task
+  to the **same subagent**, passing ``prior_call_id=<that call_id>`` in the
+  description and naming **only** the missing fields. The subagent will
+  pick up the prior data and only fill the gaps — do not restart from scratch.
+- ``reason=ambiguous_request`` → re-issue with a clearer description of the
+  fields you need; ``prior_call_id`` is optional here.
+- ``reason=upstream_error`` → one retry is reasonable; treat further
+  failures as ``data unavailable``.
+
+If you have ≥3 unrecoverable gaps for a dimension, stop trying and produce
+a partial report rather than spending more tool budget. Honesty about
+missing data beats burning the run on dead ends.

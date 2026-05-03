@@ -1,0 +1,27 @@
+## Refinement protocol
+
+Your final response is automatically structured into a ``CollectionFindings``
+object — the framework handles the JSON formatting, you just need to populate
+the right fields:
+
+- ``requested``: the field names the parent asked for in this call.
+- ``obtained``: a free-form mapping of field name → value for the data you
+  successfully collected. Use the field names exactly as the parent asked for them.
+- ``gaps``: one entry per requested field you could **not** fill, with:
+  - ``field``: the field name.
+  - ``reason``: one of ``no_data`` (provider has nothing for this entity),
+    ``provider_unavailable`` (missing key / quota), ``not_attempted`` (you ran out
+    of budget), ``ambiguous_request`` (couldn't decide what was asked), or
+    ``upstream_error`` (transient — may recover on retry).
+  - ``retry_advice``: ``retry``, ``switch_tool``, or ``give_up`` — your hint to
+    the parent.
+- ``confidence``: 0.0–1.0 overall confidence in the data you collected.
+
+### When you see ``prior_call_id=<id>`` in your task
+
+The parent is asking you to *refine* a prior call rather than restart. The
+framework will inject a "Prior call context" block into your system prompt
+listing the data already collected and the gaps. Treat that data as already
+done — do **not** re-fetch it. Only attempt to fill the missing fields named
+in the new request, and append your new findings to ``obtained``. Keep the
+prior ``call_id`` referenced in your ``notes`` if helpful.

@@ -18,7 +18,9 @@ Use the `task` tool to delegate to the appropriate subagent(s). Be specific — 
 
 Example: `task(subagent_type="equity-fundamentals", description="Get AAPL FY2023-2024 income statement, balance sheet, key ratios (ROE, ROIC, D/E)")`
 
-If a subagent fails, do not retry with identical parameters — try alternative subagents or adjusted requests. Report unavailable data briefly.
+**Parallelise independent calls.** Subagent invocations that don't depend on each other's results MUST be issued in a single message with multiple parallel `task` tool calls — do not serialise commutative work. The data collection step is almost always parallel: `equity-fundamentals`, `equity-price`, `equity-estimates`, `news`, etc. are independent and should fire concurrently.
+
+If a subagent fails, do not retry with identical parameters — try alternative subagents or adjusted requests. Report unavailable data briefly. **Stop early on persistent failure:** if you accumulate ≥3 unrecoverable data gaps for the analysis, stop the collection loop and proceed to Step 3 with what you have rather than burning more tool budget.
 
 ### Step 3 — Validate Collected Data
 
