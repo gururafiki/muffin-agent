@@ -57,6 +57,15 @@ class TestPromptTemplate:
         assert "Catalyst" in result
         assert "Weight" in result
 
+    def test_template_contains_parallelism_rule(self):
+        result = render_template("stock_evaluation.jinja")
+        assert "Parallelise" in result or "parallel" in result.lower()
+
+    def test_template_contains_graceful_stop_rule(self):
+        result = render_template("stock_evaluation.jinja")
+        assert "Stop early" in result or "stop the collection" in result
+        assert "≥3" in result or "3 unrecoverable" in result
+
 
 @pytest.mark.unit
 class TestCreateStockEvaluationAgent:
