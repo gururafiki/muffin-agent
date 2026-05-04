@@ -399,11 +399,14 @@ async def create_company_analysis_agent(
     ``result["structured_response"]`` instead of free-form text.
     """
     subagents = await _build_company_analysis_subagents(config)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="company_analysis")
+        MuffinAgentBuilder(primary, name="company_analysis")
         .with_system_prompt_template("investment/company_analysis.jinja")
+        .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
@@ -411,6 +414,8 @@ async def create_company_analysis_agent(
         .with_response_format(AutoStrategy(schema=CompanyAnalysisOutput))
         .with_store(store)
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in (
         compute_roic,
         compute_fcf_conversion,

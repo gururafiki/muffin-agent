@@ -124,7 +124,9 @@ class TestRoleModelChains:
             "anthropic/claude-haiku-4-5",
         ]
 
-    def test_configurable_dict_can_supply_list_directly(self):
+    def test_configurable_dict_can_supply_list_directly(self, monkeypatch):
+        # Clear env vars so the configurable wins; .env may set them locally.
+        monkeypatch.delenv("REASONER_MODELS", raising=False)
         config = ModelConfiguration.from_runnable_config(
             {"configurable": {"reasoner_models": ["a", "b"]}}
         )

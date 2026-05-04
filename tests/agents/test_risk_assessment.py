@@ -371,7 +371,10 @@ class TestCreateAgent:
         """Agent factory should build 7 subagents (6 data + 1 validation)."""
         mock_agent = MagicMock()
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
@@ -400,7 +403,10 @@ class TestCreateAgent:
 
         mock_agent = MagicMock()
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
@@ -428,7 +434,10 @@ class TestCreateAgent:
         mock_store = MagicMock()
         mock_agent = MagicMock()
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
@@ -456,7 +465,10 @@ class TestCreateAgent:
 
         mock_agent = MagicMock()
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(

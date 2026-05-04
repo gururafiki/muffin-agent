@@ -272,11 +272,14 @@ async def create_market_regime_agent(
     instead of free-form text.
     """
     subagents = await _build_macro_subagents(config)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="market_regime")
+        MuffinAgentBuilder(primary, name="market_regime")
         .with_system_prompt_template("investment/market_regime.jinja")
+        .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
@@ -284,6 +287,8 @@ async def create_market_regime_agent(
         .with_response_format(AutoStrategy(schema=MarketRegimeOutput))
         .with_store(store)
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in (
         compute_yield_curve_metrics,
         compute_factor_zscore,

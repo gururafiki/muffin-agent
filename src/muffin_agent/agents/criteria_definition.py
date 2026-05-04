@@ -193,11 +193,14 @@ async def create_criteria_definition_agent(
     the agent returns a validated Pydantic model.
     """
     subagents = await _build_criteria_subagents(config)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
+    summariser = configuration.get_summariser()
 
-    return (
-        MuffinAgentBuilder(llm, name="criteria_definition")
+    builder = (
+        MuffinAgentBuilder(primary, name="criteria_definition")
         .with_system_prompt_template("criteria_definition.jinja")
+        .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
@@ -208,5 +211,7 @@ async def create_criteria_definition_agent(
         .with_subagents(subagents)
         .with_response_format(AutoStrategy(schema=CriteriaDefinitionOutput))
         .with_store(store)
-        .build_deep_agent()
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
+    return builder.build_deep_agent()

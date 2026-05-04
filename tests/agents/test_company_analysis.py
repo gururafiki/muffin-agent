@@ -548,7 +548,10 @@ class TestCreateCompanyAnalysisAgent:
     @pytest.mark.asyncio
     async def test_creates_six_subagents(self):
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
@@ -607,7 +610,10 @@ class TestCreateCompanyAnalysisAgent:
     @pytest.mark.asyncio
     async def test_subagent_names_in_order(self):
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
@@ -674,7 +680,10 @@ class TestCreateCompanyAnalysisAgent:
     @pytest.mark.asyncio
     async def test_uses_auto_strategy_response_format(self):
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(

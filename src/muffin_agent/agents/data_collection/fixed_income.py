@@ -41,13 +41,18 @@ MCP_TOOLS = [
 async def create_fixed_income_data_collection_agent(config: RunnableConfig):
     """Build the fixed income and rates ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("collector")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="fixed_income")
+        MuffinAgentBuilder(primary, name="fixed_income")
         .with_system_prompt_template("data_collection/fixed_income.jinja")
+        .with_fallback_models(*fallbacks)
         .with_short_term_memory()
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in tools:
         builder = builder.with_tool(tool)
     return builder.build_react_agent()

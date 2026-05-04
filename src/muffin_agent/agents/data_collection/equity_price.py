@@ -23,14 +23,19 @@ MCP_TOOLS = [
 async def create_equity_price_data_collection_agent(config: RunnableConfig):
     """Build the equity price ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("collector")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="equity_price")
+        MuffinAgentBuilder(primary, name="equity_price")
         .with_system_prompt_template("data_collection/equity_price.jinja")
+        .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in tools:
         builder = builder.with_tool(tool)
     # execute_python is stateful / not cacheable.

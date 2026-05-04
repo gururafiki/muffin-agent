@@ -488,7 +488,10 @@ class TestCreateCriteriaDefinitionAgent:
         mock_validation = MagicMock()
 
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
@@ -555,7 +558,10 @@ class TestCreateCriteriaDefinitionAgent:
     @pytest.mark.asyncio
     async def test_uses_auto_strategy_with_correct_schema(self):
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with ExitStack() as stack:
             stack.enter_context(
@@ -588,7 +594,10 @@ class TestCreateCriteriaDefinitionAgent:
     async def test_passes_skills_param(self):
         """Default SkillsMiddleware is used via skills= parameter."""
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with ExitStack() as stack:
             stack.enter_context(
@@ -616,7 +625,10 @@ class TestCreateCriteriaDefinitionAgent:
     @pytest.mark.asyncio
     async def test_passes_store_when_provided(self):
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
         mock_store = MagicMock()
 
         with ExitStack() as stack:
@@ -645,7 +657,10 @@ class TestCreateCriteriaDefinitionAgent:
     @pytest.mark.asyncio
     async def test_includes_required_middleware(self):
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with ExitStack() as stack:
             stack.enter_context(
