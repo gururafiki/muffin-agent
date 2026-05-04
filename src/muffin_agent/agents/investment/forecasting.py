@@ -407,10 +407,12 @@ async def create_forecasting_agent(
     base_p, bull_p, bear_p = _PROBABILITY_ANCHORS.get(
         company_signal or "pass", _PROBABILITY_ANCHORS["pass"]
     )
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="forecasting")
+        MuffinAgentBuilder(primary, name="forecasting")
         .with_system_prompt_template(
             "investment/forecasting.jinja",
             base_probability=base_p,
@@ -418,6 +420,7 @@ async def create_forecasting_agent(
             bear_probability=bear_p,
             company_signal=company_signal or "pass",
         )
+        .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
@@ -425,6 +428,8 @@ async def create_forecasting_agent(
         .with_response_format(AutoStrategy(schema=ForecastOutput))
         .with_store(store)
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in (
         project_three_year_financials,
         compute_sensitivity,

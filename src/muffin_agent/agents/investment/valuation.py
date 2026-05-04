@@ -393,11 +393,14 @@ async def create_valuation_agent(
         store: Shared ``BaseStore`` for cross-agent tool result caching.
     """
     subagents = await _build_valuation_subagents(config)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="valuation")
+        MuffinAgentBuilder(primary, name="valuation")
         .with_system_prompt_template("investment/valuation.jinja")
+        .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
@@ -405,6 +408,8 @@ async def create_valuation_agent(
         .with_response_format(AutoStrategy(schema=ValuationOutput))
         .with_store(store)
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in (
         compute_wacc,
         compute_dcf,

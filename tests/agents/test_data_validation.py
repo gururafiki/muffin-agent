@@ -62,7 +62,10 @@ class TestCreateDataValidationAgent:
     @pytest.mark.asyncio
     async def test_creates_agent_without_tools(self):
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
@@ -70,7 +73,9 @@ class TestCreateDataValidationAgent:
                 ".ModelConfiguration.from_runnable_config",
                 return_value=config,
             ),
-            patch("muffin_agent.agents.data_validation.create_agent") as mock_create,
+            patch(
+                "muffin_agent.utils.agent_builder.create_agent"
+            ) as mock_create,
         ):
             mock_create.return_value = MagicMock()
 
@@ -82,7 +87,6 @@ class TestCreateDataValidationAgent:
 
             mock_create.assert_called_once()
             call_kwargs = mock_create.call_args
-            assert call_kwargs.kwargs["model"] == config.get_llm.return_value
-            assert "system_prompt" in call_kwargs.kwargs
-            assert "tools" not in call_kwargs.kwargs
+            assert call_kwargs.kwargs["model"] is _mock_llm
+            assert call_kwargs.kwargs["tools"] is None
             assert agent is mock_create.return_value

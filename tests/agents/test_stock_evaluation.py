@@ -90,7 +90,10 @@ class TestCreateStockEvaluationAgent:
         mock_validation_agent = MagicMock()
 
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
@@ -181,7 +184,7 @@ class TestCreateStockEvaluationAgent:
             patch(
                 "muffin_agent.agents.stock_evaluation.ModelConfiguration"
                 ".from_runnable_config",
-                return_value=MagicMock(get_llm=config.get_llm),
+                return_value=config,
             ),
             patch("muffin_agent.utils.agent_builder.create_deep_agent") as mock_create,
         ):

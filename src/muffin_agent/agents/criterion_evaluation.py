@@ -19,14 +19,19 @@ async def create_criterion_evaluation_agent(config: RunnableConfig):
     reflecting on the evaluation quality.
     """
     subagents = await build_analysis_subagents(config)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
+    summariser = configuration.get_summariser()
 
-    return (
-        MuffinAgentBuilder(llm, name="criterion_evaluation")
+    builder = (
+        MuffinAgentBuilder(primary, name="criterion_evaluation")
         .with_system_prompt_template("criterion_evaluation.jinja")
+        .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
         .with_subagents(subagents)
-        .build_deep_agent()
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
+    return builder.build_deep_agent()

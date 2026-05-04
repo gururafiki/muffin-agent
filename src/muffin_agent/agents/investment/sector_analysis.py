@@ -300,11 +300,14 @@ async def create_sector_analysis_agent(
     instead of free-form text.
     """
     subagents = await _build_sector_subagents(config)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="sector_analysis")
+        MuffinAgentBuilder(primary, name="sector_analysis")
         .with_system_prompt_template("investment/sector_analysis.jinja")
+        .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
@@ -312,6 +315,8 @@ async def create_sector_analysis_agent(
         .with_response_format(AutoStrategy(schema=SectorViewOutput))
         .with_store(store)
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in (compute_sector_relative_performance, compute_peer_dispersion):
         builder = builder.with_tool(tool)
     return builder.build_deep_agent()

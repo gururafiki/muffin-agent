@@ -36,13 +36,18 @@ MCP_TOOLS = [
 async def create_etf_index_data_collection_agent(config: RunnableConfig):
     """Build the ETF and index data ReAct agent."""
     tools = await get_tools(config, MCP_TOOLS)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("collector")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="etf_index")
+        MuffinAgentBuilder(primary, name="etf_index")
         .with_system_prompt_template("data_collection/etf_index.jinja")
+        .with_fallback_models(*fallbacks)
         .with_short_term_memory()
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in tools:
         builder = builder.with_tool(tool)
     return builder.build_react_agent()

@@ -25,13 +25,18 @@ FIRECRAWL_MCP_TOOLS: list[str] = [
 async def create_web_search_data_collection_agent(config: RunnableConfig):
     """Build the web search & crawling ReAct agent."""
     tools = await get_tools(config, allowed_tools=FIRECRAWL_MCP_TOOLS)
-    llm = ModelConfiguration.from_runnable_config(config).get_llm()
+    configuration = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = configuration.get_llm_for_role("collector")
+    summariser = configuration.get_summariser()
 
     builder = (
-        MuffinAgentBuilder(llm, name="web_search")
+        MuffinAgentBuilder(primary, name="web_search")
         .with_system_prompt_template("data_collection/web_search.jinja")
+        .with_fallback_models(*fallbacks)
         .with_short_term_memory()
     )
+    if summariser is not None:
+        builder = builder.with_tool_knowledge(summariser)
     for tool in tools:
         builder = builder.with_tool(tool)
     return builder.build_react_agent()

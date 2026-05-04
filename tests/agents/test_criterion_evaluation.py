@@ -107,7 +107,10 @@ class TestCreateCriterionEvaluationAgent:
         mock_validation_agent = MagicMock()
 
         config = MagicMock()
-        config.get_llm.return_value = MagicMock()
+        _mock_llm = MagicMock()
+        config.get_llm.return_value = _mock_llm
+        config.get_llm_for_role.return_value = [_mock_llm]
+        config.get_summariser.return_value = None
 
         with (
             patch(
