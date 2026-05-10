@@ -76,9 +76,7 @@ async def write_findings(
     try:
         await backend.awrite(path, payload)
     except Exception:
-        logger.debug(
-            "Findings write failed for %s", findings.call_id, exc_info=True
-        )
+        logger.debug("Findings write failed for %s", findings.call_id, exc_info=True)
 
 
 def latest_human_text(messages: Sequence[AnyMessage]) -> str:

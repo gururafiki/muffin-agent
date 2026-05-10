@@ -74,9 +74,7 @@ class TestReadFindings:
     async def test_returns_none_on_unparseable_payload(self):
         backend = MagicMock()
         backend.aread = AsyncMock(
-            return_value=MagicMock(
-                error=None, file_data={"content": "not json"}
-            )
+            return_value=MagicMock(error=None, file_data={"content": "not json"})
         )
         assert await read_findings(backend, "abc") is None
 

@@ -97,6 +97,11 @@ from ..middlewares import (
     ToolKnowledgeMiddleware,
     ToolResultCacheMiddleware,
 )
+from ..middlewares.tool_result_cache.tools import (
+    discover_cached_tool_outputs,
+    get_tool_output_schema,
+    write_cached_tool_output_to_backend,
+)
 from ..prompts import render_template
 from ..sandbox import get_backend
 from .backends import _SKILLS_ROOT, _memories_namespace
@@ -176,6 +181,8 @@ def _should_retry_tool_call(exc: Exception) -> bool:
 # to the caller's system prompt in insertion order, with duplicates removed.
 _PARTIAL_SANDBOX = "sandbox.jinja"
 _PARTIAL_TOOL_RESULT_CACHE = "middlewares/tool_result_cache.jinja"
+_PARTIAL_FILESYSTEM = "middlewares/filesystem.jinja"
+_DEFAULT_TOOL_RUN_LIMIT: int = 6
 _PARTIAL_SHORT_TERM_MEMORY = "middlewares/short_term_memory.jinja"
 _PARTIAL_PERSISTENT_MEMORY = "middlewares/persistent_memory.jinja"
 _PARTIAL_SKILLS = "middlewares/skills.jinja"
@@ -348,9 +355,25 @@ class MuffinAgentBuilder:
 
         Required if the agent uses ``execute_python`` or writes to
         un-prefixed sandbox paths like ``/data/cache/...``.
+
+        Also registers the three cache tools (``discover_cached_tool_outputs``,
+        ``get_tool_output_schema``, ``write_cached_tool_output_to_backend``) and
+        the ``tool_result_cache.jinja`` prompt partial.  These tools are scoped
+        here because the full ``discover → schema → write → load`` workflow
+        requires sandbox write access; non-sandbox agents benefit from
+        automatic cache hits (handled transparently by the middleware) without
+        needing the tools in their context window.
         """
         self._backend.default_maker = get_backend
         self._prompt.add_partial(_PARTIAL_SANDBOX)
+        self._prompt.add_partial(_PARTIAL_TOOL_RESULT_CACHE)
+        self._tools.tools.extend(
+            [
+                discover_cached_tool_outputs,
+                get_tool_output_schema,
+                write_cached_tool_output_to_backend,
+            ]
+        )
         return self
 
     def with_short_term_memory(self, path: str = "/scratch/") -> Self:
@@ -461,7 +484,7 @@ class MuffinAgentBuilder:
         tool: ToolLike,
         *,
         is_cacheable: bool = True,
-        run_limit: int | None = None,
+        run_limit: int | None = _DEFAULT_TOOL_RUN_LIMIT,
         thread_limit: int | None = None,
         exit_behavior: Literal["continue", "end", "error"] = "continue",
     ) -> Self:
@@ -501,7 +524,6 @@ class MuffinAgentBuilder:
                     exit_behavior=exit_behavior,
                 )
             )
-        self._prompt.add_partial(_PARTIAL_TOOL_RESULT_CACHE)
         return self
 
     # ─── Permissions and extra middleware ────────────────────────────────
@@ -731,6 +753,7 @@ class MuffinAgentBuilder:
                 "with_permission(...) is only supported with build_deep_agent(). "
                 "Use build_deep_agent() or drop the permissions."
             )
+        self._prompt.add_partial(_PARTIAL_FILESYSTEM)
         backend_factory = self._backend.factory()
         return create_agent(
             model=self._model,

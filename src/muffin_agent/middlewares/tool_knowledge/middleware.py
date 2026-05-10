@@ -13,11 +13,13 @@ delegated to a focused component:
 
 This file is just the wiring: catch tool errors → record a lesson →
 optionally short-circuit identical-args repeats; on every model call,
-prepend the rendered block to ``request.system_message``.
+detect repetitive tool use (loop-pattern lessons) then prepend the
+rendered block to ``request.system_message``.
 """
 
 from __future__ import annotations
 
+import json
 import operator
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Annotated, Any, NotRequired
@@ -25,7 +27,7 @@ from typing import TYPE_CHECKING, Annotated, Any, NotRequired
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain.tools.tool_node import ToolCallRequest
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Command
 
 from .errors import duplicate_key, is_permanent_error
@@ -63,6 +65,9 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
             Defaults to :data:`DEFAULT_SUMMARISER_PROMPT`.
         per_tool_cap: Maximum lessons retained per tool in the prompt
             block (newest first).
+        loop_warning_threshold: Minimum number of calls to the same tool
+            within a single run before a loop-pattern lesson is recorded
+            and injected into the system prompt.
     """
 
     state_schema = ToolLessonState
@@ -73,12 +78,62 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
         summariser: BaseChatModel | None = None,
         summariser_prompt: str = DEFAULT_SUMMARISER_PROMPT,
         per_tool_cap: int = _PER_TOOL_LESSON_CAP,
+        loop_warning_threshold: int = 3,
     ) -> None:
         """Initialize with an optional summariser model and prompt."""
         self._summariser = summariser
         self._summariser_prompt = summariser_prompt
         self._per_tool_cap = per_tool_cap
+        self._loop_warning_threshold = loop_warning_threshold
         self.tools: list[Any] = []
+
+    # ── History helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _count_tool_calls_in_history(messages: list) -> dict[str, int]:
+        """Count total calls per tool name across all AIMessages."""
+        counts: dict[str, int] = {}
+        for msg in messages:
+            if isinstance(msg, AIMessage):
+                for tc in msg.tool_calls:
+                    name = tc.get("name") or ""
+                    if name:
+                        counts[name] = counts.get(name, 0) + 1
+        return counts
+
+    @staticmethod
+    def _get_recent_tool_args(messages: list, tool_name: str) -> dict:
+        """Return the most recent args used for tool_name from AIMessage history."""
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage):
+                for tc in msg.tool_calls:
+                    if tc.get("name") == tool_name:
+                        return tc.get("args", {})
+        return {}
+
+    @staticmethod
+    def _get_recent_tool_outputs(
+        messages: list, tool_name: str, max_samples: int = 2
+    ) -> list[str]:
+        """Return content snippets from the most recent ToolMessages for tool_name.
+
+        ToolMessages don't carry tool_name directly — matches via tool_call_id
+        collected from AIMessages.
+        """
+        ids = {
+            tc.get("id")
+            for msg in messages
+            if isinstance(msg, AIMessage)
+            for tc in msg.tool_calls
+            if tc.get("name") == tool_name and tc.get("id")
+        }
+        outputs = []
+        for msg in messages:
+            if isinstance(msg, ToolMessage) and msg.tool_call_id in ids:
+                c = msg.content
+                snippet = c[:300] if isinstance(c, str) else str(c)[:300]
+                outputs.append(snippet)
+        return outputs[-max_samples:]
 
     # ── Tool interception ────────────────────────────────────────────
 
@@ -116,10 +171,24 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
                 isinstance(result, ToolMessage)
                 and getattr(result, "status", None) == "error"
             ):
+                # json.dumps gives valid JSON instead of Python repr for list content.
                 error_msg = (
                     result.content
                     if isinstance(result.content, str)
-                    else str(result.content)
+                    else json.dumps(result.content, default=str)
+                )
+            elif (
+                isinstance(result, ToolMessage)
+                and isinstance(result.content, str)
+                and is_permanent_error(result.content)
+            ):
+                # Content-level permanent error (e.g. "OpenAI API key is missing" with
+                # status=None). Wrap with "permanently unavailable" so the recorded
+                # lesson is agent-facing — the agent can't configure infra keys, it
+                # needs to know the tool is off-limits and use alternatives.
+                error_msg = (
+                    f"permanently unavailable in this environment: "
+                    f"{result.content[:120]}"
                 )
 
         if error_msg is None:
@@ -182,6 +251,55 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
             lesson=text,
         )
 
+    async def _record_loop_lesson(
+        self,
+        *,
+        runtime: Any,
+        tool_name: str,
+        count: int,
+        messages: list,
+    ) -> None:
+        """Record a lesson when a tool is called too many times without progress.
+
+        Uses a stable ``error_message`` key so the lesson is recorded once
+        even as the call count grows. Passes actual tool output samples to
+        the summariser so it can reason about *why* the data is unavailable
+        (e.g. auth-gated content) rather than just noting repetition.
+        """
+        catalog = LessonCatalog(getattr(runtime, "store", None))
+        error_message = "repeated calls without retrieving useful data"
+        if await catalog.has(tool_name, error_message):
+            return
+
+        if self._summariser is not None:
+            sample_args = self._get_recent_tool_args(messages, tool_name)
+            recent_outputs = self._get_recent_tool_outputs(messages, tool_name)
+            output_context = (
+                " | ".join(recent_outputs) if recent_outputs else "no output available"
+            )
+            text = await summarise_tool_failure(
+                summariser=self._summariser,
+                tool_name=tool_name,
+                args=sample_args,
+                error_message=(
+                    f"called {count} times without progress. "
+                    f"Recent output samples: {output_context[:400]}"
+                ),
+                system_prompt=self._summariser_prompt,
+            )
+        else:
+            text = (
+                f"{tool_name}: called {count} times without progress — "
+                "if data appears unavailable or access-gated, stop retrying and "
+                "report what you found or that the data could not be retrieved."
+            )
+        await catalog.record(
+            tool_name=tool_name,
+            args={},
+            error_message=error_message,
+            lesson=text,
+        )
+
     # ── Prompt injection ────────────────────────────────────────────
 
     async def awrap_model_call(
@@ -189,13 +307,29 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
     ) -> Any:
-        """Inject the ``## Lessons learned …`` block into the system prompt."""
+        """Inject the ``## Lessons learned …`` block into the system prompt.
+
+        Records loop-pattern lessons for overused tools BEFORE reading the
+        catalog so the just-persisted lesson appears in the same call's block.
+        """
         catalog = LessonCatalog(getattr(request.runtime, "store", None))
         tool_names = [
-            tool.name
+            n
             for tool in request.tools
-            if isinstance(getattr(tool, "name", None), str)
+            if isinstance(n := getattr(tool, "name", None), str)
         ]
+
+        # Record loop-pattern lessons first so they're included this turn.
+        tool_counts = self._count_tool_calls_in_history(request.messages)
+        for t_name, count in tool_counts.items():
+            if count >= self._loop_warning_threshold:
+                await self._record_loop_lesson(
+                    runtime=request.runtime,
+                    tool_name=t_name,
+                    count=count,
+                    messages=request.messages,
+                )
+
         lessons = await catalog.latest_per_tool(tool_names, cap=self._per_tool_cap)
         block = render_lessons_block(lessons)
         if not block:

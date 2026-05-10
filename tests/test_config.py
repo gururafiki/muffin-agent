@@ -148,9 +148,7 @@ class TestSummariserModel:
             summariser_model="haiku-cheap",
         )
         sentinel = MagicMock(name="summariser")
-        with patch.object(
-            ModelConfiguration, "get_llm", return_value=sentinel
-        ) as mock:
+        with patch.object(ModelConfiguration, "get_llm", return_value=sentinel) as mock:
             result = config.get_summariser()
         assert result is sentinel
         mock.assert_called_once()
