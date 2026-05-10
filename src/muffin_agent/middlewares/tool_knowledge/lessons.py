@@ -78,9 +78,7 @@ class LessonCatalog:
                 },
             )
         except Exception:
-            logger.debug(
-                "Lesson store write failed for %s", tool_name, exc_info=True
-            )
+            logger.debug("Lesson store write failed for %s", tool_name, exc_info=True)
 
     async def latest_per_tool(
         self,

@@ -33,9 +33,7 @@ def parent_instructions() -> str:
 
 def render_prior_findings_block(findings: CollectionFindings) -> str:
     """Render the system-prompt addendum that exposes a prior call's data."""
-    obtained_json = json.dumps(
-        findings.obtained, indent=2, sort_keys=True, default=str
-    )
+    obtained_json = json.dumps(findings.obtained, indent=2, sort_keys=True, default=str)
     gap_lines = [
         f"- {gap.field} — reason: {gap.reason.value}"
         + (f" (advice: {gap.retry_advice})" if gap.retry_advice else "")

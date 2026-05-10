@@ -104,16 +104,10 @@ def _make_request(
 class TestToolResultCacheMiddleware:
     """Test the cache middleware end-to-end."""
 
-    def test_exposes_middleware_tools(self):
-        """Middleware registers all three cache-related tools."""
+    def test_exposes_no_middleware_tools(self):
+        """Cache tools are registered by with_sandbox(), not the middleware itself."""
         mw = ToolResultCacheMiddleware()
-        assert len(mw.tools) == 3
-        tool_names = {t.name for t in mw.tools}
-        assert tool_names == {
-            "discover_cached_tool_outputs",
-            "get_tool_output_schema",
-            "write_cached_tool_output_to_backend",
-        }
+        assert mw.tools == []
 
     @pytest.mark.asyncio
     async def test_cache_miss_executes_handler_and_writes_to_store(self):

@@ -55,11 +55,7 @@ def dup_key(tool_call: dict[str, Any]) -> str:
 
 def extract_error_text(result: ToolMessage) -> str:
     """Pull a string error body out of an errored ``ToolMessage``."""
-    return (
-        result.content
-        if isinstance(result.content, str)
-        else str(result.content)
-    )
+    return result.content if isinstance(result.content, str) else str(result.content)
 
 
 @dataclass(frozen=True)

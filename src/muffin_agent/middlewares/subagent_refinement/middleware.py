@@ -59,9 +59,7 @@ class SubagentRefinementState(AgentState):
     prior_findings: NotRequired[Annotated[dict[str, Any], PrivateStateAttr]]
 
 
-def _resolve_backend(
-    factory: BackendFactory, runtime: Runtime[ContextT] | ToolRuntime
-):
+def _resolve_backend(factory: BackendFactory, runtime: Runtime[ContextT] | ToolRuntime):
     """Run the backend factory with whatever runtime shape we received.
 
     Both ``Runtime`` (from ``before_agent`` / ``after_agent``) and
@@ -130,9 +128,7 @@ class SubagentRefinementMiddleware(
             except Exception:
                 pass  # malformed cache — fall back to instructions only
         return await handler(
-            request.override(
-                system_message=append_block(request.system_message, block)
-            )
+            request.override(system_message=append_block(request.system_message, block))
         )
 
     # ── Outbound: persist this run's findings ──

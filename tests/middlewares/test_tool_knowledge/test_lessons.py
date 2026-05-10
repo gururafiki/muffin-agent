@@ -82,9 +82,7 @@ class TestLessonCatalogRecord:
         store.aput = AsyncMock(side_effect=RuntimeError("write fail"))
         catalog = LessonCatalog(store)
         # Must not raise.
-        await catalog.record(
-            tool_name="t", args={}, error_message="e", lesson="l"
-        )
+        await catalog.record(tool_name="t", args={}, error_message="e", lesson="l")
 
 
 @pytest.mark.unit

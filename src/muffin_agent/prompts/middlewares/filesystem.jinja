@@ -1,0 +1,1 @@
+- If a tool result begins with ``Tool result too large``, your NEXT action MUST be ``read_file`` on the exact filesystem path it provides. Do NOT call the original tool again — the data is already saved at that path; retrying produces the same oversized result.

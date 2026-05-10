@@ -848,8 +848,28 @@ class TestCallLimitWiring:
         assert limits[0].run_limit == 10
         assert limits[0].thread_limit == 50
 
-    def test_with_tool_no_limits_omits_middleware(self):
-        """``with_tool`` without limit kwargs does not register a tool-call limit."""
+    def test_with_tool_default_run_limit(self):
+        """``with_tool`` registers per-tool ToolCallLimitMiddleware with run_limit=6."""
+        from langchain.agents.middleware import ToolCallLimitMiddleware
+
+        from muffin_agent.utils.agent_builder import (
+            _DEFAULT_TOOL_RUN_LIMIT,
+            MuffinAgentBuilder,
+        )
+
+        my_tool = MagicMock()
+        my_tool.name = "noop"
+        with patch(_DEEP_PATCH) as mock_cda:
+            MuffinAgentBuilder(MagicMock()).with_tool(my_tool).build_deep_agent()
+
+        mw = _deep_kwargs(mock_cda)["middleware"]
+        limits = [m for m in mw if isinstance(m, ToolCallLimitMiddleware)]
+        assert len(limits) == 1
+        assert limits[0].tool_name == "noop"
+        assert limits[0].run_limit == _DEFAULT_TOOL_RUN_LIMIT
+
+    def test_with_tool_run_limit_none_omits_middleware(self):
+        """``with_tool(run_limit=None)`` opts out of the per-tool call limit."""
         from langchain.agents.middleware import ToolCallLimitMiddleware
 
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
@@ -857,7 +877,9 @@ class TestCallLimitWiring:
         my_tool = MagicMock()
         my_tool.name = "noop"
         with patch(_DEEP_PATCH) as mock_cda:
-            MuffinAgentBuilder(MagicMock()).with_tool(my_tool).build_deep_agent()
+            MuffinAgentBuilder(MagicMock()).with_tool(
+                my_tool, run_limit=None
+            ).build_deep_agent()
 
         mw = _deep_kwargs(mock_cda)["middleware"]
         assert not any(isinstance(m, ToolCallLimitMiddleware) for m in mw)
@@ -883,8 +905,11 @@ class TestCallLimitWiring:
 
         mw = _deep_kwargs(mock_cda)["middleware"]
         limits = [m for m in mw if isinstance(m, ToolCallLimitMiddleware)]
+        from muffin_agent.utils.agent_builder import _DEFAULT_TOOL_RUN_LIMIT
+
         assert {(lim.tool_name, lim.run_limit) for lim in limits} == {
             ("tool_a", 3),
+            ("tool_b", _DEFAULT_TOOL_RUN_LIMIT),
             (None, 20),
         }
 
@@ -894,9 +919,7 @@ class TestCallLimitWiring:
 
         anonymous_tool: dict = {"type": "provider", "id": "x"}  # no `.name`
         with pytest.raises(ValueError, match="Per-tool call limits require"):
-            MuffinAgentBuilder(MagicMock()).with_tool(
-                anonymous_tool, run_limit=5
-            )
+            MuffinAgentBuilder(MagicMock()).with_tool(anonymous_tool, run_limit=5)
 
     def test_last_with_model_call_limit_call_wins(self):
         """Calling ``with_model_call_limit`` twice keeps only the last."""
@@ -1147,7 +1170,30 @@ class TestSystemPrompt:
         assert "<middlewares/persistent_memory.jinja>" in prompt
 
     def test_partials_deduplicated(self):
-        """Adding multiple tools registers the cache partial only once."""
+        """with_sandbox() called twice registers the cache partial only once."""
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        rendered: list[str] = []
+
+        def fake_render(name, **_vars):
+            rendered.append(name)
+            return f"<{name}>"
+
+        with (
+            patch(_DEEP_PATCH),
+            patch(
+                "muffin_agent.utils.agent_builder.render_template",
+                side_effect=fake_render,
+            ),
+        ):
+            MuffinAgentBuilder(
+                MagicMock()
+            ).with_sandbox().with_sandbox().build_deep_agent()
+
+        assert rendered.count("middlewares/tool_result_cache.jinja") == 1
+
+    def test_with_tool_does_not_add_cache_partial(self):
+        """with_tool() does not add the cache partial — that is with_sandbox()'s job."""
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
         rendered: list[str] = []
@@ -1158,8 +1204,6 @@ class TestSystemPrompt:
 
         t1 = MagicMock()
         t1.name = "a"
-        t2 = MagicMock()
-        t2.name = "b"
         with (
             patch(_DEEP_PATCH),
             patch(
@@ -1167,11 +1211,9 @@ class TestSystemPrompt:
                 side_effect=fake_render,
             ),
         ):
-            MuffinAgentBuilder(MagicMock()).with_tool(t1).with_tool(
-                t2
-            ).build_deep_agent()
+            MuffinAgentBuilder(MagicMock()).with_tool(t1).build_deep_agent()
 
-        assert rendered.count("middlewares/tool_result_cache.jinja") == 1
+        assert "middlewares/tool_result_cache.jinja" not in rendered
 
     def test_no_prompt_and_no_partials_passes_none(self):
         """Bare builder passes ``system_prompt=None``."""

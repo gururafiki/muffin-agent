@@ -73,9 +73,7 @@ class TestCreateDataValidationAgent:
                 ".ModelConfiguration.from_runnable_config",
                 return_value=config,
             ),
-            patch(
-                "muffin_agent.utils.agent_builder.create_agent"
-            ) as mock_create,
+            patch("muffin_agent.utils.agent_builder.create_agent") as mock_create,
         ):
             mock_create.return_value = MagicMock()
 
