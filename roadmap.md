@@ -96,12 +96,22 @@
 - [ ] Wire criteria definition agent into the investment pipeline (as Stage 0 or parallel with Group 1)
 
 ### Criteria evaluation Agent
-- [ ] Develop agent that takes as an input ticker and some additional information and:
-    - collects data about the ticker (industry, sector, other relevant info);
-    - defines list of criteria that needs to be evaluated (with their relevance);
-    - calls for each criterion Criterion evaluation subagents;
-    - synthesizes results of evaluated criteria and provides final verdict;
-    - reflects on evaluation results and based on reflection results push back on analysis to add more criteria or re-synthesize report if needed.
+- [x] Develop agent that takes as an input ticker and some additional information and: classifies the ticker, defines list of criteria, calls a criterion evaluation subagent per criterion, and synthesises a final verdict. Shipped as `agents/criteria_analysis/` — a LangGraph orchestrator with 5 stages:
+    - Stage 1 `ticker_classification_node` (3 data subagents + validation) producing `TickerClassificationOutput`; short-circuits when CLI flags pre-supply classification.
+    - Stage 2 `criteria_definition_node` (skill-filtered, in parallel with Stage 3) — wraps the existing `criteria_definition` agent.
+    - Stage 3 `valuation_methodology_node` (web-search + discovery-screening subagents) — surfaces ticker-specific criteria the skills miss.
+    - Stage 4a `merge_criteria_node` — deterministic Python dedup with canonical-name matching, weight renormalisation, source tagging.
+    - Stage 4b `criterion_evaluation_node` — `Send` fan-out, one per merged criterion; `criterion_evaluation` agent upgraded to emit `CriterionEvaluationOutput` via `AutoStrategy`.
+    - Stage 5 `synthesis_node` — reasoning-only deep agent producing `CriteriaAnalysisSynthesis` (composite score, signal, weighted breakdown, positives/negatives, divergences, thesis paragraph).
+    
+    CLI: `muffin criteria-analyze TICKER`. Registered in `langgraph.json` as `criteria_analysis`. Reflection-loop pushback (synthesis re-running with new criteria) deferred — see follow-ups below.
+
+#### Criteria analysis follow-ups (deferred)
+- [ ] **Reflection-loop pushback** — after synthesis, run a reflect step that can either re-issue specific criterion evaluations with refinement notes (via `SubagentRefinementMiddleware`'s `prior_call_id` protocol) or request additional criteria from a re-run of `valuation_methodology_node` with the synthesis as input context.
+- [ ] **Per-criterion concurrency cap** — currently uncapped (`equity_screening` parity). If OpenBB/MCP load becomes an issue, cap via a semaphore inside `_fan_out_criteria` or split the fan-out into batched waves.
+- [ ] **LLM merge reconciliation pass** — when more than N (default 8) criteria survive deterministic dedup, optionally invoke `get_summariser()` to rank and trim. Hidden behind a `merge_with_llm: bool = False` flag.
+- [ ] **`target_price` in synthesis** — add an optional `target_price: float | None` to `CriteriaAnalysisSynthesis` if downstream consumers need a price anchor without running the separate `valuation_node` from `investment_analysis`.
+- [ ] **Cross-graph composition** — make `criteria_analysis` invokable as a sub-graph of `investment_analysis` (replacing or augmenting `thesis_synthesis_node`) so investors get both the criterion-weighted view and the DCF/multiples view in one run.
 
 ## Core workflow
 

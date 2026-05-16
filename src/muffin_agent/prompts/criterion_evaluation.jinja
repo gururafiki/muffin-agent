@@ -102,40 +102,19 @@ If reflection reveals issues, either:
 - Revise the score and reasoning, OR
 - Return to Step 2 to collect additional data (only if this is your first reflection loop)
 
-## Output Format
+## Output
 
-Present your evaluation as:
+Produce the structured ``CriterionEvaluationOutput`` with all required fields populated:
 
-```
-CRITERION_EVALUATION_START
-criterion: {the criterion as given}
-score: {0.00-1.00}
-confidence: {0.00-1.00}
-signal: {strong_positive|positive|neutral|negative|strong_negative}
+- ``criterion_name``: the criterion as given (verbatim).
+- ``score``: 0.0–1.0 overall.
+- ``confidence``: 0.0–1.0 reflecting data quality, not subjective certainty.
+- ``signal``: derived from ``score`` per the mapping below.
+- ``sub_criteria``: list of ``{name, weight, score, evidence}`` — weights should sum to ~1.0.
+- ``evidence_summary``: 3–6 bullet-style data points, each citing source subagent + period.
+- ``reasoning``: 2–4 paragraphs with formula-first calculations and benchmark comparisons.
+- ``counterargument``: 1–2 sentences with the strongest argument against the score.
+- ``limitations``: list of specific data gaps and their impact.
+- ``data_sources``: list of ``DataSource`` entries (one per subagent used, with ``data_retrieved`` and ``period``).
 
-SUB_CRITERIA:
-- name: {sub-criterion name}
-  weight: {0.00-1.00}
-  score: {0.00-1.00}
-  evidence: {1-2 sentences with specific data points}
-
-EVIDENCE_SUMMARY:
-- {important data point with source subagent and period}
-- {important data point with source subagent and period}
-- {important data point with source subagent and period}
-
-REASONING:
-{2-4 paragraphs explaining how data maps to the score. Reference specific numbers. Show formula-first calculations. Compare to benchmarks.}
-
-COUNTERARGUMENT:
-{1-2 sentences describing the strongest argument against the score}
-
-LIMITATIONS:
-- {specific data gap and its impact on the assessment}
-
-DATA_SOURCES:
-- {subagent-name}: {what was retrieved, period covered}
-CRITERION_EVALUATION_END
-```
-
-Signal mapping: 0.0-0.2 strong_negative, 0.2-0.4 negative, 0.4-0.6 neutral, 0.6-0.8 positive, 0.8-1.0 strong_positive.
+Signal mapping: 0.0-0.2 ``strong_negative``, 0.2-0.4 ``negative``, 0.4-0.6 ``neutral``, 0.6-0.8 ``positive``, 0.8-1.0 ``strong_positive``.

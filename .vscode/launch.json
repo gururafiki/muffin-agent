@@ -458,6 +458,55 @@
             "justMyCode": false
         },
         {
+            "name": "Criteria Analysis: AAPL",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "criteria-analyze",
+                "AAPL",
+                "--query",
+                "Long-only quality bias"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Criteria Analysis: JPM pre-classified",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "criteria-analyze",
+                "JPM",
+                "--sector",
+                "banking",
+                "--market",
+                "developed",
+                "--stock-type",
+                "value"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Criteria Analysis: Custom Ticker",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "criteria-analyze",
+                "${input:ticker}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
             "name": "Criterion Evaluation Agent: AAPL",
             "type": "debugpy",
             "request": "launch",
