@@ -181,6 +181,23 @@
 - [ ] Explore agents from https://github.com/TauricResearch/TradingAgents
 - [ ] Explore agents from https://github.com/virattt/ai-hedge-fund
 
+### Research Agent — follow-ups
+
+The MVP Research Agent (`src/muffin_agent/agents/research/`) ships with web search + scrape only and a Vane-style hybrid pipeline. Follow-ups, in priority order:
+
+- [ ] **Academic source tool** (Semantic Scholar / arXiv) — wrap as a plain `@tool`, expose via `extra_tools=` + `extra_sources=["academic"]`. Drop a universal skill into `/skills/research/sources/academic/`.
+- [ ] **News source tool** (NewsAPI wrapper, or Firecrawl search with SearxNG news engines). Similar shape to academic.
+- [ ] **Finance source wiring**: package existing data-collection subagents (`news_company`, `equity_fundamentals`, …) as `extra_tools` and document the integration recipe so investment agents can plug research into their workflow.
+- [ ] **LangSmith eval dataset + pipeline**: build a benchmark for citation accuracy, source diversity, recall on canonical research queries.
+- [ ] **Persistent vector cache + Supabase pgvector** — replaces ephemeral OpenAI embeddings with a cached lookup; also serves as the PostgreSQL host for LangGraph checkpoints, replacing SQLite for multi-user deployment. Adds provider-agnostic embeddings (Voyage AI, Cohere, Nomic) as a side benefit.
+- [ ] **Fact-checking verifier node** between writer and END: claim-by-claim re-check against sources; downgrades confidence on uncited claims; flags hallucinated citations.
+- [ ] **Source credibility scoring**: domain-reputation list + recency penalty + author/publisher metadata; surfaces in the `Source` model.
+- [ ] **Streaming progress UI** (LangGraph Studio integration + agent-chat-ui block-style rendering for a live research panel). Migration trigger for swapping the researcher's deep-agent internals to a multi-node sub-graph.
+- [ ] **Multi-modal evidence**: PDF, image, video chunking + embedding.
+- [ ] **Discussion source tool** (Reddit, HN, StackExchange) for opinion/sentiment queries.
+- [ ] **Wolfram Alpha / calculator integration** for numerical / unit-conversion queries.
+- [ ] **Conversation-aware suggestion generation**: replace bundled `suggested_followups` with a separate cheap-LLM call after the answer renders (Vane pattern) for snappier UX.
+
 ### Reliability v1 (post-AMZN trace `019dc4bc-…`)
 
 A 42.8-min stock_evaluation run identified seven compounding root causes (slow free model, no retry/fallback, no episodic learning, context bloat, etc). Shipped fixes:

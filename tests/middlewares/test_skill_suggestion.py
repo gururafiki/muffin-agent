@@ -368,7 +368,10 @@ class TestAbforeAgent:
 class TestAwrapModelCall:
     @pytest.mark.asyncio
     async def test_injects_classification_context(self):
-        mw = SkillFilterMiddleware[_FullSchema]()
+        mw = SkillFilterMiddleware[_FullSchema](
+            context_header="Ticker Classification",
+            context_intro="This ticker has been classified as follows:",
+        )
 
         mock_request = MagicMock()
         mock_request.state = {
@@ -395,6 +398,28 @@ class TestAwrapModelCall:
         assert "banking" in content_text
         assert "developed" in content_text
         assert "Ticker Classification" in content_text
+
+    @pytest.mark.asyncio
+    async def test_uses_default_generic_header_when_unconfigured(self):
+        """When no constructor args are passed, the middleware uses the
+        domain-agnostic default header ('Classification')."""
+        mw = SkillFilterMiddleware[_FullSchema]()
+
+        mock_request = MagicMock()
+        mock_request.state = {"sector": "banking"}
+        mock_request.system_message = SystemMessage(content="Base prompt.")
+
+        async def handler(request):
+            return MagicMock()
+
+        await mw.awrap_model_call(mock_request, handler)
+
+        new_sys = mock_request.override.call_args.kwargs["system_message"]
+        content_text = "".join(
+            b["text"] for b in new_sys.content_blocks if b.get("type") == "text"
+        )
+        assert "## Classification" in content_text
+        assert "Ticker" not in content_text
 
     @pytest.mark.asyncio
     async def test_passes_through_without_classification(self):

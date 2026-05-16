@@ -537,6 +537,51 @@
             "console": "integratedTerminal",
             "envFile": "${workspaceFolder}/.env",
             "justMyCode": false
+        },
+        {
+            "name": "Research: Claude 4.7",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "research",
+                "Latest news on Anthropic Claude 4.7"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Research: Quality mode pgvector",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "research",
+                "How do I set up pgvector with row-level security?",
+                "--mode",
+                "quality",
+                "--task-type",
+                "how_to"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
+        },
+        {
+            "name": "Research: Custom query",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "research",
+                "${input:research_query}",
+                "--mode",
+                "${input:research_mode}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": false
         }
     ],
     "inputs": [
@@ -557,6 +602,19 @@
             "type": "promptString",
             "description": "Investment criterion to evaluate",
             "default": "Does the company have strong and improving profitability?"
+        },
+        {
+            "id": "research_query",
+            "type": "promptString",
+            "description": "Research question",
+            "default": "Compare Postgres vs MySQL for OLTP workloads"
+        },
+        {
+            "id": "research_mode",
+            "type": "pickString",
+            "description": "Research depth",
+            "options": ["speed", "balanced", "quality"],
+            "default": "balanced"
         }
     ]
 }

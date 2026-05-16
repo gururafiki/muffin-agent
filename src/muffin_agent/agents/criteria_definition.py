@@ -206,7 +206,10 @@ async def create_criteria_definition_agent(
         .with_persistent_memory()
         .with_skills(
             ["/skills/valuation/"],
-            filter_middleware=SkillFilterMiddleware[TickerClassification](),
+            filter_middleware=SkillFilterMiddleware[TickerClassification](
+                context_header="Ticker Classification",
+                context_intro="This ticker has been classified as follows:",
+            ),
         )
         .with_subagents(subagents)
         .with_response_format(AutoStrategy(schema=CriteriaDefinitionOutput))

@@ -11,7 +11,15 @@ Parameterised via ``__class_getitem__``::
         sector: NotRequired[str]
         market: NotRequired[str]
 
-    middleware = [SkillFilterMiddleware[TickerClassification]()]
+    middleware = [SkillFilterMiddleware[TickerClassification](
+        context_header="Ticker Classification",
+        context_intro="This ticker has been classified as follows:",
+    )]
+
+The three ``context_*`` constructor kwargs control the prompt section
+appended on every model call.  Defaults are domain-agnostic so the same
+middleware works for ticker classification, research-mode/task-type
+filtering, or any other categorisation scheme.
 """
 
 from __future__ import annotations
@@ -49,6 +57,35 @@ class SkillFilterMiddleware(AgentMiddleware):
 
     tools: list[BaseTool] = []
     _category_keys: frozenset[str] = frozenset()
+
+    _DEFAULT_HEADER = "Classification"
+    _DEFAULT_INTRO = "The current context has been classified as follows:"
+    _DEFAULT_OUTRO = (
+        "The available skills listed above have been pre-filtered "
+        "to match this classification. Read all of them via `read_file`."
+    )
+
+    def __init__(
+        self,
+        *,
+        context_header: str | None = None,
+        context_intro: str | None = None,
+        context_outro: str | None = None,
+    ) -> None:
+        """Configure the prompt section appended on every model call.
+
+        Args:
+            context_header: Markdown heading text (rendered as ``## <header>``).
+                Defaults to ``"Classification"``.
+            context_intro: Sentence introducing the bulleted classification
+                values.  Defaults to a generic phrasing.
+            context_outro: Closing sentence reminding the agent to read the
+                pre-filtered skills.  Defaults to a generic phrasing.
+        """
+        super().__init__()
+        self._context_header = context_header or self._DEFAULT_HEADER
+        self._context_intro = context_intro or self._DEFAULT_INTRO
+        self._context_outro = context_outro or self._DEFAULT_OUTRO
 
     @classmethod
     def __class_getitem__(cls, filter_schema: type) -> type:
@@ -114,20 +151,16 @@ class SkillFilterMiddleware(AgentMiddleware):
 
     # ── Context formatting ──────────────────────────────────────────────
 
-    @staticmethod
-    def _format_context(classification: dict[str, str]) -> str:
+    def _format_context(self, classification: dict[str, str]) -> str:
         """Build a system prompt section describing the active classification."""
         lines = [
-            "## Ticker Classification\n",
-            "This ticker has been classified as follows:",
+            f"## {self._context_header}\n",
+            self._context_intro,
         ]
         for k, v in classification.items():
             lines.append(f"- **{k}**: {v}")
         lines.append("")
-        lines.append(
-            "The available skills listed above have been pre-filtered "
-            "to match this classification. Read all of them via `read_file`."
-        )
+        lines.append(self._context_outro)
         return "\n".join(lines)
 
     # ── Middleware hooks ─────────────────────────────────────────────────
