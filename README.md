@@ -82,7 +82,7 @@ A deep agent that evaluates a **single investment criterion** (e.g., "Does the c
 4. **Evaluate** — Decompose the criterion into 2-4 dynamic sub-criteria, score each 0.0–1.0 using Chain-of-Thought with formula-first calculations, then combine into a weighted overall score
 5. **Reflect** — Check for score-evidence consistency, confirmation bias, anchoring bias, and missing counterarguments
 
-**Output**: Structured `CRITERION_EVALUATION_START/END` delimited output with score, confidence (numeric 0.0–1.0), signal, sub-criteria breakdown, evidence summary, reasoning, counterargument, and limitations. Designed to be consumed by the parent Criteria Evaluation Agent (planned).
+**Output**: `CriterionEvaluationOutput` enforced via `response_format=AutoStrategy(schema=CriterionEvaluationOutput)` — `criterion_name`, `score`, `confidence` (0.0–1.0), `signal` (5-level Literal), `sub_criteria`, `evidence_summary`, `reasoning`, `counterargument`, `limitations`, `data_sources`. Consumed structurally by the Criteria Analysis Orchestrator.
 
 ### Criteria Definition Agent
 
@@ -97,6 +97,35 @@ Uses 5 subagents (etf-index, equity-fundamentals, discovery-screening, economy-m
 **CLI**:
 ```bash
 muffin criteria AAPL --sector banking --market developed --stock-type value
+```
+
+### Criteria Analysis Orchestrator
+
+A LangGraph orchestrator that runs the full criteria-driven investment pipeline end-to-end: classify the ticker, define and research valuation criteria in parallel, fan each criterion out to the Criterion Evaluation Agent, and synthesise a final view. Wraps the existing Criterion Evaluation and Criteria Definition agents; adds three new agents (ticker classification, valuation-methodology research, synthesis) plus a deterministic merge step.
+
+**Five-stage pipeline:**
+
+| Stage | Node | Type | Purpose |
+|-------|------|------|---------|
+| 1 | `ticker_classification` | Deep agent (3 data subagents + validation) | Produces `TickerClassificationOutput` (sector / sub_sector / market / stock_type). Short-circuits when CLI flags pre-supply all four flat state keys. |
+| 2 | `criteria_definition` | Wraps the existing Criteria Definition Agent | Skill-filtered sector criteria (`CriteriaDefinitionOutput`). Runs in parallel with Stage 3. |
+| 3 | `valuation_methodology` | Deep agent (web-search + discovery-screening) | Surfaces the canonical valuation approach plus 2–5 ticker-specific extra criteria the skill stream would miss (`ValuationMethodologyOutput`). Runs in parallel with Stage 2. |
+| 4a | `merge_criteria` | Pure Python (no LLM) | Deterministic dedup — canonicalises names, keeps the skill version on tie, re-normalises weights to 1.0, tags `source: "skill" \| "web"`. |
+| 4b | `criterion_evaluation` | `Send` fan-out, one Criterion Evaluation Agent per merged criterion | `operator.add` reducer accumulates `CriterionEvaluationOutput` from all parallel workers. Per-criterion concurrency is uncapped. |
+| 5 | `synthesis` | Reasoning-only deep agent (no subagents, no tools) | Produces `CriteriaAnalysisSynthesis` — composite score, signal (`strong_sell` … `strong_buy`), weighted breakdown, key positives/negatives, divergences, confidence, thesis paragraph. |
+
+Stages 2 and 3 synchronise on an implicit barrier (same pattern as `investment_analysis`); Stage 4b uses the same `Send` + `operator.add` fan-out pattern as `equity_screening`. Registered in [langgraph.json](langgraph.json) as `criteria_analysis` for Platform autodiscovery.
+
+**CLI**:
+```bash
+# Auto-classify and run the full pipeline
+muffin criteria-analyze AAPL
+
+# Pre-classify to skip Stage 1
+muffin criteria-analyze JPM --sector banking --market developed --stock-type value
+
+# With investment mandate
+muffin criteria-analyze MSFT -q "Long-only quality bias"
 ```
 
 ### Market Regime Agent
@@ -521,6 +550,11 @@ muffin criterion MSFT -c "Is the balance sheet healthy?" -q "Focus on debt level
 # Define valuation criteria (with optional pre-classification)
 muffin criteria AAPL
 muffin criteria JPM --sector banking --market developed --stock-type value
+
+# Run the full criteria-driven analysis pipeline
+muffin criteria-analyze AAPL
+muffin criteria-analyze JPM --sector banking --market developed --stock-type value
+muffin criteria-analyze MSFT -q "Long-only quality bias"
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"

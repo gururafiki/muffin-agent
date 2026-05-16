@@ -33,11 +33,19 @@ class TestPromptTemplate:
 
     def test_template_contains_output_format(self):
         result = render_template("criterion_evaluation.jinja")
-        assert "CRITERION_EVALUATION_START" in result
-        assert "CRITERION_EVALUATION_END" in result
-        assert "score:" in result
-        assert "confidence:" in result
-        assert "signal:" in result
+        # Structured output via AutoStrategy(CriterionEvaluationOutput) — the
+        # prompt names every required field so the LLM populates them.
+        assert "CriterionEvaluationOutput" in result
+        assert "criterion_name" in result
+        assert "score" in result
+        assert "confidence" in result
+        assert "signal" in result
+        assert "sub_criteria" in result
+        assert "evidence_summary" in result
+        assert "reasoning" in result
+        assert "counterargument" in result
+        assert "limitations" in result
+        assert "data_sources" in result
 
     def test_template_contains_cot_instructions(self):
         result = render_template("criterion_evaluation.jinja")
@@ -50,7 +58,7 @@ class TestPromptTemplate:
         assert "Score-evidence consistency" in result
         assert "Confirmation bias" in result
         assert "Anchoring bias" in result
-        assert "COUNTERARGUMENT" in result
+        assert "counterargument" in result.lower()
 
     def test_template_contains_grounding_constraints(self):
         result = render_template("criterion_evaluation.jinja")
@@ -249,3 +257,14 @@ class TestCreateCriterionEvaluationAgent:
             assert subagents[14]["name"] == "data-validation"
             assert subagents[14]["runnable"] is mock_validation_agent
             assert agent is mock_create.return_value
+
+            # Structured output via AutoStrategy(CriterionEvaluationOutput).
+            from langchain.agents.structured_output import AutoStrategy
+
+            from muffin_agent.agents.criterion_evaluation import (
+                CriterionEvaluationOutput,
+            )
+
+            response_format = call_kwargs.kwargs["response_format"]
+            assert isinstance(response_format, AutoStrategy)
+            assert response_format.schema is CriterionEvaluationOutput

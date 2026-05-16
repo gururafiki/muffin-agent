@@ -909,6 +909,113 @@ def criteria(
     asyncio.run(_stream_criteria(ticker, query, sector, sub_sector, market, stock_type))
 
 
+async def _run_criteria_analyze(
+    ticker: str,
+    query: str | None,
+    sector: str | None,
+    sub_sector: str | None,
+    market: str | None,
+    stock_type: str | None,
+    user: str,
+) -> None:
+    """Run the criteria-driven analysis pipeline and print the synthesis."""
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
+
+    from muffin_agent.agents import build_criteria_analysis_graph
+    from muffin_agent.utils.observability import setup_tracing
+
+    callbacks = setup_tracing(session_id=ticker)
+    store = InMemoryStore()
+    graph = build_criteria_analysis_graph(
+        checkpointer=_get_checkpointer(),
+        store=store,
+    )
+
+    mandate = query or f"Produce a criteria-driven analysis for {ticker}"
+
+    initial_state: dict = {"ticker": ticker, "query": mandate}
+    if sector:
+        initial_state["sector"] = sector
+    if sub_sector:
+        initial_state["sub_sector"] = sub_sector
+    if market:
+        initial_state["market"] = market
+    if stock_type:
+        initial_state["stock_type"] = stock_type
+
+    result = await graph.ainvoke(
+        initial_state,
+        config=RunnableConfig(
+            callbacks=callbacks,
+            configurable={"thread_id": ticker, "user_id": user},
+        ),
+    )
+
+    synthesis = result.get("synthesis", {})
+    typer.echo(json.dumps(synthesis, indent=2, default=str))
+
+
+@app.command(name="criteria-analyze")
+def criteria_analyze(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / analysis focus"),
+    ] = None,
+    sector: Annotated[
+        str | None,
+        typer.Option("--sector", "-s", help="Pre-supplied sector tag (skips Stage 1)"),
+    ] = None,
+    sub_sector: Annotated[
+        str | None,
+        typer.Option("--sub-sector", help="Pre-supplied sub-sector tag"),
+    ] = None,
+    market: Annotated[
+        str | None,
+        typer.Option(
+            "--market", "-m", help="Pre-supplied market: developed or emerging"
+        ),
+    ] = None,
+    stock_type: Annotated[
+        str | None,
+        typer.Option(
+            "--stock-type", "-t", help="Pre-supplied stock type: value or growth"
+        ),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the criteria-driven analysis pipeline.
+
+    Pipeline:
+      1. ticker classification (skipped if --sector + --market + --stock-type
+         are all supplied)
+      2. criteria definition (skill-filtered) and valuation methodology (web
+         research) — parallel
+      3. merge criteria (deterministic dedup)
+      4. per-criterion evaluation (parallel fan-out)
+      5. synthesis
+
+    Pre-classify to skip Stage 1:
+
+        muffin criteria-analyze JPM --sector banking -m developed -t value
+    """
+    asyncio.run(
+        _run_criteria_analyze(
+            ticker, query, sector, sub_sector, market, stock_type, user
+        )
+    )
+
+
 def main() -> None:
     """Entry point for the `muffin` CLI."""
     app()

@@ -1,7 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "stock_evaluation": "./src/muffin_agent/graph.py:graph"
+    "stock_evaluation": "./src/muffin_agent/graph.py:graph",
+    "criteria_analysis": "./src/muffin_agent/agents/criteria_analysis/graph.py:graph"
   },
   "env": ".env",
   "python_version": "3.13"
