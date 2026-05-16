@@ -128,6 +128,52 @@ muffin criteria-analyze JPM --sector banking --market developed --stock-type val
 muffin criteria-analyze MSFT -q "Long-only quality bias"
 ```
 
+### Research Agent
+
+Domain-agnostic Perplexity-style deep research agent. Linear LangGraph pipeline: `classifier → researcher → rerank → writer`. Inspired by [Vane (Perplexica)](https://github.com/ItzCrazyKns/Vane); ships with [classifier flags](src/muffin_agent/agents/research/schemas.py), Vane-defaults rerank (OpenAI-compatible embeddings, cosine ≥ 0.5, top-K 20), and inline `[N]` citation discipline.
+
+**Four-node pipeline:**
+
+| Stage | Node | Type | Purpose |
+|-------|------|------|---------|
+| 1 | `classifier` | LLM call (collector role, structured output) | Produces `ResearchClassification` — standalone (coref-resolved) query, `task_type` (one of 6), `mode_hint` (speed/balanced/quality), `sources_to_use`, `skip_search`. Routes to writer directly on `skip_search=true`. |
+| 2 | `researcher` | Deep agent — `firecrawl_search` + `firecrawl_scrape` (+ caller `extra_tools`) + skills filtered by mode/task_type | Iterative tool-using loop with mode-driven LLM-call budget (speed=2 / balanced=6 / quality=25). Emits `ResearchEvidenceFindings.evidence_chunks`. |
+| 3 | `rerank` | Pure Python (no LLM) | Embeds query + chunks via `OpenAIEmbeddings` (provider-configurable), cosine-filters, URL-dedups with content-merge, keeps top-K. |
+| 4 | `writer` | LLM call (orchestrator role, structured output) | Produces `ResearchOutput` — markdown answer with inline `[N]` citations, key findings, source list, confidence, missing information, suggested follow-ups. Shape varies per task_type. |
+
+**Pluggable on tools**: callers pass `extra_tools=` (additional `BaseTool` instances — academic / news / finance / internal-docs search) and `extra_sources=` (source names to expose in the classifier's enum). The factory is exposed both as a standalone graph (`build_research_graph`, registered in [langgraph.json](langgraph.json) as `research`) and as a `CompiledSubAgent` (`build_research_subagent`) for embedding inside other agents.
+
+**Skill-driven modes**: `/skills/research/` ships with mode skills (speed/balanced/quality) and task-type skills (research_report / comparison / how_to / summary / debate / factual_qa) plus a universal `citation_discipline` skill. The researcher loads these via `SkillFilterMiddleware[ResearchClassificationFilterState]`, filtered to the current mode + task_type. Add a new skill by dropping a SKILL.md with matching metadata under `/skills/research/`.
+
+**Embeddings** are OpenAI-compatible — works with OpenAI direct (default), OpenRouter (incl. the free `nvidia/llama-nemotron-embed-vl-1b-v2:free` model), vLLM, LM Studio, or Ollama. See `EMBEDDING_BASE_URL` in `.env.example`.
+
+**CLI**:
+```bash
+# Balanced research with default web sources
+muffin research "Latest news on Anthropic Claude 4.7"
+
+# Quality mode for in-depth coverage
+muffin research "Postgres vs MySQL for OLTP" --mode quality
+
+# skip_search path — classifier decides no external lookup needed
+muffin research "What is 2+2?"
+
+# Explicit task type override
+muffin research "How do I set up pgvector?" --task-type how_to --mode quality
+```
+
+**As a subagent**:
+```python
+from muffin_agent.agents.research import build_research_subagent
+
+research = await build_research_subagent(
+    config,
+    extra_tools=[arxiv_search, news_search],  # optional
+    extra_sources=["academic", "news"],       # optional
+)
+# Pass to MuffinAgentBuilder.with_subagents([research, ...])
+```
+
 ### Market Regime Agent
 
 A deep agent (Step 2 of the investment process) that classifies the current macro and liquidity regime, identifies factor tailwinds and headwinds, and provides portfolio positioning guidance. Uses a **macro-focused subset** of 6 subagents — the 5 market-wide data collection agents plus data-validation — built by a private `_build_macro_subagents()` helper rather than the full 14-agent set.
@@ -555,6 +601,11 @@ muffin criteria JPM --sector banking --market developed --stock-type value
 muffin criteria-analyze AAPL
 muffin criteria-analyze JPM --sector banking --market developed --stock-type value
 muffin criteria-analyze MSFT -q "Long-only quality bias"
+
+# General-purpose deep research (domain-agnostic, Perplexity-style)
+muffin research "Latest news on Anthropic Claude 4.7"
+muffin research "Postgres vs MySQL for OLTP" --mode quality
+muffin research "How do I set up pgvector?" --task-type how_to --mode quality
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"

@@ -5,6 +5,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessageChunk, ToolMessage
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
 
@@ -85,3 +86,57 @@ class StreamPrinter:
             if isinstance(block, dict) and block.get("type") == "text"
         ]
         return "\n".join(parts) if parts else str(content)
+
+
+def render_research_output(output: dict[str, Any]) -> None:
+    """Pretty-print a ``ResearchOutput`` dict to the terminal."""
+    console = Console()
+
+    task_type = output.get("task_type", "research_report")
+    mode_used = output.get("mode_used", "balanced")
+    confidence = output.get("confidence", 0.0)
+
+    console.print(
+        Panel.fit(
+            f"[bold]Task[/]: {task_type}    "
+            f"[bold]Mode[/]: {mode_used}    "
+            f"[bold]Confidence[/]: {confidence:.0%}",
+            border_style="cyan",
+        )
+    )
+
+    answer = output.get("answer_markdown") or "_no answer produced_"
+    console.print(Panel(Markdown(answer), title="Answer", border_style="green"))
+
+    key_findings = output.get("key_findings") or []
+    if key_findings:
+        bullets = "\n".join(f"- {finding}" for finding in key_findings)
+        console.print(
+            Panel(Markdown(bullets), title="Key Findings", border_style="yellow")
+        )
+
+    sources = output.get("sources") or []
+    if sources:
+        lines = []
+        for src in sources:
+            n = src.get("n", "?")
+            title = src.get("title") or src.get("url", "(no title)")
+            url = src.get("url", "")
+            lines.append(f"[{n}] [link={url}]{title}[/link]\n    {url}")
+        console.print(
+            Panel(
+                "\n".join(lines),
+                title=f"Sources ({len(sources)})",
+                border_style="blue",
+            )
+        )
+
+    followups = output.get("suggested_followups") or []
+    if followups:
+        body = "\n".join(f"- {q}" for q in followups)
+        console.print(Panel(body, title="Suggested follow-ups", border_style="dim"))
+
+    missing = output.get("missing_information") or []
+    if missing:
+        body = "\n".join(f"- {item}" for item in missing)
+        console.print(Panel(body, title="Missing information", border_style="red"))

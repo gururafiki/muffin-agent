@@ -1016,6 +1016,114 @@ def criteria_analyze(
     )
 
 
+async def _run_research(
+    query: str,
+    mode: str | None,
+    sources: list[str] | None,
+    task_type: str | None,
+    user: str,
+    thread: str | None,
+) -> None:
+    """Run the research pipeline and render the cited answer."""
+    from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
+
+    from muffin_agent.agents.research import build_research_graph
+    from muffin_agent.utils.observability import setup_tracing
+    from muffin_cli.output import render_research_output
+
+    session_id = thread or f"research-{query[:40].replace(' ', '-')}"
+    callbacks = setup_tracing(session_id=session_id)
+    store = InMemoryStore()
+    graph = build_research_graph(
+        checkpointer=_get_checkpointer(),
+        store=store,
+    )
+
+    initial_state: dict = {"query": query}
+    if sources:
+        initial_state["allowed_sources"] = sources
+    if mode:
+        initial_state["mode_override"] = mode
+    if task_type:
+        initial_state["task_type_override"] = task_type
+
+    result = await graph.ainvoke(
+        initial_state,
+        config=RunnableConfig(
+            callbacks=callbacks,
+            configurable={"thread_id": session_id, "user_id": user},
+        ),
+    )
+
+    output = result.get("output") or {}
+    if not output:
+        typer.echo("(research pipeline returned no output)")
+        return
+
+    render_research_output(output)
+
+
+@app.command()
+def research(
+    query: Annotated[str, typer.Argument(help="The research question")],
+    mode: Annotated[
+        str | None,
+        typer.Option(
+            "--mode",
+            "-m",
+            help="Override classifier-chosen mode: speed | balanced | quality",
+        ),
+    ] = None,
+    sources: Annotated[
+        str | None,
+        typer.Option(
+            "--sources",
+            "-s",
+            help="Comma-separated allowed sources (default: web)",
+        ),
+    ] = None,
+    task_type: Annotated[
+        str | None,
+        typer.Option(
+            "--task-type",
+            "-t",
+            help=(
+                "Override classifier-chosen task_type: research_report, "
+                "comparison, how_to, summary, debate, factual_qa"
+            ),
+        ),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+    thread: Annotated[
+        str | None,
+        typer.Option(
+            "--thread",
+            help="Thread id for follow-up continuity (default: slug of query)",
+        ),
+    ] = None,
+) -> None:
+    """Run the deep research agent on a query and render a cited answer.
+
+    Pipeline: classifier → researcher → rerank → writer.
+
+    Examples:
+        muffin research "Latest news on Anthropic Claude 4.7"
+        muffin research "Postgres vs MySQL for OLTP" --mode quality
+        muffin research "What is 2+2?"                    # skip_search path
+        muffin research "How do I set up pgvector?" -t how_to -m quality
+    """
+    sources_list = [s.strip() for s in sources.split(",")] if sources else None
+    asyncio.run(_run_research(query, mode, sources_list, task_type, user, thread))
+
+
 def main() -> None:
     """Entry point for the `muffin` CLI."""
     app()
