@@ -507,6 +507,68 @@
             "justMyCode": false
         },
         {
+            "name": "Trading Decision: AAPL (narrative)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "decide",
+                "AAPL",
+                "--narrative",
+                "Apple is well-positioned for the AI device cycle: services revenue durable at ~24% margin, iPhone refresh imminent. Bears point to China demand wobble and ad-tech regulatory drag. Trades at ~22x forward P/E.",
+                "--query",
+                "long-term hold candidate",
+                "--decision-date",
+                "2026-05-17"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "MEMORY_DEBUG_USER_ID": "test-user-id"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "Trading Decision: from analysis JSON",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "decide",
+                "${input:ticker}",
+                "--analysis-json",
+                "${input:analysisJsonPath}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "MEMORY_DEBUG_USER_ID": "test-user-id"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "Trading Decision: Custom ticker (narrative)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "muffin_cli.main",
+            "args": [
+                "decide",
+                "${input:ticker}",
+                "--narrative",
+                "${input:narrative}",
+                "--query",
+                "${input:query}"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "MEMORY_DEBUG_USER_ID": "test-user-id"
+            },
+            "justMyCode": false
+        },
+        {
             "name": "Criterion Evaluation Agent: AAPL",
             "type": "debugpy",
             "request": "launch",
@@ -615,6 +677,18 @@
             "description": "Research depth",
             "options": ["speed", "balanced", "quality"],
             "default": "balanced"
+        },
+        {
+            "id": "narrative",
+            "type": "promptString",
+            "description": "Free-form analysis narrative (Markdown notes) for muffin decide",
+            "default": "Bull thesis: durable services growth, AI device cycle. Bear thesis: China demand wobble, regulatory drag. Trades at ~22x forward P/E."
+        },
+        {
+            "id": "analysisJsonPath",
+            "type": "promptString",
+            "description": "Path to upstream TickerAnalysisState JSON for muffin decide --analysis-json",
+            "default": "./scratch/aapl_state.json"
         }
     ]
 }

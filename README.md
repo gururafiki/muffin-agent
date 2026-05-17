@@ -340,6 +340,75 @@ Follows a 5-step workflow: **Parse Context → Collect Data → Compute Valuatio
 
 Runs **sequentially** after Group 2 barrier (forecasting + risk_assessment); output consumed by `thesis_synthesis_node`.
 
+### Trading Decision Pipeline (`agents/trading_decision/`)
+
+A composable trading-decision pipeline ported from [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Decoupled from `investment_analysis` — every agent accepts a generic `AnalysisContext` envelope so callers can feed in muffin's pipeline output, free-form research notes, or any other upstream analysis. Full composition guide: [docs/trading-decision.md](docs/trading-decision.md).
+
+**Three graph builders** (same `TradingDecisionState`, different depth):
+
+| Builder | Topology | Use when |
+|---|---|---|
+| `build_investment_debate_graph` | Bull ↔ Bear → Investment Judge | You only want a structured directional view |
+| `build_investment_thesis_graph` | …+ Trader | You want operational entry / stop / sizing too |
+| `build_trading_decision_graph` | reflector_resolve → debate → Judge → Trader → risk debate → Portfolio Manager → decision_writeback | Canonical full pipeline with reflection memory |
+
+**Adversarial debate, two layers:**
+
+| Stage | Participants | Default rounds | Output |
+|---|---|---|---|
+| Investment debate | Bull Researcher ↔ Bear Researcher | 2 rounds = 4 turns | `InvestmentJudgeOutput` (5-tier `signal`, conviction, bull/bear cases, catalysts, risks, monitoring checklist) |
+| Risk debate | Aggressive → Conservative → Neutral (round-robin) | 1 round = 3 turns | Stress-tested debate transcript |
+
+Speaker-tag routing keeps the alternation cheap (no text parsing); per-run round counts are configurable via `configurable.max_investment_debate_rounds` and `configurable.max_risk_debate_rounds`.
+
+**Operational translation** — the **Trader** maps the Judge's 5-tier `signal` → 3-tier `action` (sell/hold/buy), entry price, stop loss, take profit, position sizing (anchored to conviction buckets in the prompt), and time horizon (anchored to the Judge's catalysts).
+
+**Final synthesis** — the **Portfolio Manager** consumes the Judge thesis + Trader proposal + risk debate transcript and produces `PortfolioDecisionOutput` — the canonical 5-tier rating (`strong_sell` … `strong_buy`), executive summary, detailed thesis, price target, stop loss, time horizon, position sizing, remaining risks, confidence. May revise the Judge's signal one notch up or down based on what the risk debate surfaced.
+
+**Outcome-driven reflection memory** — decisions are persisted under per-user namespace `("memories", user_id, "decisions")` with key `f"{TICKER}:{YYYY-MM-DD}"`. On the next run, `reflector_resolve_node` walks pending entries: fetches realised returns + alpha vs benchmark (default SPY) via `fetch_outcomes_openbb` (pluggable through the `OutcomesFetcher` protocol), generates a 2–4 sentence reflection via the Reflector LLM, and injects the most-recent same-ticker + cross-ticker reflections into the next Portfolio Manager prompt. The PM marks `incorporates_past_lessons=true` when it actually cites them. All reflection components degrade silently when the store is unavailable — the pipeline always produces a decision.
+
+**Per-run knobs** (all via `configurable`): `max_investment_debate_rounds` (2), `max_risk_debate_rounds` (1), `reflection_enabled` (`true`), `decision_date` (today UTC), `reflection_holding_days` (5), `reflection_benchmark` (`"SPY"`), `reflection_max_same_ticker` (5), `reflection_max_cross_ticker` (3).
+
+**Composition** — `AnalysisContext` is the abstraction that decouples this pipeline from the rest of muffin:
+
+```python
+from muffin_agent.agents.trading_decision import AnalysisContext
+
+# Mode 1: free-form research notes
+ctx = AnalysisContext.from_narrative("AAPL", "Bull thesis: ...", query="long-term hold")
+
+# Mode 2: muffin's investment_analysis pipeline output (state dict)
+ctx = AnalysisContext.from_investment_analysis_state(state, query="...")
+
+# Mode 3: hybrid (structured fields + ad-hoc notes)
+ctx = AnalysisContext.from_investment_analysis_state(
+    state, narrative="Additional context: management transition imminent."
+)
+```
+
+**CLI**:
+
+```bash
+# Narrative-only
+muffin decide AAPL --narrative "Bull thesis: durable services growth..."
+
+# From upstream analysis JSON (file or stdin)
+muffin decide AAPL --analysis-json state.json --query "long-term hold"
+
+# Combine structured analysis + free-form notes
+muffin decide AAPL --analysis-json state.json \
+                   --narrative "Add'l context: management transition"
+
+# Tune debate rounds, disable reflection, pin decision date
+muffin decide AAPL --narrative "..." \
+                   --invest-rounds 2 --risk-rounds 1 \
+                   --no-reflection \
+                   --decision-date 2026-05-17 \
+                   --user alice
+```
+
+The CLI ships with `InMemoryStore`, so reflection memory persists only within a single Python process today. Wire `PostgresStore` (or run on LangGraph Platform) for cross-session persistence — see the [composition guide](docs/trading-decision.md) for the recipe.
+
 ### Middleware
 
 Agents are composed via `MuffinAgentBuilder`, which wires universal middleware for every agent and opt-in middleware per capability. The builder is fully typed: `with_system_prompt` accepts `str | SystemMessage`, `with_permission` accepts a real `FilesystemPermission` (deep-agent only), and the tool / subagent / middleware signatures forward exactly the types expected by `create_deep_agent` and `create_agent`.
@@ -606,6 +675,12 @@ muffin criteria-analyze MSFT -q "Long-only quality bias"
 muffin research "Latest news on Anthropic Claude 4.7"
 muffin research "Postgres vs MySQL for OLTP" --mode quality
 muffin research "How do I set up pgvector?" --task-type how_to --mode quality
+
+# Trading decision pipeline (Bull/Bear debate -> Judge -> Trader -> risk debate -> PM)
+muffin decide AAPL --narrative "Bull thesis: durable services growth..."
+muffin decide AAPL --analysis-json state.json --query "long-term hold"
+muffin decide AAPL --analysis-json - < state.json   # read from stdin
+muffin decide AAPL --narrative "..." --no-reflection --decision-date 2026-05-17
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"
