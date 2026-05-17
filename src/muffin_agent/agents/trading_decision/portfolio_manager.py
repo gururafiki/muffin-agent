@@ -31,6 +31,7 @@ async def create_portfolio_manager_agent(
     investment_judge: dict,
     trader: dict,
     risk_debate_history: str,
+    past_reflections: str = "",
 ) -> CompiledStateGraph:
     """Build the Portfolio Manager.
 
@@ -44,6 +45,10 @@ async def create_portfolio_manager_agent(
         trader: ``TraderOutput.model_dump()`` — the operational proposal
             the risk debate stress-tested.
         risk_debate_history: Full 3-way risk debate transcript.
+        past_reflections: Pre-rendered Markdown block of past same-ticker
+            and cross-ticker reflections (from ``ReflectionMemory`` +
+            ``render_reflections_block``). Empty string skips the block
+            entirely via Jinja conditional.
     """
     configuration = ModelConfiguration.from_runnable_config(config)
     primary, *fallbacks = configuration.get_llm_for_role("reasoner")
@@ -56,6 +61,7 @@ async def create_portfolio_manager_agent(
         investment_judge=investment_judge,
         trader=trader,
         risk_debate_history=risk_debate_history,
+        past_reflections=past_reflections,
         **context_vars,
     )
 

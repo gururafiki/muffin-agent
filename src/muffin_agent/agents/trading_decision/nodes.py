@@ -21,7 +21,9 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.store.base import BaseStore
 
+from ...utils.memory_config import MemoryConfiguration
 from .conditional_logic import (
     AGGRESSIVE_TAG,
     BEAR_TAG,
@@ -30,6 +32,13 @@ from .conditional_logic import (
     NEUTRAL_TAG,
 )
 from .portfolio_manager import create_portfolio_manager_agent
+from .reflection import (
+    OutcomesFetcher,
+    ReflectionMemory,
+    fetch_outcomes_openbb,
+    generate_reflection,
+    render_reflections_block,
+)
 from .researchers import (
     create_bear_researcher_agent,
     create_bull_researcher_agent,
@@ -528,8 +537,7 @@ async def portfolio_manager_node(
         "rating": "hold",
         "executive_summary": "Portfolio Manager skipped: upstream outputs missing.",
         "investment_thesis": (
-            "No actionable thesis — Judge or Trader did not produce structured "
-            "output."
+            "No actionable thesis — Judge or Trader did not produce structured output."
         ),
         "time_horizon": "n/a",
         "position_sizing": "0% of NAV",
@@ -553,6 +561,8 @@ async def portfolio_manager_node(
             }
         }
 
+    past_reflections = str(state.get("past_reflections") or "")
+
     agent = await create_portfolio_manager_agent(
         config,
         ticker=ctx.ticker,
@@ -561,6 +571,7 @@ async def portfolio_manager_node(
         investment_judge=judge,
         trader=trader,
         risk_debate_history=debate["history"],
+        past_reflections=past_reflections,
     )
 
     try:
@@ -616,3 +627,203 @@ async def portfolio_manager_node(
         "portfolio_decision": payload,
         "risk_debate": risk_update,
     }
+
+
+# ── PR 4: Reflection memory nodes ────────────────────────────────────────────
+
+
+def _resolve_user_id(config: RunnableConfig) -> str | None:
+    """Return the active per-user namespace key, or ``None`` if unresolvable.
+
+    Checks (in order): ``configurable.user_id``, then
+    :envvar:`MEMORY_DEBUG_USER_ID` via :class:`MemoryConfiguration`. Unlike
+    :func:`utils.backends._memories_namespace`, this returns ``None`` rather
+    than raising so the trading-decision pipeline can degrade gracefully
+    when memory is unavailable.
+    """
+    configurable = dict(config.get("configurable") or {})
+    user_id = configurable.get("user_id")
+    if isinstance(user_id, str) and user_id:
+        return user_id
+    try:
+        debug = MemoryConfiguration.from_runnable_config(config).memory_debug_user_id
+    except Exception:
+        return None
+    return debug or None
+
+
+def _resolve_decision_date(config: RunnableConfig, state: TradingDecisionState) -> str:
+    """Return the date this decision is being made on (``YYYY-MM-DD``).
+
+    Priority: state["decision_date"] (set by a prior node) → configurable
+    override → today UTC. Pinned via ``configurable.decision_date`` in
+    tests so the writeback key is deterministic.
+    """
+    existing = state.get("decision_date")
+    if isinstance(existing, str) and existing:
+        return existing
+    configurable = dict(config.get("configurable") or {})
+    override = configurable.get("decision_date")
+    if isinstance(override, str) and override:
+        return override
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def _reflection_disabled(config: RunnableConfig) -> bool:
+    """Return True when ``configurable.reflection_enabled`` was set to False."""
+    configurable = dict(config.get("configurable") or {})
+    return configurable.get("reflection_enabled") is False
+
+
+def _reflection_knobs(config: RunnableConfig) -> dict[str, Any]:
+    """Return per-run tunable knobs for the reflection layer."""
+    configurable = dict(config.get("configurable") or {})
+    return {
+        "holding_days": int(configurable.get("reflection_holding_days", 5)),
+        "benchmark": str(configurable.get("reflection_benchmark", "SPY")),
+        "max_same_ticker": int(configurable.get("reflection_max_same_ticker", 5)),
+        "max_cross_ticker": int(configurable.get("reflection_max_cross_ticker", 3)),
+    }
+
+
+async def reflector_resolve_node(
+    state: TradingDecisionState,
+    config: RunnableConfig,
+    *,
+    store: BaseStore | None = None,
+    outcomes_fetcher: OutcomesFetcher | None = None,
+) -> dict[str, Any]:
+    """Resolve pending decisions and inject past reflections into the prompt.
+
+    Runs at the START of the trading-decision pipeline. Always returns at
+    least a ``decision_date`` update — even when reflection is disabled or
+    the store is unavailable — so downstream nodes have a deterministic
+    date to write back with.
+
+    Steps (gated on store + user_id + reflection_enabled):
+
+    1. For every ``pending`` entry, call the outcomes fetcher. If it
+       returns ``None``, leave the entry pending (try again next run).
+    2. For resolved entries, call the Reflector LLM to produce a 2–4
+       sentence reflection and persist it.
+    3. Render the latest *N* same-ticker + *M* cross-ticker reflections
+       as a Markdown block and write to ``state["past_reflections"]``.
+    """
+    ctx = _context(state)
+    decision_date = _resolve_decision_date(config, state)
+    base_update: dict[str, Any] = {
+        "decision_date": decision_date,
+        "past_reflections": "",
+        "resolved_decisions": [],
+    }
+
+    if _reflection_disabled(config) or store is None:
+        return base_update
+
+    user_id = _resolve_user_id(config)
+    if user_id is None:
+        return base_update
+
+    try:
+        memory = ReflectionMemory(store, user_id)
+    except ValueError:
+        return base_update
+
+    fetcher: OutcomesFetcher = outcomes_fetcher or fetch_outcomes_openbb
+    knobs = _reflection_knobs(config)
+
+    pending = await memory.list_pending()
+    resolved_records: list[dict[str, Any]] = []
+    for record in pending:
+        try:
+            outcome = await fetcher(
+                config=config,
+                ticker=record.ticker,
+                decision_date=record.date,
+                holding_days=knobs["holding_days"],
+                benchmark=knobs["benchmark"],
+                decision_action=record.decision.get("rating"),
+            )
+        except Exception:
+            logger.exception(
+                "Outcomes fetcher raised for %s/%s — leaving pending",
+                record.ticker,
+                record.date,
+            )
+            continue
+        if outcome is None:
+            continue
+        reflection = await generate_reflection(
+            config=config,
+            ticker=record.ticker,
+            decision_date=record.date,
+            decision=record.decision,
+            outcome=outcome.model_dump(),
+        )
+        await memory.resolve(
+            ticker=record.ticker,
+            date=record.date,
+            outcome=outcome,
+            reflection=reflection,
+        )
+        resolved_records.append(
+            {
+                "ticker": record.ticker,
+                "date": record.date,
+                "outcome": outcome.model_dump(),
+                "reflection": reflection,
+            }
+        )
+
+    same_ticker = await memory.list_resolved_for_ticker(
+        ctx.ticker, limit=knobs["max_same_ticker"]
+    )
+    cross_ticker = await memory.list_resolved_cross_ticker(
+        exclude_ticker=ctx.ticker, limit=knobs["max_cross_ticker"]
+    )
+    block = render_reflections_block(same_ticker=same_ticker, cross_ticker=cross_ticker)
+
+    return {
+        "decision_date": decision_date,
+        "past_reflections": block,
+        "resolved_decisions": resolved_records,
+    }
+
+
+async def decision_writeback_node(
+    state: TradingDecisionState,
+    config: RunnableConfig,
+    *,
+    store: BaseStore | None = None,
+) -> dict[str, Any]:
+    """Persist this run's Portfolio Manager decision as a pending entry.
+
+    Runs at the END of the trading-decision pipeline. Idempotent — writes
+    overwrite any prior entry with the same (ticker, date) key. Skips
+    when:
+
+    * Reflection is disabled.
+    * The store is not configured.
+    * No ``user_id`` is resolvable.
+    * The decision payload carries an ``error`` key (nothing useful to
+      learn from).
+    """
+    if _reflection_disabled(config) or store is None:
+        return {}
+    user_id = _resolve_user_id(config)
+    if user_id is None:
+        return {}
+    decision: Any = state.get("portfolio_decision")
+    if not isinstance(decision, dict) or "error" in decision:
+        return {}
+
+    ctx = _context(state)
+    decision_date = _resolve_decision_date(config, state)
+    try:
+        memory = ReflectionMemory(store, user_id)
+    except ValueError:
+        return {}
+    await memory.write_pending(ticker=ctx.ticker, date=decision_date, decision=decision)
+    return {}

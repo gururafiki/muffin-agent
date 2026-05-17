@@ -44,7 +44,13 @@ Pick exactly one of:
 ### Risk debate transcript
 {{ risk_debate_history }}
 
-### Analysis context (evidence base)
+{% if past_reflections %}### Past lessons (from the reflection log)
+
+The reflection log below lists past trading decisions with their realised outcomes and your prior reflections on them. Treat the same-ticker block as primary — it shows what actually worked for this ticker. Reference one or two of these directly in your ``investment_thesis`` when they bear on the current call, and set ``incorporates_past_lessons`` to ``true``. Cross-ticker entries are for general pattern recognition; cite them only when the parallel is strong.
+
+{{ past_reflections }}
+
+{% endif %}### Analysis context (evidence base)
 
 {% if market_regime %}**Market regime**: {{ market_regime | tojson(indent=2) }}
 
@@ -67,4 +73,4 @@ Pick exactly one of:
 {% endif %}
 ## Your task
 
-Return a complete ``PortfolioDecisionOutput`` via the structured-output tool. ``incorporates_past_lessons`` stays ``false`` until the reflection-memory PR wires past lessons into this prompt.
+Return a complete ``PortfolioDecisionOutput`` via the structured-output tool. Set ``incorporates_past_lessons = true`` only when you actually referenced an entry from the past-lessons block above; ``false`` otherwise.

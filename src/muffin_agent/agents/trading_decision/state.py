@@ -132,3 +132,20 @@ class TradingDecisionState(TypedDict, total=False):
     portfolio_decision: dict
     """``PortfolioDecisionOutput.model_dump()`` or an error fallback dict.
     This is the canonical final artifact of the trading-decision pipeline."""
+
+    # ── Reflection memory (PR 4) ─────────────────────────────────────────────
+    past_reflections: str
+    """Pre-formatted Markdown block of past same-ticker and cross-ticker
+    reflections, populated by ``reflector_resolve_node`` and injected into
+    the Portfolio Manager prompt. Empty string when no resolved reflections
+    are available (cold start, reflection disabled, store unavailable)."""
+
+    decision_date: str
+    """The ``YYYY-MM-DD`` date this decision is being made on. Defaults to
+    today (UTC) when ``reflector_resolve_node`` runs. Carried through state
+    so ``decision_writeback_node`` can use the same key as the resolver."""
+
+    resolved_decisions: list[dict]
+    """List of ``DecisionRecord.model_dump()`` payloads that
+    ``reflector_resolve_node`` resolved this run (for observability /
+    logging — not a load-bearing field)."""

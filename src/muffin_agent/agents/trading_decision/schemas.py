@@ -242,6 +242,64 @@ class PortfolioDecisionOutput(BaseModel):
     analysis context's confidence fields."""
 
     incorporates_past_lessons: bool = False
-    """Set ``True`` once PR 4 wires the past-reflections injection and the
-    Portfolio Manager actually references them in ``investment_thesis``.
-    Until then this stays ``False``."""
+    """Set ``True`` when the Portfolio Manager prompt was given past
+    reflections via the reflection-memory pipeline AND the PM actually
+    referenced them in ``investment_thesis``. The agent decides — the
+    presence of context doesn't force the flag."""
+
+
+# ── PR 4: Reflection memory schemas ──────────────────────────────────────────
+
+
+class Outcome(BaseModel):
+    """Realised price-performance outcome for a past decision.
+
+    Computed by ``fetch_outcomes`` from price data over the holding window
+    that began on the decision date. Used by the Reflector LLM to grade the
+    decision and by future Portfolio Manager prompts to learn from realised
+    rather than predicted returns.
+    """
+
+    raw_return_pct: float
+    """Total return over the holding window, in percent (e.g. ``5.3``)."""
+
+    alpha_return_pct: float
+    """Return in excess of the benchmark over the same window, in percent."""
+
+    holding_days: int = Field(ge=1)
+    """Actual trading days realised. May be less than requested when the
+    benchmark or the ticker has insufficient data near ``decision_date``."""
+
+    benchmark: str = "SPY"
+    """Ticker symbol used for the alpha computation."""
+
+    decision_action: str | None = None
+    """The ``PortfolioDecisionOutput.rating`` at decision time. Carried here
+    so the Reflector can see direction without needing the original decision
+    payload."""
+
+
+class DecisionRecord(BaseModel):
+    """A single decision lifecycle entry in the reflection memory store.
+
+    Created in the ``pending`` state at the end of every trading-decision
+    run; transitioned to ``resolved`` on the next same-ticker run once
+    ``fetch_outcomes`` returns a real outcome and the Reflector LLM produces
+    a 2–4 sentence reflection.
+    """
+
+    ticker: str
+    date: str
+    """Decision date in ``YYYY-MM-DD`` format. Forms the storage key
+    together with ``ticker``."""
+
+    status: Literal["pending", "resolved"]
+    decision: dict[str, Any]
+    """``PortfolioDecisionOutput.model_dump()`` snapshot at decision time."""
+
+    outcome: Outcome | None = None
+    """``Outcome.model_dump()`` once resolved; ``None`` while pending."""
+
+    reflection: str | None = None
+    """2–4 sentence prose reflection produced by the Reflector LLM. ``None``
+    while pending."""
