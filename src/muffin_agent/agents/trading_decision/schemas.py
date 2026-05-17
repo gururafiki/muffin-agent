@@ -99,6 +99,64 @@ class AnalysisContext(BaseModel):
             additional_context=extras,
         )
 
+    @classmethod
+    def from_investment_analysis_state(
+        cls,
+        state: dict[str, Any],
+        *,
+        ticker: str | None = None,
+        query: str | None = None,
+        narrative: str | None = None,
+    ) -> AnalysisContext:
+        """Build a context from a ``TickerAnalysisState`` dict.
+
+        Maps the six structured outputs of ``build_investment_analysis_graph``
+        (``market_regime``, ``sector_view``, ``company_analysis``,
+        ``forecast``, ``risk_assessment``, ``valuation``) onto the
+        equivalent ``AnalysisContext`` fields. Missing keys are silently
+        dropped to ``None`` so the adapter works on partial states
+        (e.g. when the upstream pipeline interrupted before
+        ``thesis_synthesis``).
+
+        Args:
+            state: A dict shaped like ``TickerAnalysisState`` — typically
+                produced by ``build_investment_analysis_graph().ainvoke(...)``
+                or its JSON-serialised equivalent on disk.
+            ticker: Override the ticker read from ``state["ticker"]``.
+                Required only when *state* lacks a ticker key (unusual).
+            query: Override the query read from ``state["query"]``. Useful
+                when composing a sub-pipeline whose query should differ.
+            narrative: Optional free-form notes appended alongside the
+                structured fields. Lets callers mix upstream analysis with
+                ad-hoc context in a single envelope.
+
+        Raises:
+            ValueError: When neither *state* nor *ticker* provides a ticker.
+        """
+        resolved_ticker = ticker if ticker is not None else state.get("ticker")
+        if not isinstance(resolved_ticker, str) or not resolved_ticker:
+            raise ValueError(
+                "from_investment_analysis_state requires a non-empty ticker "
+                "(either in state['ticker'] or as the `ticker=` kwarg)."
+            )
+
+        def _section(key: str) -> dict[str, Any] | None:
+            value = state.get(key)
+            return value if isinstance(value, dict) and value else None
+
+        return cls(
+            ticker=resolved_ticker,
+            query=query if query is not None else state.get("query"),
+            market_regime=_section("market_regime"),
+            sector_view=_section("sector_view"),
+            company_analysis=_section("company_analysis"),
+            forecast=_section("forecast"),
+            risk_assessment=_section("risk_assessment"),
+            valuation=_section("valuation"),
+            narrative=narrative,
+            additional_context={},
+        )
+
 
 # ── PR 1 output schemas ───────────────────────────────────────────────────────
 

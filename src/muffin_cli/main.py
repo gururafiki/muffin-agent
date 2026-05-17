@@ -1124,9 +1124,58 @@ def research(
     asyncio.run(_run_research(query, mode, sources_list, task_type, user, thread))
 
 
+def _load_analysis_json(path: str) -> dict:
+    """Load and parse a JSON analysis-state file (or stdin when ``path == "-"``)."""
+    import json as _json
+    import sys
+
+    if path == "-":
+        raw = sys.stdin.read()
+    else:
+        from pathlib import Path
+
+        raw = Path(path).read_text(encoding="utf-8")
+    parsed = _json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise typer.BadParameter(
+            f"--analysis-json must contain a JSON object, got {type(parsed).__name__}."
+        )
+    return parsed
+
+
+def _build_decide_context(
+    ticker: str,
+    narrative: str | None,
+    analysis_json: str | None,
+    query: str | None,
+):
+    """Build the ``AnalysisContext`` for ``muffin decide`` from CLI inputs.
+
+    Resolves the two mutually-exclusive input modes:
+
+    * ``--analysis-json <path|->`` — upstream ``TickerAnalysisState`` JSON
+      (file or stdin); optionally supplemented by ``--narrative`` notes
+      appended into the same context.
+    * ``--narrative "..."`` — free-form research notes only.
+    """
+    from muffin_agent.agents.trading_decision import AnalysisContext
+
+    if analysis_json is not None:
+        state = _load_analysis_json(analysis_json)
+        return AnalysisContext.from_investment_analysis_state(
+            state, ticker=ticker, query=query, narrative=narrative
+        )
+    if narrative is None:
+        raise typer.BadParameter(
+            "Provide one of --narrative or --analysis-json to seed the context."
+        )
+    return AnalysisContext.from_narrative(ticker, narrative, query=query)
+
+
 async def _run_decide(
     ticker: str,
-    narrative: str,
+    narrative: str | None,
+    analysis_json: str | None,
     query: str | None,
     user: str,
     invest_rounds: int,
@@ -1134,16 +1183,13 @@ async def _run_decide(
     reflection_enabled: bool,
     decision_date: str | None,
 ) -> None:
-    """Run the trading_decision pipeline for a ticker + narrative input."""
+    """Run the trading_decision pipeline for a ticker + analysis context."""
     import json
 
     from langchain_core.runnables import RunnableConfig
     from langgraph.store.memory import InMemoryStore
 
-    from muffin_agent.agents.trading_decision import (
-        AnalysisContext,
-        build_trading_decision_graph,
-    )
+    from muffin_agent.agents.trading_decision import build_trading_decision_graph
     from muffin_agent.utils.observability import setup_tracing
 
     callbacks = setup_tracing(session_id=f"decide-{ticker}")
@@ -1157,7 +1203,7 @@ async def _run_decide(
         store=store,
     )
 
-    context = AnalysisContext.from_narrative(ticker, narrative, query=query)
+    context = _build_decide_context(ticker, narrative, analysis_json, query)
     initial_state: dict = {"analysis_context": context.model_dump()}
 
     configurable: dict = {
@@ -1183,16 +1229,29 @@ async def _run_decide(
 def decide(
     ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
     narrative: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--narrative",
             "-n",
             help=(
-                "Markdown blob of research notes / analysis context. Required in "
-                "PR 4 (the investment_analysis adapter ships in PR 5)."
+                "Free-form Markdown research notes. May be combined with "
+                "--analysis-json to add notes alongside the structured fields. "
+                "One of --narrative or --analysis-json is required."
             ),
         ),
-    ],
+    ] = None,
+    analysis_json: Annotated[
+        str | None,
+        typer.Option(
+            "--analysis-json",
+            help=(
+                "Path to an upstream investment_analysis state JSON (or '-' to "
+                "read from stdin). Mapped onto AnalysisContext via "
+                "from_investment_analysis_state(). Combine with --narrative "
+                "to layer free-form notes onto the structured fields."
+            ),
+        ),
+    ] = None,
     query: Annotated[
         str | None,
         typer.Option("--query", "-q", help="Investment mandate / analysis focus"),
@@ -1250,6 +1309,15 @@ def decide(
       6. Portfolio Manager — canonical 5-tier decision
       7. decision_writeback — persist as pending for future reflection
 
+    Input modes (one of --narrative or --analysis-json is required):
+
+      muffin decide AAPL --narrative "Apple is well-positioned for AI..."
+
+      muffin decide AAPL --analysis-json state.json --query "long-term hold"
+
+      # Combine: structured pipeline output + ad-hoc notes
+      muffin decide AAPL --analysis-json state.json --narrative "Add'l context..."
+
     Reflection memory uses an in-process InMemoryStore in the CLI today
     so prior decisions are not persisted across invocations. Wire a
     PostgresStore (or run on LangGraph Platform) for cross-session
@@ -1259,6 +1327,7 @@ def decide(
         _run_decide(
             ticker,
             narrative,
+            analysis_json,
             query,
             user,
             invest_rounds,
