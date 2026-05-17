@@ -178,8 +178,18 @@
 - [ ] Develop Specialized Prediction Market Analysis Agent
 - [ ] Develop Specialized Strategic & Growth Agent
 - [ ] Develop Specialized Competitive Analysis Agent
-- [ ] Explore agents from https://github.com/TauricResearch/TradingAgents
 - [ ] Explore agents from https://github.com/virattt/ai-hedge-fund
+
+### TradingAgents port — `agents/trading_decision/`
+
+Composable building blocks from [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Designed as a standalone module that accepts a generic `AnalysisContext`, decoupled from muffin's `investment_analysis` pipeline.
+
+- [x] **PR 1 — Investment debate spine.** Bull Researcher + Bear Researcher + Investment Judge synthesis. `build_investment_debate_graph` + `AnalysisContext` envelope + `InvestmentJudgeOutput` schema + speaker-tag debate routing (default 2 rounds = 4 turns, tunable via `configurable.max_investment_debate_rounds`).
+- [ ] **PR 2 — Trader agent.** `TraderOutput` (action / entry_price / stop_loss / take_profit / position_sizing / time_horizon / reasoning). Translates the Judge's signal into operational instructions. Chains Judge → Trader.
+- [ ] **PR 3 — Risk debate + Portfolio Manager.** Aggressive / Conservative / Neutral round-robin (default 1 round = 3 turns) → Portfolio Manager producing canonical `PortfolioDecisionOutput` (5-tier rating, price target, time horizon, position sizing, key risks remaining). Exposes `build_trading_decision_graph` (the full pipeline).
+- [ ] **PR 4 — CLI command + reflection memory.** `muffin decide <TICKER>` (initially `--narrative` only). Outcome-driven reflection: per-user `/memories/decisions/<ticker>/<date>.json` storage, OpenBB-fetched realised returns + alpha vs SPY, Reflector LLM produces 2–4 sentence reflection, injected into future Portfolio Manager prompts (up to 5 same-ticker + 3 cross-ticker).
+- [ ] **PR 5 — Adapter for investment_analysis.** `AnalysisContext.from_investment_analysis_state(state)` + `muffin decide --from-analysis` flag that pipes `muffin analyze` output into the trading decision pipeline.
+- [ ] **PR 6 — Docs + composition examples.** Update README / docs / launch configs. Document composition patterns (standalone, with `investment_analysis`, with `criteria_analysis`, with external research).
 
 ### Research Agent — follow-ups
 
