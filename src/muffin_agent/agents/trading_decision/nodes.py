@@ -22,14 +22,31 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 
-from .conditional_logic import BEAR_TAG, BULL_TAG
+from .conditional_logic import (
+    AGGRESSIVE_TAG,
+    BEAR_TAG,
+    BULL_TAG,
+    CONSERVATIVE_TAG,
+    NEUTRAL_TAG,
+)
+from .portfolio_manager import create_portfolio_manager_agent
 from .researchers import (
     create_bear_researcher_agent,
     create_bull_researcher_agent,
     create_investment_judge_agent,
 )
-from .schemas import AnalysisContext, InvestmentJudgeOutput, TraderOutput
-from .state import InvestmentDebateState, TradingDecisionState
+from .risk_debate import (
+    create_aggressive_debator_agent,
+    create_conservative_debator_agent,
+    create_neutral_debator_agent,
+)
+from .schemas import (
+    AnalysisContext,
+    InvestmentJudgeOutput,
+    PortfolioDecisionOutput,
+    TraderOutput,
+)
+from .state import InvestmentDebateState, RiskDebateState, TradingDecisionState
 from .trader import create_trader_agent
 
 logger = logging.getLogger(__name__)
@@ -39,6 +56,7 @@ logger = logging.getLogger(__name__)
 _TRIGGER = "Make your argument now."
 _JUDGE_TRIGGER = "Synthesise the debate now."
 _TRADER_TRIGGER = "Produce the trade instruction now."
+_PORTFOLIO_MANAGER_TRIGGER = "Produce the portfolio decision now."
 
 
 def _context(state: TradingDecisionState) -> AnalysisContext:
@@ -72,6 +90,45 @@ def _debate(state: TradingDecisionState) -> InvestmentDebateState:
         judge_decision=str(raw.get("judge_decision", "")),
         count=int(raw.get("count", 0)),
     )
+
+
+def _risk_debate(state: TradingDecisionState) -> RiskDebateState:
+    """Return the current risk-debate sub-state, defaulting empty."""
+    raw: dict[str, Any] = dict(state.get("risk_debate") or {})
+    return RiskDebateState(
+        history=str(raw.get("history", "")),
+        aggressive_history=str(raw.get("aggressive_history", "")),
+        conservative_history=str(raw.get("conservative_history", "")),
+        neutral_history=str(raw.get("neutral_history", "")),
+        current_aggressive_response=str(raw.get("current_aggressive_response", "")),
+        current_conservative_response=str(raw.get("current_conservative_response", "")),
+        current_neutral_response=str(raw.get("current_neutral_response", "")),
+        latest_speaker=raw.get("latest_speaker", ""),
+        judge_decision=str(raw.get("judge_decision", "")),
+        count=int(raw.get("count", 0)),
+    )
+
+
+def _last_opposing_argument(debate: RiskDebateState, exclude_role: str) -> str:
+    """Return the most recent opposing argument from a risk debater's perspective.
+
+    ``exclude_role`` is the current speaker's role ("aggressive" /
+    "conservative" / "neutral"); we return whichever of the other two
+    spoke most recently based on ``latest_speaker``.
+    """
+    latest = str(debate.get("latest_speaker") or "")
+    if not latest or latest == "Portfolio Manager":
+        return ""
+    role = latest.lower()
+    if role == exclude_role:
+        return ""
+    if role == "aggressive":
+        return debate.get("current_aggressive_response", "")
+    if role == "conservative":
+        return debate.get("current_conservative_response", "")
+    if role == "neutral":
+        return debate.get("current_neutral_response", "")
+    return ""
 
 
 def _extract_text(result: Any) -> str:
@@ -297,3 +354,265 @@ async def trader_node(
         }
 
     return {"trader": payload}
+
+
+# ── PR 3: Risk Debate + Portfolio Manager ────────────────────────────────────
+
+
+def _ensure_judge_and_trader(
+    state: TradingDecisionState,
+) -> tuple[dict | None, dict | None]:
+    """Pull validated judge and trader payloads, or ``(None, None)`` if missing."""
+    judge: Any = state.get("investment_judge")
+    trader: Any = state.get("trader")
+    if not isinstance(judge, dict) or _is_error_payload(judge):
+        return None, None
+    if not isinstance(trader, dict) or _is_error_payload(trader):
+        return None, None
+    return judge, trader
+
+
+def _risk_debate_skip_update(role_tag: str, debate: RiskDebateState) -> RiskDebateState:
+    """Build a debate update for a skipped risk-debater turn (judge/trader missing)."""
+    argument = f"{role_tag} (skipped — Investment Judge or Trader output unavailable.)"
+    speaker_label = role_tag.split(" ")[0]  # "Aggressive" / "Conservative" / "Neutral"
+    field_map = {
+        "Aggressive": "current_aggressive_response",
+        "Conservative": "current_conservative_response",
+        "Neutral": "current_neutral_response",
+    }
+    history_map = {
+        "Aggressive": "aggressive_history",
+        "Conservative": "conservative_history",
+        "Neutral": "neutral_history",
+    }
+    update: RiskDebateState = {
+        "history": (debate["history"] + "\n\n" + argument).strip(),
+        "aggressive_history": debate["aggressive_history"],
+        "conservative_history": debate["conservative_history"],
+        "neutral_history": debate["neutral_history"],
+        "current_aggressive_response": debate["current_aggressive_response"],
+        "current_conservative_response": debate["current_conservative_response"],
+        "current_neutral_response": debate["current_neutral_response"],
+        "latest_speaker": speaker_label,  # type: ignore[typeddict-item]
+        "judge_decision": debate["judge_decision"],
+        "count": debate["count"] + 1,
+    }
+    update[history_map[speaker_label]] = (  # type: ignore[literal-required]
+        debate[history_map[speaker_label]] + "\n\n" + argument  # type: ignore[literal-required]
+    ).strip()
+    update[field_map[speaker_label]] = argument  # type: ignore[literal-required]
+    return update
+
+
+async def _run_risk_debator(
+    *,
+    state: TradingDecisionState,
+    config: RunnableConfig,
+    role: str,
+    tag: str,
+    factory,
+) -> dict[str, Any]:
+    """Shared body for the three risk-debate node wrappers.
+
+    Factored out because Aggressive / Conservative / Neutral have identical
+    structure — only the prompt template, speaker tag, and history field
+    differ.
+    """
+    ctx = _context(state)
+    debate = _risk_debate(state)
+    judge, trader = _ensure_judge_and_trader(state)
+
+    if judge is None or trader is None:
+        return {"risk_debate": _risk_debate_skip_update(tag, debate)}
+
+    agent = await factory(
+        config,
+        ticker=ctx.ticker,
+        query=ctx.query,
+        context_vars=_context_vars(ctx),
+        investment_judge=judge,
+        trader=trader,
+        debate_history=debate["history"],
+        opposing_last=_last_opposing_argument(debate, exclude_role=role),
+    )
+
+    try:
+        result = await agent.ainvoke({"messages": [HumanMessage(_TRIGGER)]})
+    except Exception:
+        logger.exception("%s_debator_node failed", role)
+        argument = f"{tag} (failed to produce an argument this turn.)"
+    else:
+        text = _extract_text(result) or "(empty argument)"
+        argument = f"{tag} {text}"
+
+    speaker_label = role.capitalize()
+    field_map = {
+        "aggressive": "current_aggressive_response",
+        "conservative": "current_conservative_response",
+        "neutral": "current_neutral_response",
+    }
+    history_map = {
+        "aggressive": "aggressive_history",
+        "conservative": "conservative_history",
+        "neutral": "neutral_history",
+    }
+
+    update: RiskDebateState = {
+        "history": (debate["history"] + "\n\n" + argument).strip(),
+        "aggressive_history": debate["aggressive_history"],
+        "conservative_history": debate["conservative_history"],
+        "neutral_history": debate["neutral_history"],
+        "current_aggressive_response": debate["current_aggressive_response"],
+        "current_conservative_response": debate["current_conservative_response"],
+        "current_neutral_response": debate["current_neutral_response"],
+        "latest_speaker": speaker_label,  # type: ignore[typeddict-item]
+        "judge_decision": debate["judge_decision"],
+        "count": debate["count"] + 1,
+    }
+    update[history_map[role]] = (  # type: ignore[literal-required]
+        debate[history_map[role]] + "\n\n" + argument  # type: ignore[literal-required]
+    ).strip()
+    update[field_map[role]] = argument  # type: ignore[literal-required]
+    return {"risk_debate": update}
+
+
+async def aggressive_debator_node(
+    state: TradingDecisionState, config: RunnableConfig
+) -> dict[str, Any]:
+    """Run one Aggressive Risk Debator turn."""
+    return await _run_risk_debator(
+        state=state,
+        config=config,
+        role="aggressive",
+        tag=AGGRESSIVE_TAG,
+        factory=create_aggressive_debator_agent,
+    )
+
+
+async def conservative_debator_node(
+    state: TradingDecisionState, config: RunnableConfig
+) -> dict[str, Any]:
+    """Run one Conservative Risk Debator turn."""
+    return await _run_risk_debator(
+        state=state,
+        config=config,
+        role="conservative",
+        tag=CONSERVATIVE_TAG,
+        factory=create_conservative_debator_agent,
+    )
+
+
+async def neutral_debator_node(
+    state: TradingDecisionState, config: RunnableConfig
+) -> dict[str, Any]:
+    """Run one Neutral Risk Debator turn."""
+    return await _run_risk_debator(
+        state=state,
+        config=config,
+        role="neutral",
+        tag=NEUTRAL_TAG,
+        factory=create_neutral_debator_agent,
+    )
+
+
+async def portfolio_manager_node(
+    state: TradingDecisionState, config: RunnableConfig
+) -> dict[str, Any]:
+    """Synthesise judge + trader + risk-debate into the canonical decision."""
+    ctx = _context(state)
+    debate = _risk_debate(state)
+    judge, trader = _ensure_judge_and_trader(state)
+
+    fallback: dict[str, Any] = {
+        "rating": "hold",
+        "executive_summary": "Portfolio Manager skipped: upstream outputs missing.",
+        "investment_thesis": (
+            "No actionable thesis — Judge or Trader did not produce structured "
+            "output."
+        ),
+        "time_horizon": "n/a",
+        "position_sizing": "0% of NAV",
+        "key_risks_remaining": [],
+        "confidence": 0.0,
+        "incorporates_past_lessons": False,
+    }
+
+    if judge is None or trader is None:
+        return {
+            "portfolio_decision": {
+                **fallback,
+                "error": "Missing or errored Investment Judge / Trader output.",
+            }
+        }
+    if not debate["history"].strip():
+        return {
+            "portfolio_decision": {
+                **fallback,
+                "error": "No risk debate transcript to synthesise.",
+            }
+        }
+
+    agent = await create_portfolio_manager_agent(
+        config,
+        ticker=ctx.ticker,
+        query=ctx.query,
+        context_vars=_context_vars(ctx),
+        investment_judge=judge,
+        trader=trader,
+        risk_debate_history=debate["history"],
+    )
+
+    try:
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(_PORTFOLIO_MANAGER_TRIGGER)]}
+        )
+    except Exception:
+        logger.exception("portfolio_manager_node failed")
+        return {
+            "portfolio_decision": {
+                **fallback,
+                "error": "Portfolio Manager agent raised.",
+            }
+        }
+
+    structured = result.get("structured_response") if isinstance(result, dict) else None
+    if isinstance(structured, PortfolioDecisionOutput):
+        payload = structured.model_dump()
+    elif structured is not None:
+        try:
+            payload = PortfolioDecisionOutput.model_validate(structured).model_dump()
+        except Exception:
+            logger.exception("portfolio_manager structured response did not validate")
+            return {
+                "portfolio_decision": {
+                    **fallback,
+                    "error": "Portfolio Manager response failed validation.",
+                }
+            }
+    else:
+        raw = _extract_text(result)
+        return {
+            "portfolio_decision": {
+                **fallback,
+                "error": "Portfolio Manager did not produce structured output.",
+                "raw_output": raw,
+            }
+        }
+
+    risk_update: RiskDebateState = {
+        "history": debate["history"],
+        "aggressive_history": debate["aggressive_history"],
+        "conservative_history": debate["conservative_history"],
+        "neutral_history": debate["neutral_history"],
+        "current_aggressive_response": debate["current_aggressive_response"],
+        "current_conservative_response": debate["current_conservative_response"],
+        "current_neutral_response": debate["current_neutral_response"],
+        "latest_speaker": "Portfolio Manager",
+        "judge_decision": payload.get("executive_summary", ""),
+        "count": debate["count"],
+    }
+    return {
+        "portfolio_decision": payload,
+        "risk_debate": risk_update,
+    }

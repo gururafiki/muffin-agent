@@ -9,9 +9,9 @@ callers can opt into the depth they need:
 * :func:`build_investment_thesis_graph` (PR 2) — debate → Judge → Trader.
   Adds operational translation (entry / stop / take_profit / sizing /
   time_horizon). The common "thesis + actionable instruction" surface.
-* :func:`build_trading_decision_graph` (PR 3, planned) — thesis → 3-way
-  risk debate → Portfolio Manager. The full pipeline with the canonical
-  5-tier rating.
+* :func:`build_trading_decision_graph` (PR 3) — thesis → 3-way risk
+  debate → Portfolio Manager. The full pipeline with the canonical 5-tier
+  rating, plus per-debater stress-tested operational fields.
 
 All three accept the same ``analysis_context`` input and produce a
 superset of state keys, so swapping deeper for shallower (or vice-versa)
@@ -25,11 +25,18 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 
-from .conditional_logic import should_continue_investment_debate
+from .conditional_logic import (
+    should_continue_investment_debate,
+    should_continue_risk_debate,
+)
 from .nodes import (
+    aggressive_debator_node,
     bear_researcher_node,
     bull_researcher_node,
+    conservative_debator_node,
     investment_judge_node,
+    neutral_debator_node,
+    portfolio_manager_node,
     trader_node,
 )
 from .state import TradingDecisionState
@@ -159,5 +166,111 @@ def build_investment_thesis_graph(
     )
     graph.add_edge("investment_judge", "trader")
     graph.add_edge("trader", END)
+
+    return graph.compile(checkpointer=checkpointer, store=store)
+
+
+def build_trading_decision_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+    store: BaseStore | None = None,
+) -> CompiledStateGraph:
+    """Build the full trading-decision pipeline.
+
+    Extends :func:`build_investment_thesis_graph` with a 3-way risk debate
+    (Aggressive / Conservative / Neutral) and a Portfolio Manager that
+    synthesises the canonical 5-tier rating.
+
+    Topology::
+
+        START → bull_researcher ↔ bear_researcher
+                       │
+                       ▼
+                investment_judge
+                       │
+                       ▼
+                     trader
+                       │
+                       ▼
+        aggressive_debator → conservative_debator → neutral_debator
+                       │         (round-robin via latest_speaker)
+                       ▼
+              portfolio_manager
+                       │
+                       ▼
+                      END
+
+    Output state keys (in addition to those from the thesis graph):
+        * ``risk_debate`` — :class:`RiskDebateState` sub-state.
+        * ``portfolio_decision`` — :class:`PortfolioDecisionOutput` dump or
+          error fallback dict. **Canonical final artifact** of the pipeline.
+    """
+    graph: StateGraph = StateGraph(TradingDecisionState)
+
+    graph.add_node("bull_researcher", bull_researcher_node)
+    graph.add_node("bear_researcher", bear_researcher_node)
+    graph.add_node("investment_judge", investment_judge_node)
+    graph.add_node("trader", trader_node)
+    graph.add_node("aggressive_debator", aggressive_debator_node)
+    graph.add_node("conservative_debator", conservative_debator_node)
+    graph.add_node("neutral_debator", neutral_debator_node)
+    graph.add_node("portfolio_manager", portfolio_manager_node)
+
+    graph.add_edge(START, "bull_researcher")
+    graph.add_conditional_edges(
+        "bull_researcher",
+        should_continue_investment_debate,
+        {
+            "bear_researcher": "bear_researcher",
+            "bull_researcher": "bull_researcher",
+            "investment_judge": "investment_judge",
+        },
+    )
+    graph.add_conditional_edges(
+        "bear_researcher",
+        should_continue_investment_debate,
+        {
+            "bear_researcher": "bear_researcher",
+            "bull_researcher": "bull_researcher",
+            "investment_judge": "investment_judge",
+        },
+    )
+    graph.add_edge("investment_judge", "trader")
+    graph.add_edge("trader", "aggressive_debator")
+
+    # Round-robin: each debater hands off via the same conditional router.
+    # (Inline dict literals — mypy is strict about `dict[str, str]` vs
+    # `dict[Hashable, str]` variance when passed via a shared variable.)
+    graph.add_conditional_edges(
+        "aggressive_debator",
+        should_continue_risk_debate,
+        {
+            "aggressive_debator": "aggressive_debator",
+            "conservative_debator": "conservative_debator",
+            "neutral_debator": "neutral_debator",
+            "portfolio_manager": "portfolio_manager",
+        },
+    )
+    graph.add_conditional_edges(
+        "conservative_debator",
+        should_continue_risk_debate,
+        {
+            "aggressive_debator": "aggressive_debator",
+            "conservative_debator": "conservative_debator",
+            "neutral_debator": "neutral_debator",
+            "portfolio_manager": "portfolio_manager",
+        },
+    )
+    graph.add_conditional_edges(
+        "neutral_debator",
+        should_continue_risk_debate,
+        {
+            "aggressive_debator": "aggressive_debator",
+            "conservative_debator": "conservative_debator",
+            "neutral_debator": "neutral_debator",
+            "portfolio_manager": "portfolio_manager",
+        },
+    )
+
+    graph.add_edge("portfolio_manager", END)
 
     return graph.compile(checkpointer=checkpointer, store=store)

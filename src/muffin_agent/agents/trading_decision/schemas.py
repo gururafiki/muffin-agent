@@ -183,3 +183,65 @@ class TraderOutput(BaseModel):
     time_horizon: str
     """Expected holding period (e.g. ``"3–6 months"``). Anchored to the
     Judge's ``key_catalysts`` and ``monitoring_checklist``."""
+
+
+# ── PR 3 output schemas ───────────────────────────────────────────────────────
+
+
+class PortfolioDecisionOutput(BaseModel):
+    """Final canonical output of the trading-decision pipeline.
+
+    Produced by the Portfolio Manager after the 3-way risk debate. Consumes
+    the Investment Judge's directional thesis, the Trader's operational
+    proposal, and the Aggressive / Conservative / Neutral risk debate
+    transcript. This is the artifact downstream callers (CLI, UI, future
+    reflection memory) should treat as canonical.
+    """
+
+    rating: InvestmentSignal
+    """5-tier rating — consistent with ``InvestmentJudgeOutput.signal`` and
+    ``CriteriaAnalysisSynthesis.signal`` so all muffin pipelines share one
+    rating vocabulary. The Portfolio Manager may revise the Judge's signal
+    based on the risk debate (e.g. downgrade ``strong_buy`` to ``buy`` if
+    Conservative landed a serious objection)."""
+
+    executive_summary: str
+    """2–4 sentences capturing the decision: rating, position size, top-line
+    rationale, and primary risk. Designed to fit a one-line read."""
+
+    investment_thesis: str
+    """Detailed reasoning (4–8 sentences). Cites specific evidence from the
+    Judge, Trader, and risk debate. Optionally references prior reflections
+    when PR 4 wires the reflection-memory injection."""
+
+    price_target: float | None = None
+    """Quote-currency 12-month price target. Anchor to ``valuation`` (DCF
+    base / scenario NAV) and analyst consensus. ``None`` only when the
+    underlying data does not support a specific level."""
+
+    stop_loss: float | None = None
+    """Final stop level. May tighten the Trader's stop if the risk debate
+    surfaced new downside catalysts. ``None`` when ``rating == "hold"`` and
+    no existing position exists."""
+
+    time_horizon: str
+    """Expected holding period (e.g. ``"3–6 months"``)."""
+
+    position_sizing: str
+    """Final sizing instruction (e.g. ``"2% of NAV starter, scale to 4% on
+    Q1 beat"``). May tighten the Trader's sizing if Conservative argued
+    persuasively for smaller position."""
+
+    key_risks_remaining: list[str] = Field(default_factory=list)
+    """Risks the debate identified but the decision still accepts. These
+    are the things that will be monitored, not eliminated."""
+
+    confidence: float = Field(ge=0.0, le=1.0)
+    """Overall confidence in the decision (0.0–1.0). Floored by the lower of
+    the Judge's conviction and the analytical confidence implied by the
+    analysis context's confidence fields."""
+
+    incorporates_past_lessons: bool = False
+    """Set ``True`` once PR 4 wires the past-reflections injection and the
+    Portfolio Manager actually references them in ``investment_thesis``.
+    Until then this stays ``False``."""
