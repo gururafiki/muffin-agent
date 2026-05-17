@@ -1,14 +1,21 @@
-"""Top-level graph builder for the trading_decision module.
+"""Top-level graph builders for the trading_decision module.
 
-PR 1 surface: ``build_investment_debate_graph`` runs the Bull/Bear debate
-to completion and then synthesises with the Investment Judge.
+Three composable graphs share the same ``TradingDecisionState`` schema so
+callers can opt into the depth they need:
 
-PR 3 will add ``build_trading_decision_graph`` that chains:
+* :func:`build_investment_debate_graph` (PR 1) — Bull/Bear debate →
+  Investment Judge. Smallest useful slice when you just want a structured
+  directional view.
+* :func:`build_investment_thesis_graph` (PR 2) — debate → Judge → Trader.
+  Adds operational translation (entry / stop / take_profit / sizing /
+  time_horizon). The common "thesis + actionable instruction" surface.
+* :func:`build_trading_decision_graph` (PR 3, planned) — thesis → 3-way
+  risk debate → Portfolio Manager. The full pipeline with the canonical
+  5-tier rating.
 
-    investment_debate → trader → risk_debate → portfolio_manager
-
-Both graphs share the same ``TradingDecisionState`` schema so callers can
-opt into the shorter or longer pipeline interchangeably.
+All three accept the same ``analysis_context`` input and produce a
+superset of state keys, so swapping deeper for shallower (or vice-versa)
+is a one-line CLI change.
 """
 
 from __future__ import annotations
@@ -19,7 +26,12 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 
 from .conditional_logic import should_continue_investment_debate
-from .nodes import bear_researcher_node, bull_researcher_node, investment_judge_node
+from .nodes import (
+    bear_researcher_node,
+    bull_researcher_node,
+    investment_judge_node,
+    trader_node,
+)
 from .state import TradingDecisionState
 
 
@@ -88,5 +100,64 @@ def build_investment_debate_graph(
         },
     )
     graph.add_edge("investment_judge", END)
+
+    return graph.compile(checkpointer=checkpointer, store=store)
+
+
+def build_investment_thesis_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+    store: BaseStore | None = None,
+) -> CompiledStateGraph:
+    """Build the debate-and-translate sub-graph.
+
+    Extends :func:`build_investment_debate_graph` with a Trader node that
+    converts the Investment Judge's directional view into an executable
+    proposal (action, entry, stop, take-profit, position sizing, time
+    horizon).
+
+    Topology::
+
+        START → bull_researcher ↔ bear_researcher
+                       │
+                       ▼
+                investment_judge
+                       │
+                       ▼
+                     trader
+                       │
+                       ▼
+                      END
+
+    Output state keys (in addition to those from the debate graph):
+        * ``trader`` — :class:`TraderOutput` dump or error fallback dict.
+    """
+    graph: StateGraph = StateGraph(TradingDecisionState)
+
+    graph.add_node("bull_researcher", bull_researcher_node)
+    graph.add_node("bear_researcher", bear_researcher_node)
+    graph.add_node("investment_judge", investment_judge_node)
+    graph.add_node("trader", trader_node)
+
+    graph.add_edge(START, "bull_researcher")
+    graph.add_conditional_edges(
+        "bull_researcher",
+        should_continue_investment_debate,
+        {
+            "bear_researcher": "bear_researcher",
+            "bull_researcher": "bull_researcher",
+            "investment_judge": "investment_judge",
+        },
+    )
+    graph.add_conditional_edges(
+        "bear_researcher",
+        should_continue_investment_debate,
+        {
+            "bear_researcher": "bear_researcher",
+            "bull_researcher": "bull_researcher",
+            "investment_judge": "investment_judge",
+        },
+    )
+    graph.add_edge("investment_judge", "trader")
+    graph.add_edge("trader", END)
 
     return graph.compile(checkpointer=checkpointer, store=store)

@@ -28,8 +28,9 @@ from .researchers import (
     create_bull_researcher_agent,
     create_investment_judge_agent,
 )
-from .schemas import AnalysisContext, InvestmentJudgeOutput
+from .schemas import AnalysisContext, InvestmentJudgeOutput, TraderOutput
 from .state import InvestmentDebateState, TradingDecisionState
+from .trader import create_trader_agent
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 # context, so the human message just unblocks the LLM to produce a reply.
 _TRIGGER = "Make your argument now."
 _JUDGE_TRIGGER = "Synthesise the debate now."
+_TRADER_TRIGGER = "Produce the trade instruction now."
 
 
 def _context(state: TradingDecisionState) -> AnalysisContext:
@@ -230,3 +232,68 @@ async def investment_judge_node(
         "investment_judge": payload,
         "investment_debate": debate_update,
     }
+
+
+def _is_error_payload(payload: Any) -> bool:
+    """Return True if a structured-output payload is an error fallback dict."""
+    return isinstance(payload, dict) and "error" in payload
+
+
+async def trader_node(
+    state: TradingDecisionState, config: RunnableConfig
+) -> dict[str, Any]:
+    """Translate the Investment Judge's signal into an executable instruction.
+
+    Reads ``state["investment_judge"]`` (set by ``investment_judge_node``).
+    Skips the LLM call entirely when the judge produced an error fallback —
+    a Trader call on a missing thesis is just compounding noise.
+    """
+    ctx = _context(state)
+    judge_payload: Any = state.get("investment_judge")
+
+    fallback: dict[str, Any] = {
+        "action": "hold",
+        "position_sizing": "0% of NAV (no actionable thesis)",
+        "time_horizon": "n/a",
+        "reasoning": "Trader skipped: Investment Judge did not produce a valid thesis.",
+    }
+
+    if judge_payload is None or _is_error_payload(judge_payload):
+        return {"trader": {**fallback, "error": "Missing or errored judge output."}}
+
+    agent = await create_trader_agent(
+        config,
+        ticker=ctx.ticker,
+        query=ctx.query,
+        context_vars=_context_vars(ctx),
+        investment_judge=judge_payload,
+    )
+
+    try:
+        result = await agent.ainvoke({"messages": [HumanMessage(_TRADER_TRIGGER)]})
+    except Exception:
+        logger.exception("trader_node failed")
+        return {"trader": {**fallback, "error": "Trader agent raised."}}
+
+    structured = result.get("structured_response") if isinstance(result, dict) else None
+    if isinstance(structured, TraderOutput):
+        payload = structured.model_dump()
+    elif structured is not None:
+        try:
+            payload = TraderOutput.model_validate(structured).model_dump()
+        except Exception:
+            logger.exception("trader structured response did not validate")
+            return {
+                "trader": {**fallback, "error": "Trader response failed validation."}
+            }
+    else:
+        raw = _extract_text(result)
+        return {
+            "trader": {
+                **fallback,
+                "error": "Trader did not produce structured output.",
+                "raw_output": raw,
+            }
+        }
+
+    return {"trader": payload}

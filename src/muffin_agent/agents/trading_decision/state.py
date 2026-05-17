@@ -66,3 +66,7 @@ class TradingDecisionState(TypedDict, total=False):
     investment_debate: InvestmentDebateState
     investment_judge: dict
     """``InvestmentJudgeOutput.model_dump()`` or an error fallback dict."""
+
+    # ── Trader (PR 2) ───────────────────────────────────────────────────────
+    trader: dict
+    """``TraderOutput.model_dump()`` or an error fallback dict."""

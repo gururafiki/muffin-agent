@@ -27,6 +27,14 @@ InvestmentSignal = Literal[
 two pipelines share one rating vocabulary."""
 
 
+TraderAction = Literal["sell", "hold", "buy"]
+"""3-tier execution action. The Trader collapses the 5-tier Judge signal to a
+3-tier directional instruction (strong_buy / buy → ``"buy"``; hold → ``"hold"``;
+sell / strong_sell → ``"sell"``). Magnitude of conviction is expressed through
+``position_sizing`` rather than through the action vocabulary, matching how
+trading desks separate direction from sizing."""
+
+
 # ── Analysis context envelope ─────────────────────────────────────────────────
 
 
@@ -132,3 +140,46 @@ class InvestmentJudgeOutput(BaseModel):
 
     reasoning: str
     """Why this signal and which side won. Cites specific debate points."""
+
+
+# ── PR 2 output schemas ───────────────────────────────────────────────────────
+
+
+class TraderOutput(BaseModel):
+    """Operational translation of the Investment Judge's directional view.
+
+    Consumed downstream by the Risk Debate (PR 3) and ultimately by the
+    Portfolio Manager. Every field is sized and stop-aware — the Trader's
+    job is to turn a thesis into something a desk can act on.
+    """
+
+    action: TraderAction
+    """3-tier instruction. Hold means *no change* — not "small position"."""
+
+    reasoning: str
+    """2–4 sentences justifying the action. Cites the specific Judge fields
+    (signal, conviction, key_catalysts, key_risks) that drove the call."""
+
+    entry_price: float | None = None
+    """Quote-currency entry target. ``None`` when holding, or when a market
+    order is appropriate (e.g. on a strong-conviction directional move with
+    no clear technical level)."""
+
+    stop_loss: float | None = None
+    """Quote-currency stop level for the position. Anchor to the
+    ``risk_assessment.ex_ante_stop_level`` when available, otherwise to a
+    recent swing low (long) or swing high (short). ``None`` when holding."""
+
+    take_profit: float | None = None
+    """Optional quote-currency profit target. Anchor between consensus PT and
+    the relevant scenario NAV from ``forecast`` / ``valuation``. ``None`` if
+    no specific target is warranted (e.g. open-ended trend follow)."""
+
+    position_sizing: str
+    """Concrete sizing instruction (e.g. ``"2–3% of NAV starter, scale to 5%
+    on Q1 earnings beat"``). Plain prose, but always anchored to a percent of
+    NAV. Vague sizes ("medium") are not acceptable."""
+
+    time_horizon: str
+    """Expected holding period (e.g. ``"3–6 months"``). Anchored to the
+    Judge's ``key_catalysts`` and ``monitoring_checklist``."""
