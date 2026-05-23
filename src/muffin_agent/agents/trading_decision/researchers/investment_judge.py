@@ -18,7 +18,13 @@ from ..schemas import InvestmentJudgeOutput
 class InvestmentJudgeInputState(TypedDict, total=False):
     """State keys read by ``investment_judge_node``."""
 
-    analysis_context: dict[str, Any]
+    ticker: str
+    query: str
+    narrative: str
+    market_report: str
+    fundamentals_report: str
+    news_report: str
+    sentiment_report: str
     investment_bull_responses: Annotated[list[str], operator.add]
     investment_bear_responses: Annotated[list[str], operator.add]
 
@@ -33,7 +39,6 @@ async def investment_judge_node(
     state: InvestmentJudgeInputState, config: RunnableConfig
 ) -> InvestmentJudgeOutputState:
     """Synthesise the completed Bull/Bear debate into ``InvestmentJudgeOutput``."""
-    analysis_context = state["analysis_context"]
     bulls = state.get("investment_bull_responses") or []
     bears = state.get("investment_bear_responses") or []
 
@@ -46,17 +51,14 @@ async def investment_judge_node(
 
     prompt = render_template(
         "trading_decision/researchers/investment_judge.jinja",
-        ticker=analysis_context.get("ticker", ""),
-        query=analysis_context.get("query"),
+        ticker=state.get("ticker", ""),
+        query=state.get("query"),
+        narrative=state.get("narrative"),
+        market_report=state.get("market_report"),
+        fundamentals_report=state.get("fundamentals_report"),
+        news_report=state.get("news_report"),
+        sentiment_report=state.get("sentiment_report"),
         debate_history=format_debate_history(bulls, bears),
-        market_regime=analysis_context.get("market_regime"),
-        sector_view=analysis_context.get("sector_view"),
-        company_analysis=analysis_context.get("company_analysis"),
-        forecast=analysis_context.get("forecast"),
-        risk_assessment=analysis_context.get("risk_assessment"),
-        valuation=analysis_context.get("valuation"),
-        narrative=analysis_context.get("narrative"),
-        additional_context=analysis_context.get("additional_context") or {},
     )
 
     result: InvestmentJudgeOutput = await llm.ainvoke(

@@ -3,25 +3,29 @@
 Three composable graphs share the same ``TradingDecisionState`` schema so
 callers can opt into the depth they need:
 
-* :func:`build_investment_debate_graph` — Bull/Bear debate → Investment Judge.
-  Smallest useful slice when you just want a structured directional view.
-* :func:`build_investment_thesis_graph` — debate → Judge → Trader. Adds
-  operational translation (entry/stop/take-profit/sizing/time_horizon).
+* :func:`build_investment_debate_graph` — analysts → Bull/Bear debate →
+  Investment Judge. Smallest useful slice when you just want a
+  structured directional view.
+* :func:`build_investment_thesis_graph` — adds the Trader (operational
+  translation: entry/stop/take-profit/sizing/time_horizon).
 * :func:`build_trading_decision_graph` — full pipeline including the
   reflector_resolve / decision_writeback reflection bookends and the
   3-way risk debate + Portfolio Manager.
 
-All builders share the routing functions in this module; per-node
-behaviour lives in the per-role files (``researchers/``, ``trader.py``,
-``risk_debate/``, ``portfolio_manager.py``, ``reflection/``).
+All builders are **async** because each starts by building four
+compiled analyst ReAct agents (one per perspective: market /
+fundamentals / news / social) that are added directly as parent-graph
+nodes via ``add_node(name, agent, input_schema=agent.input_schema)``.
+The agent build is amortised to graph-construction time; per-call
+invocation is just LLM + tool work.
 
-Routing is **graph-level** — nodes return state-update dicts only, never
-``Command(goto=...)``. Conditional edges (list form) decide next nodes
-based on the accumulated debate-response lists.
+Routing is **graph-level** — non-analyst nodes return state-update
+dicts only, never ``Command(goto=...)``. Conditional edges (list form)
+decide next nodes based on the accumulated debate-response lists.
 
-Retry layering: every LLM-call node carries a ``RetryPolicy`` so LangGraph
-retries the whole node on exception (one layer above LangChain's
-``with_retry`` inside each node).
+Retry layering: every LLM-call node carries a ``RetryPolicy`` so
+LangGraph retries the whole node on exception (one layer above
+LangChain's ``with_retry`` inside each node).
 """
 
 from __future__ import annotations
@@ -36,6 +40,12 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 
+from .analysts import (
+    build_fundamentals_analyst_agent,
+    build_market_analyst_agent,
+    build_news_analyst_agent,
+    build_social_analyst_agent,
+)
 from .config import TradingDecisionConfiguration
 from .portfolio_manager import portfolio_manager_node
 from .reflection import (
@@ -59,6 +69,13 @@ from .trader import trader_node
 # Standard retry for every LLM-call node. Second layer on top of
 # LangChain's ``with_retry`` inside each node body.
 _LLM_RETRY = RetryPolicy(max_attempts=2)
+
+_ANALYST_NAMES: tuple[str, str, str, str] = (
+    "market_analyst",
+    "fundamentals_analyst",
+    "news_analyst",
+    "social_analyst",
+)
 
 
 # ── Routing ───────────────────────────────────────────────────────────────────
@@ -124,22 +141,84 @@ _RISK_DEBATE_TARGETS: list[str] = [
 ]
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+async def _add_analyst_nodes(
+    graph: StateGraph, config: RunnableConfig
+) -> None:
+    """Build the 4 analyst ReAct agents and add them as parent-graph nodes.
+
+    Each analyst is a compiled ReAct agent with a custom ``AgentState``
+    extension that declares shared keys with ``TradingDecisionState``
+    (``ticker``, ``decision_date``, ``<role>_report``) via
+    ``OmitFromSchema`` annotations. We forward ``input_schema=`` from
+    the compiled agent so the parent-graph composition is
+    self-documenting.
+    """
+    market_agent = await build_market_analyst_agent(config)
+    fundamentals_agent = await build_fundamentals_analyst_agent(config)
+    news_agent = await build_news_analyst_agent(config)
+    social_agent = await build_social_analyst_agent(config)
+
+    graph.add_node(
+        "market_analyst",
+        market_agent,
+        input_schema=market_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node(
+        "fundamentals_analyst",
+        fundamentals_agent,
+        input_schema=fundamentals_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node(
+        "news_analyst",
+        news_agent,
+        input_schema=news_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node(
+        "social_analyst",
+        social_agent,
+        input_schema=social_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+
+
+def _wire_analysts_to(graph: StateGraph, *, from_node: str, to_node: str) -> None:
+    """Fan out from ``from_node`` to the 4 analysts; barrier into ``to_node``.
+
+    LangGraph fires ``to_node`` only after every incoming edge resolves —
+    so the 4 analysts run in parallel and the next stage runs once all
+    4 have produced their report.
+    """
+    for analyst in _ANALYST_NAMES:
+        graph.add_edge(from_node, analyst)
+        graph.add_edge(analyst, to_node)
+
+
 # ── Builders ──────────────────────────────────────────────────────────────────
 
 
-def build_investment_debate_graph(
+async def build_investment_debate_graph(
+    config: RunnableConfig,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
 ) -> CompiledStateGraph:
-    """Compile the Bull/Bear debate → Investment Judge sub-graph."""
+    """Compile analysts → Bull/Bear debate → Investment Judge sub-graph."""
     graph: StateGraph = StateGraph(TradingDecisionState)
+    await _add_analyst_nodes(graph, config)
     graph.add_node("bull_researcher", bull_researcher_node, retry_policy=_LLM_RETRY)
     graph.add_node("bear_researcher", bear_researcher_node, retry_policy=_LLM_RETRY)
     graph.add_node("investment_judge", investment_judge_node, retry_policy=_LLM_RETRY)
 
-    graph.add_conditional_edges(
-        START, _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
+    # START → analysts (parallel) → bull_researcher (barrier)
+    for analyst in _ANALYST_NAMES:
+        graph.add_edge(START, analyst)
+        graph.add_edge(analyst, "bull_researcher")
+
     graph.add_conditional_edges(
         "bull_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
     )
@@ -151,20 +230,23 @@ def build_investment_debate_graph(
     return graph.compile(checkpointer=checkpointer, store=store)
 
 
-def build_investment_thesis_graph(
+async def build_investment_thesis_graph(
+    config: RunnableConfig,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
 ) -> CompiledStateGraph:
-    """Compile debate → Judge → Trader sub-graph."""
+    """Compile analysts → debate → Judge → Trader sub-graph."""
     graph: StateGraph = StateGraph(TradingDecisionState)
+    await _add_analyst_nodes(graph, config)
     graph.add_node("bull_researcher", bull_researcher_node, retry_policy=_LLM_RETRY)
     graph.add_node("bear_researcher", bear_researcher_node, retry_policy=_LLM_RETRY)
     graph.add_node("investment_judge", investment_judge_node, retry_policy=_LLM_RETRY)
     graph.add_node("trader", trader_node, retry_policy=_LLM_RETRY)
 
-    graph.add_conditional_edges(
-        START, _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
+    for analyst in _ANALYST_NAMES:
+        graph.add_edge(START, analyst)
+        graph.add_edge(analyst, "bull_researcher")
+
     graph.add_conditional_edges(
         "bull_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
     )
@@ -177,7 +259,8 @@ def build_investment_thesis_graph(
     return graph.compile(checkpointer=checkpointer, store=store)
 
 
-def build_trading_decision_graph(
+async def build_trading_decision_graph(
+    config: RunnableConfig,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
     *,
@@ -189,26 +272,32 @@ def build_trading_decision_graph(
 
         START → reflector_resolve
                   │
-                  ▼
-        bull_researcher ⇄ bear_researcher  (N rounds via conditional edges)
-                  │
-                  ▼
-            investment_judge
-                  │
-                  ▼
-                trader
-                  │
-                  ▼
-        aggressive_debator → conservative_debator → neutral_debator
-                  (M rounds via round-robin)
-                  │
-                  ▼
-            portfolio_manager
-                  │
-                  ▼
-            decision_writeback → END
+                  ├─→ market_analyst ─┐
+                  ├─→ fundamentals_analyst ─┤
+                  ├─→ news_analyst ──┤   (parallel; implicit barrier)
+                  └─→ social_analyst ─┘
+                                     ▼
+                            bull_researcher ⇄ bear_researcher  (N rounds)
+                                     │
+                                     ▼
+                              investment_judge
+                                     │
+                                     ▼
+                                  trader
+                                     │
+                                     ▼
+                aggressive_debator → conservative_debator → neutral_debator
+                                     (M rounds via round-robin)
+                                     │
+                                     ▼
+                             portfolio_manager
+                                     │
+                                     ▼
+                         decision_writeback → END
 
     Args:
+        config: Active ``RunnableConfig`` — required to build the four
+            analyst ReAct agents at graph-construction time.
         checkpointer: Optional LangGraph checkpointer for graph state.
         store: Optional ``BaseStore`` for reflection memory + tool-result
             caching. When ``None``, reflection bookends degrade to no-ops.
@@ -219,9 +308,12 @@ def build_trading_decision_graph(
 
     graph.add_node(
         "reflector_resolve",
-        partial(reflector_resolve_node, store=store, outcomes_fetcher=outcomes_fetcher),
+        partial(
+            reflector_resolve_node, store=store, outcomes_fetcher=outcomes_fetcher
+        ),
         retry_policy=_LLM_RETRY,
     )
+    await _add_analyst_nodes(graph, config)
     graph.add_node("bull_researcher", bull_researcher_node, retry_policy=_LLM_RETRY)
     graph.add_node("bear_researcher", bear_researcher_node, retry_policy=_LLM_RETRY)
     graph.add_node("investment_judge", investment_judge_node, retry_policy=_LLM_RETRY)
@@ -234,13 +326,11 @@ def build_trading_decision_graph(
     )
     graph.add_node("neutral_debator", neutral_debator_node, retry_policy=_LLM_RETRY)
     graph.add_node("portfolio_manager", portfolio_manager_node, retry_policy=_LLM_RETRY)
-    # Pure-IO node — no LLM, no retry needed beyond the store's own behaviour.
+    # Pure-IO node — no LLM, no retry beyond the store's own behaviour.
     graph.add_node("decision_writeback", partial(decision_writeback_node, store=store))
 
     graph.add_edge(START, "reflector_resolve")
-    graph.add_conditional_edges(
-        "reflector_resolve", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
+    _wire_analysts_to(graph, from_node="reflector_resolve", to_node="bull_researcher")
     graph.add_conditional_edges(
         "bull_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
     )

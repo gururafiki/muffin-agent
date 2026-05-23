@@ -1124,58 +1124,9 @@ def research(
     asyncio.run(_run_research(query, mode, sources_list, task_type, user, thread))
 
 
-def _load_analysis_json(path: str) -> dict:
-    """Load and parse a JSON analysis-state file (or stdin when ``path == "-"``)."""
-    import json as _json
-    import sys
-
-    if path == "-":
-        raw = sys.stdin.read()
-    else:
-        from pathlib import Path
-
-        raw = Path(path).read_text(encoding="utf-8")
-    parsed = _json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise typer.BadParameter(
-            f"--analysis-json must contain a JSON object, got {type(parsed).__name__}."
-        )
-    return parsed
-
-
-def _build_decide_context(
-    ticker: str,
-    narrative: str | None,
-    analysis_json: str | None,
-    query: str | None,
-):
-    """Build the ``AnalysisContext`` for ``muffin decide`` from CLI inputs.
-
-    Resolves the two mutually-exclusive input modes:
-
-    * ``--analysis-json <path|->`` — upstream ``TickerAnalysisState`` JSON
-      (file or stdin); optionally supplemented by ``--narrative`` notes
-      appended into the same context.
-    * ``--narrative "..."`` — free-form research notes only.
-    """
-    from muffin_agent.agents.trading_decision import AnalysisContext
-
-    if analysis_json is not None:
-        state = _load_analysis_json(analysis_json)
-        return AnalysisContext.from_investment_analysis_state(
-            state, ticker=ticker, query=query, narrative=narrative
-        )
-    if narrative is None:
-        raise typer.BadParameter(
-            "Provide one of --narrative or --analysis-json to seed the context."
-        )
-    return AnalysisContext.from_narrative(ticker, narrative, query=query)
-
-
 async def _run_decide(
     ticker: str,
     narrative: str | None,
-    analysis_json: str | None,
     query: str | None,
     user: str,
     invest_rounds: int,
@@ -1183,7 +1134,14 @@ async def _run_decide(
     reflection_enabled: bool,
     decision_date: str | None,
 ) -> None:
-    """Run the trading_decision pipeline for a ticker + analysis context."""
+    """Run the trading_decision pipeline for a ticker.
+
+    The four analyst agents fetch their own data via OpenBB MCP (price
+    history, fundamentals, news, ownership) and Firecrawl MCP (social /
+    web). The caller provides only the ticker + optional framing
+    (``query`` / ``narrative``); the package is self-contained and does
+    NOT consume outputs from any other muffin pipeline.
+    """
     import json
 
     from langchain_core.runnables import RunnableConfig
@@ -1198,14 +1156,6 @@ async def _run_decide(
     # Python process. Wire a PostgresStore (or LangGraph Platform's
     # injected store) for true cross-session persistence.
     store = InMemoryStore()
-    graph = build_trading_decision_graph(
-        checkpointer=_get_checkpointer(),
-        store=store,
-    )
-
-    context = _build_decide_context(ticker, narrative, analysis_json, query)
-    initial_state: dict = {"analysis_context": context.model_dump()}
-
     configurable: dict = {
         "thread_id": f"decide-{ticker}",
         "user_id": user,
@@ -1215,11 +1165,23 @@ async def _run_decide(
     }
     if decision_date:
         configurable["decision_date"] = decision_date
+    config = RunnableConfig(callbacks=callbacks, configurable=configurable)
 
-    result = await graph.ainvoke(
-        initial_state,
-        config=RunnableConfig(callbacks=callbacks, configurable=configurable),
+    graph = await build_trading_decision_graph(
+        config,
+        checkpointer=_get_checkpointer(),
+        store=store,
     )
+
+    initial_state: dict = {"ticker": ticker.upper()}
+    if decision_date:
+        initial_state["decision_date"] = decision_date
+    if query:
+        initial_state["query"] = query
+    if narrative:
+        initial_state["narrative"] = narrative
+
+    result = await graph.ainvoke(initial_state, config=config)
 
     decision = result.get("portfolio_decision", {})
     typer.echo(json.dumps(decision, indent=2, default=str))
@@ -1234,21 +1196,9 @@ def decide(
             "--narrative",
             "-n",
             help=(
-                "Free-form Markdown research notes. May be combined with "
-                "--analysis-json to add notes alongside the structured fields. "
-                "One of --narrative or --analysis-json is required."
-            ),
-        ),
-    ] = None,
-    analysis_json: Annotated[
-        str | None,
-        typer.Option(
-            "--analysis-json",
-            help=(
-                "Path to an upstream investment_analysis state JSON (or '-' to "
-                "read from stdin). Mapped onto AnalysisContext via "
-                "from_investment_analysis_state(). Combine with --narrative "
-                "to layer free-form notes onto the structured fields."
+                "Optional free-form research notes. Layered into the "
+                "downstream Bull/Bear/Judge/Trader/PM prompts alongside the "
+                "four analyst reports the pipeline generates."
             ),
         ),
     ] = None,
@@ -1302,21 +1252,23 @@ def decide(
 
     Pipeline:
       1. reflector_resolve — resolve prior pending decisions with realised returns
-      2. Bull-Bear debate — N rounds (default 2)
-      3. Investment Judge — synthesise 5-tier signal
-      4. Trader — operational entry / stop / sizing
-      5. Aggressive-Conservative-Neutral risk debate — M rounds (default 1)
-      6. Portfolio Manager — canonical 5-tier decision
-      7. decision_writeback — persist as pending for future reflection
+      2. Analysts (parallel) — Market / Fundamentals / News / Social
+      3. Bull-Bear debate — N rounds (default 2)
+      4. Investment Judge — synthesise 5-tier signal
+      5. Trader — operational entry / stop / sizing
+      6. Aggressive-Conservative-Neutral risk debate — M rounds (default 1)
+      7. Portfolio Manager — canonical 5-tier decision
+      8. decision_writeback — persist as pending for future reflection
 
-    Input modes (one of --narrative or --analysis-json is required):
+    Examples::
 
-      muffin decide AAPL --narrative "Apple is well-positioned for AI..."
+      muffin decide AAPL
+      muffin decide AAPL --query "long-term hold candidate"
+      muffin decide AAPL --narrative "Recent earnings call mentioned X..."
 
-      muffin decide AAPL --analysis-json state.json --query "long-term hold"
-
-      # Combine: structured pipeline output + ad-hoc notes
-      muffin decide AAPL --analysis-json state.json --narrative "Add'l context..."
+    The four analysts fetch their own data via OpenBB MCP and Firecrawl
+    MCP — make sure both services are running (`docker compose up -d
+    openbb-mcp firecrawl-mcp`).
 
     Reflection memory uses an in-process InMemoryStore in the CLI today
     so prior decisions are not persisted across invocations. Wire a
@@ -1327,7 +1279,6 @@ def decide(
         _run_decide(
             ticker,
             narrative,
-            analysis_json,
             query,
             user,
             invest_rounds,

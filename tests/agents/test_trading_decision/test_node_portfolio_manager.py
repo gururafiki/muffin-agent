@@ -33,7 +33,7 @@ def _pm_output(**overrides) -> PortfolioDecisionOutput:
 
 def _base_state() -> dict:
     return {
-        "analysis_context": {"ticker": "AAPL"},
+        "ticker": "AAPL",
         "investment_judge": {"signal": "buy", "conviction": 0.7},
         "trader": {"action": "buy", "position_sizing": "2% NAV"},
         "risk_aggressive_responses": ["press it"],

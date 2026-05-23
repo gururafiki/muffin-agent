@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class DecisionWritebackInputState(TypedDict, total=False):
     """State keys read by ``decision_writeback_node``."""
 
-    analysis_context: dict[str, Any]
+    ticker: str
     portfolio_decision: dict[str, Any]
     decision_date: str
 
@@ -74,7 +74,7 @@ async def decision_writeback_node(
     if not isinstance(decision, dict) or "error" in decision:
         return {}
 
-    ticker = state["analysis_context"].get("ticker", "")
+    ticker = state.get("ticker") or ""
     decision_date = state.get("decision_date") or ""
     if not ticker or not decision_date:
         return {}

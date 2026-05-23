@@ -52,7 +52,7 @@ class TestTraderNode:
             return_value=fake_model_config(_trader_output()),
         ):
             state = {
-                "analysis_context": {"ticker": "AAPL"},
+                "ticker": "AAPL",
                 "investment_judge": _judge_payload(),
             }
             update = await trader_node(state, {})
@@ -70,7 +70,7 @@ class TestTraderNode:
             return_value=captured,
         ):
             state = {
-                "analysis_context": {"ticker": "AAPL"},
+                "ticker": "AAPL",
                 "investment_judge": _judge_payload(),
             }
             await trader_node(state, {})

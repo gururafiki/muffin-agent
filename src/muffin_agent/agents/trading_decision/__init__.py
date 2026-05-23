@@ -1,37 +1,74 @@
 """Trading decision pipeline — LangGraph-native composable building blocks.
 
+The package is fully **self-contained**: it does NOT consume outputs from
+muffin's other agents (``agents/investment/`` etc.). It fetches its own
+data through OpenBB MCP (price / fundamentals / news / ownership) and
+Firecrawl MCP (social / web) via four ReAct **analyst agents** that
+produce free-text prose reports consumed downstream.
+
 Public surface:
 
-* Graph builders:
-  * :func:`build_investment_debate_graph` — Bull ↔ Bear → Investment Judge
-  * :func:`build_investment_thesis_graph` — debate → Judge → Trader
-  * :func:`build_trading_decision_graph` — full pipeline with reflection bookends
+* Graph builders (async — accept ``RunnableConfig`` so the analyst
+  ReAct agents can be built at graph-construction time):
 
-* Per-role nodes (each takes a typed input state, returns a typed output state):
-  ``bull_researcher_node``, ``bear_researcher_node``, ``investment_judge_node``,
-  ``trader_node``, ``aggressive_debator_node``, ``conservative_debator_node``,
+  * :func:`build_investment_debate_graph` — analysts → Bull ↔ Bear →
+    Investment Judge.
+  * :func:`build_investment_thesis_graph` — analysts → debate → Judge
+    → Trader.
+  * :func:`build_trading_decision_graph` — full pipeline with reflection
+    bookends and the 3-way risk debate + Portfolio Manager.
+
+* Analyst factories (compiled ReAct agents added directly as
+  parent-graph nodes): :func:`build_market_analyst_agent`,
+  :func:`build_fundamentals_analyst_agent`,
+  :func:`build_news_analyst_agent`, :func:`build_social_analyst_agent`.
+
+* Per-role downstream nodes (each takes a typed input state, returns a
+  typed output state): ``bull_researcher_node``,
+  ``bear_researcher_node``, ``investment_judge_node``, ``trader_node``,
+  ``aggressive_debator_node``, ``conservative_debator_node``,
   ``neutral_debator_node``, ``portfolio_manager_node``,
   ``reflector_resolve_node``, ``decision_writeback_node``.
 
-* Per-role state schemas (TypedDicts): ``<Role>InputState`` + ``<Role>OutputState``
-  for every node above. External callers can satisfy the input shape to reuse a
-  node in another graph.
+* Per-role state schemas (TypedDicts):
+  ``<Role>InputState`` / ``<Role>OutputState`` for each downstream
+  node, plus ``<Role>AnalystState`` (extending ``AgentState``) and
+  ``<Role>AnalystOutput`` (Pydantic) for each analyst.
 
-* Reflection helpers: :class:`ReflectionMemory`, :func:`reflect_on_decision`,
-  :class:`OutcomesFetcher`, :func:`fetch_outcomes_openbb`,
-  :func:`render_reflections_block`.
+* In-process tool: :func:`get_indicators` — fills the
+  technical-indicator gap left by OpenBB MCP. Used by the Market
+  analyst.
 
-* Configuration: :class:`TradingDecisionConfiguration` (typed per-run knobs).
+* Reflection helpers: :class:`ReflectionMemory`,
+  :func:`reflect_on_decision`, :class:`OutcomesFetcher`,
+  :func:`fetch_outcomes_openbb`, :func:`render_reflections_block`.
 
-* Pydantic output schemas: :class:`AnalysisContext`, :class:`InvestmentJudgeOutput`,
-  :class:`TraderOutput`, :class:`PortfolioDecisionOutput`, :class:`Outcome`,
-  :class:`DecisionRecord`.
+* Configuration: :class:`TradingDecisionConfiguration` (typed per-run
+  knobs).
 
-See ``docs/trading-decision.md`` for composition patterns and future
-migration paths (subgraph with ``ToolNode`` vs ``MuffinAgentBuilder`` agent
-as graph node).
+* Pydantic output schemas: :class:`InvestmentJudgeOutput`,
+  :class:`TraderOutput`, :class:`PortfolioDecisionOutput`,
+  :class:`Outcome`, :class:`DecisionRecord`.
+
+See ``docs/trading-decision.md`` for the canonical "compiled agent as
+direct parent-graph node" pattern this package uses and future
+migration paths.
 """
 
+from .analysts import (
+    FundamentalsAnalystOutput,
+    FundamentalsAnalystState,
+    MarketAnalystOutput,
+    MarketAnalystState,
+    NewsAnalystOutput,
+    NewsAnalystState,
+    SocialAnalystOutput,
+    SocialAnalystState,
+    build_fundamentals_analyst_agent,
+    build_market_analyst_agent,
+    build_news_analyst_agent,
+    build_social_analyst_agent,
+)
 from .config import TradingDecisionConfiguration
 from .graph import (
     build_investment_debate_graph,
@@ -79,7 +116,6 @@ from .risk_debate import (
     neutral_debator_node,
 )
 from .schemas import (
-    AnalysisContext,
     DecisionRecord,
     InvestmentJudgeOutput,
     InvestmentSignal,
@@ -89,11 +125,11 @@ from .schemas import (
     TraderOutput,
 )
 from .state import TradingDecisionState
+from .tools import get_indicators
 from .trader import TraderInputState, TraderOutputState, trader_node
 
 __all__ = [
-    # Schemas
-    "AnalysisContext",
+    # Schemas (synthesis / judge / trader / PM)
     "DecisionRecord",
     "InvestmentJudgeOutput",
     "InvestmentSignal",
@@ -101,21 +137,38 @@ __all__ = [
     "PortfolioDecisionOutput",
     "TraderAction",
     "TraderOutput",
+    # Analyst outputs (Pydantic)
+    "FundamentalsAnalystOutput",
+    "MarketAnalystOutput",
+    "NewsAnalystOutput",
+    "SocialAnalystOutput",
+    # Analyst state schemas (extend AgentState)
+    "FundamentalsAnalystState",
+    "MarketAnalystState",
+    "NewsAnalystState",
+    "SocialAnalystState",
     # Configuration
     "TradingDecisionConfiguration",
     # State
     "TradingDecisionState",
-    # Graph builders
+    # Graph builders (async)
     "build_investment_debate_graph",
     "build_investment_thesis_graph",
     "build_trading_decision_graph",
+    # Analyst factories (async)
+    "build_fundamentals_analyst_agent",
+    "build_market_analyst_agent",
+    "build_news_analyst_agent",
+    "build_social_analyst_agent",
+    # Local tools
+    "get_indicators",
     # Reflection helpers
     "OutcomesFetcher",
     "ReflectionMemory",
     "fetch_outcomes_openbb",
     "reflect_on_decision",
     "render_reflections_block",
-    # Nodes
+    # Downstream nodes
     "aggressive_debator_node",
     "bear_researcher_node",
     "bull_researcher_node",

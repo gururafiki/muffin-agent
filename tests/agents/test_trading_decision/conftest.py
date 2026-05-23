@@ -16,8 +16,9 @@ relevant module to return a stub config whose ``get_llm_for_role`` yields
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from langchain_core.messages import AIMessage
 
 
@@ -67,3 +68,21 @@ def fake_model_config(response: Any) -> MagicMock:
 def ai(text: str) -> AIMessage:
     """Tiny helper — build an ``AIMessage`` with text content."""
     return AIMessage(content=text)
+
+
+@pytest.fixture(autouse=True)
+def mock_mcp_tools():
+    """Patch ``data_collection.utils.get_tools`` to return an empty list.
+
+    Keeps the trading_decision test suite offline by default — any
+    analyst-agent build path that goes through ``get_tools`` gets back
+    no MCP tools instead of hitting the OpenBB MCP server. Individual
+    tests that need specific MCP tool stubs can layer their own
+    ``patch.object`` calls on top.
+    """
+    with patch(
+        "muffin_agent.agents.data_collection.utils.get_tools",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        yield

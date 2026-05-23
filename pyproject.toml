@@ -32,6 +32,11 @@ dependencies = [
     # Sandbox
     "opensandbox",
     "opensandbox-code-interpreter",
+    # Technical-indicator computation (trading_decision Market analyst)
+    "stockstats>=0.6.0",
+    "pandas",
+    # Required by pandas.DataFrame.to_markdown() (trading_decision tools).
+    "tabulate",
 ]
 
 [project.scripts]

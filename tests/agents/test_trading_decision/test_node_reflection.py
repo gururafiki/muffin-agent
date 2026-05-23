@@ -106,7 +106,7 @@ class TestReflectOnDecision:
 class TestReflectorResolveNode:
     async def test_returns_empty_block_when_no_store(self):
         config = {"configurable": {"user_id": "alice"}}
-        state = {"analysis_context": {"ticker": "AAPL"}}
+        state = {"ticker": "AAPL"}
         result = await reflector_resolve_node(state, config, store=None)
         assert result["past_reflections"] == ""
         assert result["resolved_decisions"] == []
@@ -119,7 +119,7 @@ class TestReflectorResolveNode:
             ticker="AAPL", date="2026-05-10", decision=_decision()
         )
         config = {"configurable": {"user_id": "alice", "reflection_enabled": False}}
-        state = {"analysis_context": {"ticker": "AAPL"}}
+        state = {"ticker": "AAPL"}
         result = await reflector_resolve_node(state, config, store=store)
 
         assert result["past_reflections"] == ""
@@ -129,7 +129,7 @@ class TestReflectorResolveNode:
     async def test_returns_empty_when_no_user_id(self, monkeypatch):
         monkeypatch.delenv("MEMORY_DEBUG_USER_ID", raising=False)
         store = InMemoryStore()
-        state = {"analysis_context": {"ticker": "AAPL"}}
+        state = {"ticker": "AAPL"}
         result = await reflector_resolve_node(state, {}, store=store)
         assert result["past_reflections"] == ""
 
@@ -145,7 +145,7 @@ class TestReflectorResolveNode:
                 "decision_date": "2026-05-17",
             }
         }
-        state = {"analysis_context": {"ticker": "AAPL"}}
+        state = {"ticker": "AAPL"}
 
         with patch(
             "muffin_agent.agents.trading_decision.reflection.resolver.reflect_on_decision",
@@ -176,7 +176,7 @@ class TestReflectorResolveNode:
             ticker="AAPL", date="2026-05-10", decision=_decision()
         )
         config = {"configurable": {"user_id": "alice"}}
-        state = {"analysis_context": {"ticker": "AAPL"}}
+        state = {"ticker": "AAPL"}
 
         # Fetcher returns None — entry should stay pending.
         result = await reflector_resolve_node(
@@ -188,7 +188,7 @@ class TestReflectorResolveNode:
 
     async def test_decision_date_override_from_config(self):
         config = {"configurable": {"user_id": "alice", "decision_date": "2026-05-17"}}
-        state = {"analysis_context": {"ticker": "AAPL"}}
+        state = {"ticker": "AAPL"}
         result = await reflector_resolve_node(state, config, store=None)
         assert result["decision_date"] == "2026-05-17"
 
@@ -203,7 +203,7 @@ class TestDecisionWritebackNode:
         store = InMemoryStore()
         config = {"configurable": {"user_id": "alice"}}
         state = {
-            "analysis_context": {"ticker": "AAPL"},
+            "ticker": "AAPL",
             "portfolio_decision": _decision(),
             "decision_date": "2026-05-17",
         }
@@ -219,7 +219,7 @@ class TestDecisionWritebackNode:
         store = InMemoryStore()
         config = {"configurable": {"user_id": "alice", "reflection_enabled": False}}
         state = {
-            "analysis_context": {"ticker": "AAPL"},
+            "ticker": "AAPL",
             "portfolio_decision": _decision(),
             "decision_date": "2026-05-17",
         }
@@ -232,7 +232,7 @@ class TestDecisionWritebackNode:
         store = InMemoryStore()
         config = {"configurable": {"user_id": "alice"}}
         state = {
-            "analysis_context": {"ticker": "AAPL"},
+            "ticker": "AAPL",
             "portfolio_decision": {"rating": "hold", "error": "PM failed"},
             "decision_date": "2026-05-17",
         }

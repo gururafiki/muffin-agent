@@ -1,11 +1,15 @@
 """Pydantic schemas for the trading_decision module.
 
-Defines the generic ``AnalysisContext`` envelope (input to every agent in
-the module) and the structured output schemas for the three PR 1 agents:
-Bull Researcher, Bear Researcher, and Investment Judge.
+Structured outputs for the synthesis / judge agents (Bull / Bear → Judge,
+Trader, Portfolio Manager) plus reflection-memory records. Per-analyst
+output models (``MarketAnalystOutput`` etc.) live alongside their
+factories in ``analysts/``.
 
-Output schemas for the Trader, Risk Debators, and Portfolio Manager are
-added in subsequent PRs.
+Inputs (``ticker``, ``decision_date``, ``query``, ``narrative``) flow
+through ``TradingDecisionState`` as flat top-level fields — there is no
+``AnalysisContext`` envelope; the package is fully self-contained and
+does NOT consume outputs from ``agents/investment/`` or any other
+muffin pipeline.
 """
 
 from __future__ import annotations
@@ -35,130 +39,7 @@ sell / strong_sell → ``"sell"``). Magnitude of conviction is expressed through
 trading desks separate direction from sizing."""
 
 
-# ── Analysis context envelope ─────────────────────────────────────────────────
-
-
-class AnalysisContext(BaseModel):
-    """Generic envelope for analysis context fed to any trading_decision agent.
-
-    All structured fields are optional. Callers can construct contexts from:
-
-    * Muffin's ``investment_analysis`` pipeline (sets the structured fields).
-    * Free-form research notes (sets only ``narrative``).
-    * A custom upstream pipeline (mixes structured and free-form).
-
-    Agents read this envelope and adapt their reasoning to whatever fields are
-    populated — prompts use Jinja2 conditionals so a missing field is silently
-    skipped rather than producing an "unknown" placeholder.
-    """
-
-    ticker: str
-    query: str | None = None
-    """Original investment mandate or analysis focus."""
-
-    # Structured analysis outputs (when available)
-    market_regime: dict[str, Any] | None = None
-    """``MarketRegimeOutput.model_dump()`` from muffin's investment pipeline."""
-
-    sector_view: dict[str, Any] | None = None
-    """``SectorViewOutput.model_dump()`` from muffin's investment pipeline."""
-
-    company_analysis: dict[str, Any] | None = None
-    """``CompanyAnalysisOutput.model_dump()`` from muffin's investment pipeline."""
-
-    forecast: dict[str, Any] | None = None
-    """``ForecastOutput.model_dump()`` from muffin's investment pipeline."""
-
-    risk_assessment: dict[str, Any] | None = None
-    """``RiskAssessmentOutput.model_dump()`` from muffin's investment pipeline."""
-
-    valuation: dict[str, Any] | None = None
-    """``ValuationOutput.model_dump()`` from muffin's investment pipeline."""
-
-    # Free-form context — always available as a fallback
-    narrative: str | None = None
-    """Markdown blob with research notes. Always usable; the only required
-    context when calling from outside the investment_analysis pipeline."""
-
-    additional_context: dict[str, Any] = Field(default_factory=dict)
-    """Caller-supplied extras (e.g. per-user constraints, portfolio context)."""
-
-    @classmethod
-    def from_narrative(
-        cls, ticker: str, narrative: str, **extras: Any
-    ) -> AnalysisContext:
-        """Build a context from a single Markdown blob.
-
-        Convenience for ad-hoc callers — useful for CLI, tests, and any path
-        that does not run muffin's full investment_analysis pipeline.
-        """
-        return cls(
-            ticker=ticker,
-            narrative=narrative,
-            query=extras.pop("query", None),
-            additional_context=extras,
-        )
-
-    @classmethod
-    def from_investment_analysis_state(
-        cls,
-        state: dict[str, Any],
-        *,
-        ticker: str | None = None,
-        query: str | None = None,
-        narrative: str | None = None,
-    ) -> AnalysisContext:
-        """Build a context from a ``TickerAnalysisState`` dict.
-
-        Maps the six structured outputs of ``build_investment_analysis_graph``
-        (``market_regime``, ``sector_view``, ``company_analysis``,
-        ``forecast``, ``risk_assessment``, ``valuation``) onto the
-        equivalent ``AnalysisContext`` fields. Missing keys are silently
-        dropped to ``None`` so the adapter works on partial states
-        (e.g. when the upstream pipeline interrupted before
-        ``thesis_synthesis``).
-
-        Args:
-            state: A dict shaped like ``TickerAnalysisState`` — typically
-                produced by ``build_investment_analysis_graph().ainvoke(...)``
-                or its JSON-serialised equivalent on disk.
-            ticker: Override the ticker read from ``state["ticker"]``.
-                Required only when *state* lacks a ticker key (unusual).
-            query: Override the query read from ``state["query"]``. Useful
-                when composing a sub-pipeline whose query should differ.
-            narrative: Optional free-form notes appended alongside the
-                structured fields. Lets callers mix upstream analysis with
-                ad-hoc context in a single envelope.
-
-        Raises:
-            ValueError: When neither *state* nor *ticker* provides a ticker.
-        """
-        resolved_ticker = ticker if ticker is not None else state.get("ticker")
-        if not isinstance(resolved_ticker, str) or not resolved_ticker:
-            raise ValueError(
-                "from_investment_analysis_state requires a non-empty ticker "
-                "(either in state['ticker'] or as the `ticker=` kwarg)."
-            )
-
-        def _section(key: str) -> dict[str, Any] | None:
-            value = state.get(key)
-            return value if isinstance(value, dict) and value else None
-
-        return cls(
-            ticker=resolved_ticker,
-            query=query if query is not None else state.get("query"),
-            market_regime=_section("market_regime"),
-            sector_view=_section("sector_view"),
-            company_analysis=_section("company_analysis"),
-            forecast=_section("forecast"),
-            risk_assessment=_section("risk_assessment"),
-            valuation=_section("valuation"),
-            narrative=narrative,
-            additional_context={},
-        )
-
-
-# ── PR 1 output schemas ───────────────────────────────────────────────────────
+# ── Judge / Trader / PM output schemas ────────────────────────────────────────
 
 
 class InvestmentJudgeOutput(BaseModel):

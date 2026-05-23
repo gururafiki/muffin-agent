@@ -3,8 +3,9 @@
 Verifies that:
 * Each per-role template renders without errors with the standard set of
   per-call vars.
-* The shared partials (`_analysis_context.jinja`, `_investment_debate_state.jinja`,
-  `_risk_synthesis_inputs.jinja`) are pulled in correctly via ``{% include %}``.
+* The shared partials (``_analyst_reports.jinja``,
+  ``_investment_debate_state.jinja``, ``_risk_synthesis_inputs.jinja``)
+  are pulled in correctly via ``{% include %}``.
 * Hold-reservation discipline appears in the synthesis prompts.
 """
 
@@ -20,17 +21,15 @@ from muffin_agent.prompts import render_template
 
 
 def _analysis_kwargs(**overrides) -> dict[str, Any]:
+    """Flat-field kwargs the downstream Jinja templates now consume."""
     base = {
         "ticker": "AAPL",
         "query": "long-term hold",
-        "market_regime": None,
-        "sector_view": None,
-        "company_analysis": None,
-        "forecast": None,
-        "risk_assessment": None,
-        "valuation": None,
         "narrative": None,
-        "additional_context": {},
+        "market_report": None,
+        "fundamentals_report": None,
+        "news_report": None,
+        "sentiment_report": None,
     }
     base.update(overrides)
     return base
@@ -119,7 +118,7 @@ class TestInvestmentDebatePrompts:
         assert "do not default to hold" in result.lower()
         assert "InvestmentJudgeOutput" in result
 
-    def test_analysis_context_partial_renders_each_field(self):
+    def test_analyst_reports_partial_renders_each_field(self):
         result = render_template(
             "trading_decision/researchers/bull.jinja",
             speaking_as="Bull",
@@ -127,14 +126,17 @@ class TestInvestmentDebatePrompts:
             debate_history="",
             opposing_last="",
             **_analysis_kwargs(
-                market_regime={"regime": "expansion"},
-                valuation={"signal": "cheap"},
+                market_report="ATR 2.5 / RSI 62",
+                fundamentals_report="ROIC 28%, FCF margin 22%",
+                news_report="Q1 earnings 2026-04-25",
+                sentiment_report="r/wallstreetbets cautiously bullish",
                 narrative="Some research notes.",
             ),
         )
-        assert "regime" in result
-        assert "expansion" in result
-        assert "cheap" in result
+        assert "ATR 2.5 / RSI 62" in result
+        assert "ROIC 28%" in result
+        assert "Q1 earnings 2026-04-25" in result
+        assert "r/wallstreetbets" in result
         assert "Some research notes." in result
 
 
@@ -252,3 +254,96 @@ class TestReflectorPrompt:
         # Decision + outcome dumped as JSON.
         assert "Buy AAPL." in result
         assert "alpha" in result.lower()
+
+
+# ── Analyst templates ────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestAnalystPrompts:
+    def test_market_analyst_lists_indicators_and_ticker(self):
+        result = render_template(
+            "trading_decision/analysts/market.jinja",
+            ticker="AAPL",
+            decision_date="2026-05-23",
+        )
+        assert "Market Analyst" in result
+        assert "AAPL" in result
+        assert "2026-05-23" in result
+        # All supported indicator keys appear in the menu.
+        for ind in (
+            "close_50_sma", "close_200_sma", "macd", "macds", "macdh",
+            "rsi", "boll", "boll_ub", "boll_lb", "atr", "vwma",
+        ):
+            assert ind in result
+
+    def test_fundamentals_analyst_lists_tools(self):
+        result = render_template(
+            "trading_decision/analysts/fundamentals.jinja",
+            ticker="AAPL",
+            decision_date="2026-05-23",
+        )
+        assert "Fundamentals Analyst" in result
+        for mcp in (
+            "equity_fundamental_income",
+            "equity_fundamental_balance",
+            "equity_fundamental_cash",
+            "equity_fundamental_ratios",
+            "equity_fundamental_metrics",
+        ):
+            assert mcp in result
+
+    def test_news_analyst_lists_news_tools(self):
+        result = render_template(
+            "trading_decision/analysts/news.jinja",
+            ticker="AAPL",
+            decision_date="2026-05-23",
+        )
+        assert "News & Macro Analyst" in result
+        assert "news_company" in result
+        assert "news_world" in result
+        assert "equity_ownership_insider_trading" in result
+
+    def test_social_analyst_mentions_sources(self):
+        result = render_template(
+            "trading_decision/analysts/social.jinja",
+            ticker="AAPL",
+            decision_date="2026-05-23",
+        )
+        assert "Social Sentiment Analyst" in result
+        assert "news_company" in result
+        assert "firecrawl_search" in result
+        # Source-breakdown guidance.
+        assert "Reddit" in result
+
+
+# ── Shared `_analyst_reports.jinja` partial ──────────────────────────────────
+
+
+@pytest.mark.unit
+class TestAnalystReportsPartial:
+    def test_renders_all_four_when_provided(self):
+        result = render_template(
+            "trading_decision/_analyst_reports.jinja",
+            market_report="M",
+            fundamentals_report="F",
+            news_report="N",
+            sentiment_report="S",
+        )
+        assert "Market analysis report" in result
+        assert "Fundamentals report" in result
+        assert "News & macro report" in result
+        assert "Social sentiment report" in result
+        # Bodies appear.
+        for body in ("M", "F", "N", "S"):
+            assert body in result
+
+    def test_omits_missing_reports(self):
+        result = render_template(
+            "trading_decision/_analyst_reports.jinja",
+            market_report="M",
+        )
+        assert "Market analysis report" in result
+        assert "Fundamentals report" not in result
+        assert "News & macro report" not in result
+        assert "Social sentiment report" not in result

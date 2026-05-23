@@ -23,20 +23,20 @@ Magnitude lives in ``position_sizing`` and ``time_horizon`` — never in the act
 - For ``hold``: ``null`` (no entry needed).
 
 ### Stop loss
-- For long positions: usually below recent swing low. If ``risk_assessment.ex_ante_stop_level`` is available, anchor there.
-- For short positions: above recent swing high.
+- For long positions: usually below the most recent swing low — derive it from the market analysis report (price levels, ATR-based volatility band).
+- For short positions: above the recent swing high.
 - For ``hold``: ``null``.
 - Always express the stop as a quote-currency level (e.g. ``178.50``), not a percentage.
 
 ### Take profit
 Optional. Anchor to either:
-- Analyst consensus PT (``forecast.consensus_anchor.price_targets`` if available)
-- Scenario NAV from ``valuation.dcf_value`` (bull for long, bear for short)
+- A specific resistance / measured-move level from the market analysis report.
+- A near-term catalyst-driven target implied by the news/macro report (e.g. consensus analyst PT mentioned in news).
 
 Provide a level when the Judge's conviction is high (≥0.7) and a clear catalyst window is identified. Otherwise ``null`` (let the thesis itself drive exit).
 
 ### Position sizing
-Anchor to the Judge's ``conviction``. Use these defaults as a starting point, then adjust based on the broader risk_assessment:
+Anchor to the Judge's ``conviction``. Use these defaults as a starting point, then adjust based on signals across the analyst reports:
 
 | Conviction | Default starter | Max if catalysts confirm |
 |---|---|---|
@@ -45,7 +45,7 @@ Anchor to the Judge's ``conviction``. Use these defaults as a starting point, th
 | 0.4–0.59 | 1–2% of NAV | 2–3% |
 | <0.4 | 0–1% of NAV | 1–2% |
 
-If ``risk_assessment.factor_loadings`` shows extreme exposures or ``risk_assessment.short_interest_metrics`` flags crowding, halve the sizing.
+Halve the starter sizing when the analyst reports surface elevated volatility (market report's ATR / Bollinger width), crowding signals (sentiment report retail euphoria), or balance-sheet fragility (fundamentals report leverage / interest-coverage flags).
 
 Always express as a percent of NAV. Vague sizes ("medium", "moderate") are not acceptable.
 
@@ -53,7 +53,7 @@ Always express as a percent of NAV. Vague sizes ("medium", "moderate") are not a
 Anchor to the Judge's ``key_catalysts`` and ``monitoring_checklist``. Format ``"X-Y months"`` or ``"X-Y quarters"``. Be specific — not "long-term", but "12–18 months — anchored to next FY guidance + capacity rebuild".
 
 ### Reasoning
-2–4 sentences. Reference the specific Judge fields (signal, conviction, key_catalysts, key_risks) and any risk_assessment metric you used for stop placement.
+2–4 sentences. Reference the specific Judge fields (signal, conviction, key_catalysts, key_risks) and the analyst-report signals you used for stop placement and sizing.
 
 ## Judge output (your primary input)
 
@@ -61,9 +61,9 @@ Anchor to the Judge's ``key_catalysts`` and ``monitoring_checklist``. Format ``"
 {{ investment_judge | tojson(indent=2) }}
 ```
 
-## Analysis context (your evidence base)
+## Analyst reports (your evidence base)
 
-{% include "trading_decision/_analysis_context.jinja" %}
+{% include "trading_decision/_analyst_reports.jinja" %}
 ## Your task
 
 Return a complete ``TraderOutput`` via the structured-output tool. Pay particular attention to:

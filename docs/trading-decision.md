@@ -1,8 +1,8 @@
 # Trading Decision Pipeline
 
-A composable trading-decision pipeline ported from [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) and refactored to LangGraph-native primitives. Decoupled from `investment_analysis`: every node accepts a generic `AnalysisContext`, so callers can plug in muffin's pipeline output, free-form research notes, or any custom upstream source.
+A composable trading-decision pipeline ported from [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) and refactored to LangGraph-native primitives. **Fully self-contained** — fetches its own data via OpenBB MCP (price / fundamentals / news / ownership) and Firecrawl MCP (social / web) through four ReAct analyst agents that run before the Bull/Bear/Judge/Trader/PM downstream nodes. Does NOT consume outputs from any other muffin pipeline.
 
-This guide covers what the pipeline does, how the architecture is shaped, the composition patterns, and the future migration paths for when a role needs to grow beyond a single LLM call.
+This guide covers what the pipeline produces, the architecture, how the compiled analyst agents are wired in directly as parent-graph nodes, the reflection loop, the CLI surface, and the future migration paths for when a role needs to grow further.
 
 For the per-file architecture reference, see the relevant entries in [CLAUDE.md](../CLAUDE.md).
 
@@ -35,43 +35,144 @@ The same 5-tier vocabulary (`strong_sell` … `strong_buy`) is shared with `Crit
 ```
 START
   ↓
-[reflector_resolve]      ← resolve prior pending decisions + inject past reflections
+[reflector_resolve]            ← resolve prior pending decisions + inject past reflections
   ↓
+[Market]      [Fundamentals]   [News]        [Social]   ← 4 analyst ReAct agents in parallel
+  └────┬──────────┬────────────┬──────────────┘
+       ▼ (implicit barrier — bull_researcher fires when all 4 reports are in state)
 [Bull Researcher] ⇄ [Bear Researcher]    ← N rounds (default 2)
   ↓
-[Investment Judge]       ← InvestmentJudgeOutput (signal + bull/bear cases + catalysts/risks)
+[Investment Judge]             ← InvestmentJudgeOutput (signal + bull/bear cases + catalysts/risks)
   ↓
-[Trader]                 ← TraderOutput (action + entry/stop/take-profit + sizing + horizon)
+[Trader]                       ← TraderOutput (action + entry/stop/take-profit + sizing + horizon)
   ↓
 [Aggressive] → [Conservative] → [Neutral]    ← M rounds (default 1)
   ↓
-[Portfolio Manager]      ← PortfolioDecisionOutput (canonical final artifact)
+[Portfolio Manager]            ← PortfolioDecisionOutput (canonical final artifact)
   ↓
-[decision_writeback]     ← persist current decision as pending for future reflection
+[decision_writeback]           ← persist current decision as pending for future reflection
   ↓
 END
 ```
 
-Three composable builders share `TradingDecisionState` and let callers opt into depth:
+Three composable async builders share `TradingDecisionState` and let callers opt into depth:
 
 | Builder | Topology |
 |---|---|
-| `build_investment_debate_graph` | Bull/Bear → Judge (smallest useful slice) |
+| `build_investment_debate_graph` | analysts → Bull/Bear → Judge (smallest useful slice) |
 | `build_investment_thesis_graph` | …+ Trader (adds operational translation) |
 | `build_trading_decision_graph` | full pipeline above (canonical 5-tier decision + reflection bookends) |
 
+All three are **async** — each starts by building the four compiled analyst agents (so the agent construction cost is amortised to graph-build time, not per-call).
+
 ---
 
-## Node architecture (LangGraph-native, no agent wrappers)
+## The analyst layer (compiled agents added directly as parent-graph nodes)
 
-Each per-role file ships **one async node function** with typed input/output state schemas. The function body resolves an LLM, renders a Jinja template, calls `llm.ainvoke(...)`, and returns a state-update dict. There are no `MuffinAgentBuilder` factories, no per-call agent rebuilds, and no `Command(goto=...)` — routing lives at the graph level via conditional edges.
+The four analysts replace what used to be a hard dependency on muffin's `agents/investment/` outputs. Each analyst is a **compiled ReAct agent** (from `langchain.agents.create_agent`) added directly to the parent graph — no wrapping subgraph, no per-analyst prepare/extract nodes, no per-analyst middleware in the analyst file.
+
+This works because each analyst declares its own state schema extending `langchain.agents.AgentState`, with `OmitFromSchema` annotations marking which extra fields are input-only vs output-only:
 
 ```python
-# researchers/bull_researcher.py — shape every per-role file follows
+# analysts/market_analyst.py — shape every analyst follows
+from typing import Annotated
+
+from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
+from pydantic import BaseModel, Field
+
+
+class MarketAnalystOutput(BaseModel):
+    """Field names match the state-schema output fields so the
+    structured response is auto-unpacked into parent state by name."""
+
+    market_report: str = Field(description="Markdown technical-analysis report …")
+
+
+class MarketAnalystState(AgentState):
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    decision_date: Annotated[str, OmitFromSchema(input=False, output=True)]
+    market_report: Annotated[str, OmitFromSchema(input=True, output=False)]
+
+
+async def build_market_analyst_agent(config: RunnableConfig) -> CompiledStateGraph:
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("collector")
+    mcp_tools = await get_tools(config, [
+        "equity_price_historical", "equity_price_quote",
+        "equity_price_performance", "equity_historical_market_cap",
+    ])
+
+    builder = (
+        MuffinAgentBuilder(primary, name="market_analyst")
+        .with_fallback_models(*fallbacks)
+        .with_state_schema(MarketAnalystState)
+        .with_runtime_system_prompt_template("trading_decision/analysts/market.jinja")
+        .with_response_format(MarketAnalystOutput)  # auto-unpack to state by name
+    )
+    for tool in mcp_tools:
+        builder = builder.with_tool(tool, run_limit=4)
+    builder = builder.with_tool(get_indicators, run_limit=10)
+    return builder.build_react_agent()
+```
+
+### Three `MuffinAgentBuilder` features that make this possible
+
+1. **`with_state_schema(schema)`** forwards a custom state schema (extending `AgentState`) to `create_agent`. Combined with `OmitFromSchema(input=…, output=…)` annotations on schema fields, this auto-derives the agent's `input_schema` and `output_schema` so LangGraph maps shared keys (by name) between parent state and the compiled agent.
+2. **`with_runtime_system_prompt_template(template)`** registers a built-in middleware that re-renders the system prompt from agent state on every model call. When `with_state_schema(…)` is also set, the middleware introspects the schema's `OmitFromSchema` annotations and passes ONLY the input-eligible fields as Jinja variables (skipping reserved fields like `messages` / `structured_response`). Templates use `{% if x %}` for missing values.
+3. **Auto-trigger structured-response → state unpacking** when both `with_state_schema(...)` AND `with_response_format(...)` are set — the builder wires a built-in middleware that unpacks the Pydantic response into per-field state updates (each Pydantic field maps to a same-named state field). Scales naturally to N output fields and means the parent reads them directly without cracking a `structured_response` dict.
+
+The compiled agent is added to the parent graph with its derived input schema for self-documentation:
+
+```python
+# graph.py
+await _add_analyst_nodes(graph, config)
+# expands to:
+market_agent = await build_market_analyst_agent(config)
+graph.add_node(
+    "market_analyst",
+    market_agent,
+    input_schema=market_agent.input_schema,  # makes the contract visible at the parent
+    retry_policy=_LLM_RETRY,
+)
+# ...same for fundamentals_analyst, news_analyst, social_analyst...
+
+# parallel fan-out + implicit barrier
+for analyst in ("market_analyst", "fundamentals_analyst",
+                "news_analyst", "social_analyst"):
+    graph.add_edge("reflector_resolve", analyst)
+    graph.add_edge(analyst, "bull_researcher")
+```
+
+### Tools by analyst
+
+| Analyst | OpenBB MCP tools | Extra |
+|---|---|---|
+| Market | `equity_price_historical`, `equity_price_quote`, `equity_price_performance`, `equity_historical_market_cap` | `get_indicators` (local — stockstats over OpenBB OHLCV; fills the technical-indicator gap left by OpenBB MCP) |
+| Fundamentals | `equity_fundamental_balance`, `equity_fundamental_income`, `equity_fundamental_cash`, `equity_fundamental_ratios`, `equity_fundamental_metrics`, `equity_fundamental_historical_eps`, `equity_fundamental_dividends` | — |
+| News | `news_company`, `news_world`, `equity_ownership_insider_trading` | — |
+| Social | `news_company`, `firecrawl_search` | — |
+
+Make sure `docker compose up -d openbb-mcp firecrawl-mcp searxng` is running before invoking the pipeline.
+
+---
+
+## Downstream-node architecture (LangGraph-native, no agent wrappers)
+
+The non-analyst nodes (Bull, Bear, Judge, Trader, 3 risk debators, PM, reflection bookends) are each **one async node function** with typed input/output state schemas. The function body resolves an LLM, renders a Jinja template, calls `llm.ainvoke(...)`, and returns a state-update dict. No `MuffinAgentBuilder` factories, no per-call agent rebuilds, and no `Command(goto=...)` — routing lives at the graph level via conditional edges.
+
+```python
+# researchers/bull_researcher.py — shape every downstream node follows
 
 class BullResearcherInputState(TypedDict, total=False):
     """State keys this node reads."""
-    analysis_context: dict[str, Any]
+    ticker: str
+    query: str
+    narrative: str
+    market_report: str
+    fundamentals_report: str
+    news_report: str
+    sentiment_report: str
     investment_bull_responses: Annotated[list[str], operator.add]
     investment_bear_responses: Annotated[list[str], operator.add]
 
@@ -84,30 +185,29 @@ class BullResearcherOutputState(TypedDict, total=False):
 async def bull_researcher_node(
     state: BullResearcherInputState, config: RunnableConfig
 ) -> BullResearcherOutputState:
-    # State reads — explicit at the call site.
-    analysis_context = state["analysis_context"]
     bulls = state.get("investment_bull_responses") or []
     bears = state.get("investment_bear_responses") or []
     opposing_last = bears[-1] if bears else ""
 
-    # LLM resolution — muffin's existing ModelConfiguration pattern.
     cfg = ModelConfiguration.from_runnable_config(config)
     primary, *fallbacks = cfg.get_llm_for_role("reasoner")
     llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
         stop_after_attempt=3, wait_exponential_jitter=True
     )
 
-    # One Jinja template per role — composes shared partials via {% include %}.
     prompt = render_template(
         "trading_decision/researchers/bull.jinja",
-        ticker=analysis_context.get("ticker", ""),
-        query=analysis_context.get("query"),
+        ticker=state.get("ticker", ""),
+        query=state.get("query"),
+        narrative=state.get("narrative"),
+        market_report=state.get("market_report"),
+        fundamentals_report=state.get("fundamentals_report"),
+        news_report=state.get("news_report"),
+        sentiment_report=state.get("sentiment_report"),
         debate_history=format_debate_history(bulls, bears),
         opposing_last=opposing_last,
-        # ... all analysis_context fields visible at call site ...
     )
 
-    # No try/except — failures propagate to the graph (and through retries).
     response = await llm.ainvoke([
         SystemMessage(prompt),
         HumanMessage("Make your argument now."),
@@ -117,11 +217,11 @@ async def bull_researcher_node(
 
 ### State uses LangGraph reducers (no sub-state structs)
 
-`TradingDecisionState` is **flat**. Debate responses live in top-level `Annotated[list[str], operator.add]` fields per speaker (`investment_bull_responses`, `investment_bear_responses`, `risk_aggressive_responses`, etc.). Each node returns `{"<field>": [new_response]}` and LangGraph's reducer appends to the accumulated list. The "latest" response is `responses[-1]`; the "round count" is `len(bulls) + len(bears)`. Structured outputs (`investment_judge`, `trader`, `portfolio_decision`) live in their own top-level dict fields populated via `Pydantic.model_dump()`.
+`TradingDecisionState` is **flat**. Inputs (`ticker`, `decision_date`, `query`, `narrative`) and analyst outputs (`market_report`, `fundamentals_report`, `news_report`, `sentiment_report`) are top-level fields. Debate responses live in `Annotated[list[str], operator.add]` reducers per speaker (`investment_bull_responses`, `risk_aggressive_responses`, etc.). Structured outputs (`investment_judge`, `trader`, `portfolio_decision`) live in their own top-level dict fields populated via `Pydantic.model_dump()`.
 
 ### Routing lives at the graph level
 
-`graph.py` defines `_route_investment_debate(state) -> str` and `_route_risk_debate(state) -> str` that read accumulated response lists and the per-run `TradingDecisionConfiguration` (via `langgraph.config.get_config()`). Conditional edges use the **list form** (`["bull_researcher", "bear_researcher", "investment_judge"]`) which sidesteps the `dict[Hashable, str]` mypy variance complaint that forced the inline-dict workaround in the old code.
+`graph.py` defines `_route_investment_debate(state) -> str` and `_route_risk_debate(state) -> str` that read accumulated response lists and the per-run `TradingDecisionConfiguration` (via `langgraph.config.get_config()`). Conditional edges use the **list form** (`["bull_researcher", "bear_researcher", "investment_judge"]`) — sidesteps the `dict[Hashable, str]` mypy variance complaint.
 
 ### Two-layer retry, no fallback dicts
 
@@ -130,7 +230,7 @@ Every LLM call gets two retry layers and no try/except:
 1. **LangChain `with_retry(stop_after_attempt=3, wait_exponential_jitter=True)`** wraps each `llm.ainvoke` — catches transient provider errors.
 2. **LangGraph `RetryPolicy(max_attempts=2)`** is applied per-node via `graph.add_node("name", node_fn, retry_policy=...)` — catches anything that escapes the LLM layer.
 
-After both layers exhaust, the exception propagates and the graph fails. That's the correct caller signal. A deterministic failure (e.g. a bad pending reflection entry that always errors) is the user's cue to investigate or clear the offending entry from the store.
+After both layers exhaust, the exception propagates and the graph fails — the correct caller signal.
 
 ### Typed per-run knobs via `TradingDecisionConfiguration`
 
@@ -146,7 +246,7 @@ class TradingDecisionConfiguration(BaseConfiguration):
     decision_date: str | None = None
 ```
 
-Mirrors muffin's existing `MemoryConfiguration` / `McpConfiguration` / `ResearchConfiguration` pattern. Read via `TradingDecisionConfiguration.from_runnable_config(config)` inside router functions and the reflection nodes.
+Mirrors muffin's existing `MemoryConfiguration` / `McpConfiguration` / `ResearchConfiguration` pattern.
 
 ---
 
@@ -155,87 +255,32 @@ Mirrors muffin's existing `MemoryConfiguration` / `McpConfiguration` / `Research
 The reflection layer turns the pipeline into a learning loop:
 
 1. **Write (end of every run)** — `decision_writeback_node` persists the current `PortfolioDecisionOutput` as a `pending` record under namespace `("memories", user_id, "decisions")` with key `f"{TICKER}:{YYYY-MM-DD}"`.
-2. **Resolve (start of every run)** — `reflector_resolve_node` walks all pending entries (any ticker), calls `fetch_outcomes_openbb` for realised returns + alpha vs benchmark (default `SPY`), and calls `reflect_on_decision` (single LLM call) to produce a 2–4 sentence reflection. Resolved records persist in the same store.
+2. **Resolve (start of every run)** — `reflector_resolve_node` walks all pending entries (any ticker), calls `fetch_outcomes_openbb` for realised returns + alpha vs benchmark (default `SPY`), and calls `reflect_on_decision` (single LLM call) to produce a 2–4 sentence reflection.
 3. **Inject (same start)** — The most-recent `reflection_max_same_ticker` (5) + `reflection_max_cross_ticker` (3) resolved reflections are rendered as a Markdown block and injected into the Portfolio Manager prompt. The PM sets `incorporates_past_lessons=true` when it actually cites them.
 
-The reflection layer degrades silently when:
-- the store is `None`,
-- no `user_id` is resolvable from `configurable.user_id` or `MEMORY_DEBUG_USER_ID`,
-- `reflection_enabled` is `False`,
-- `fetch_outcomes_openbb` returns `None` for a pending entry (then it stays pending; next run will retry).
-
-These are operational unavailabilities, not LLM failures. The reflector LLM call itself runs *without* try/except — if it fails after retries, the graph fails (consistent with the no-try-except rule for LLM nodes).
+The reflection layer degrades silently when: the store is `None`, no `user_id` is resolvable, `reflection_enabled` is `False`, or `fetch_outcomes_openbb` returns `None`. These are operational unavailabilities. The reflector LLM call itself runs *without* try/except — if it fails after retries, the graph fails.
 
 ---
 
-## Composition patterns
-
-`AnalysisContext` is the abstraction that decouples this pipeline from any specific upstream analysis.
-
-### Pattern 1: Ad-hoc notes
-
-```python
-from langgraph.store.memory import InMemoryStore
-
-from muffin_agent.agents.trading_decision import (
-    AnalysisContext,
-    build_trading_decision_graph,
-)
-
-graph = build_trading_decision_graph(store=InMemoryStore())
-context = AnalysisContext.from_narrative(
-    "AAPL",
-    "Bull thesis: durable services growth. Bear: China demand wobble.",
-    query="long-term hold candidate",
-)
-result = await graph.ainvoke(
-    {"analysis_context": context.model_dump()},
-    config={"configurable": {"user_id": "alice"}},
-)
-print(result["portfolio_decision"]["rating"])
-```
-
-### Pattern 2: From muffin's investment_analysis pipeline
+## CLI
 
 ```bash
-muffin decide AAPL --analysis-json state.json --query "long-term hold"
+# Minimal — the four analysts fetch their own data.
+muffin decide AAPL
 
-# Combine structured analysis with free-form notes
-muffin decide AAPL --analysis-json state.json \
-                   --narrative "Add'l context: management transition"
+# With user framing
+muffin decide AAPL --query "long-term hold candidate"
+
+# Layer caller-provided notes alongside the analyst reports
+muffin decide AAPL --narrative "Recent earnings call mentioned X..."
+
+# Pin a decision date (deterministic testing + reflection-memory bookkeeping)
+muffin decide AAPL --decision-date 2026-05-23 --invest-rounds 1 --risk-rounds 1
 ```
 
-```python
-from muffin_agent.agents.trading_decision import AnalysisContext
+Required: OpenBB MCP and Firecrawl MCP running (`docker compose up -d openbb-mcp firecrawl-mcp searxng`).
 
-state = {                  # produced by build_investment_analysis_graph
-    "ticker": "AAPL",
-    "query": "long-term hold",
-    "market_regime": {...},
-    "sector_view": {...},
-    # ...other 4 structured outputs...
-}
-
-context = AnalysisContext.from_investment_analysis_state(
-    state,
-    narrative="Additional context that didn't fit the structured fields.",
-)
-```
-
-### Pattern 3: External / custom upstream
-
-Any caller with the right structured field keys can use `from_investment_analysis_state`; any caller without structured fields can fall back to `from_narrative`. The adapter doesn't care where the dict came from.
-
-```python
-ctx = AnalysisContext(
-    ticker="AAPL",
-    query="momentum + quality",
-    valuation={"valuation_signal": "fairly_valued", "pe_ttm": 22.1},
-    risk_assessment={"var_95_1m_pct": 6.4, "beta": 1.18},
-    narrative="Quant screen flagged this ticker.",
-    additional_context={"screener_score": 0.81, "factor": "quality"},
-)
-```
+The CLI uses an in-process `InMemoryStore` — reflection memory persists only within a single Python process. For cross-session persistence, wire a `PostgresStore` (see [LangGraph store docs](https://langchain-ai.github.io/langgraph/reference/store/)) or run on LangGraph Platform (it injects a managed store automatically).
 
 ---
 
@@ -245,6 +290,12 @@ Every node function is independently importable, lets external graphs satisfy th
 
 ```python
 from muffin_agent.agents.trading_decision import (
+    # Analyst factories (async, return compiled ReAct agents)
+    build_market_analyst_agent,
+    build_fundamentals_analyst_agent,
+    build_news_analyst_agent,
+    build_social_analyst_agent,
+    # Downstream nodes
     bull_researcher_node,
     bear_researcher_node,
     investment_judge_node,
@@ -253,59 +304,38 @@ from muffin_agent.agents.trading_decision import (
     conservative_debator_node,
     neutral_debator_node,
     portfolio_manager_node,
-    reflect_on_decision,  # pure async helper, not a node
+    # Reflection
+    reflect_on_decision,
     reflector_resolve_node,
     decision_writeback_node,
+    # Local tool
+    get_indicators,
 )
 ```
 
-The corresponding TypedDicts are also exported (`BullResearcherInputState`, `BullResearcherOutputState`, etc.) so external callers can type-narrow their parent state.
+The corresponding TypedDicts are also exported (`BullResearcherInputState`, `BullResearcherOutputState`, `MarketAnalystState`, `MarketAnalystOutput`, etc.) so external callers can type-narrow their parent state.
 
 ---
 
 ## Future migration paths
 
-The current single-LLM-call shape is right for trading_decision's reasoning-only roles. When a role grows beyond a single LLM call there are **two documented promotion paths**. Pick using the rubric below.
+The current shape — analysts as compiled ReAct agents, downstream nodes as single-LLM-call functions — is the right default. When a role grows beyond that there are **two documented promotion paths**.
 
 | Question | Path 1 (custom subgraph) | Path 2 (MuffinAgentBuilder agent) | Stay with current pattern |
 |---|---|---|---|
-| Tools? | Yes — needs `ToolNode` | Yes — uses `with_tool` | No |
+| Tools? | Yes — needs `ToolNode` | Yes — uses `with_tool` | Analysts already do |
 | Multiple LLM calls per turn (e.g. self-critique)? | Yes | No (single ReAct loop) | No |
 | Wants `ToolKnowledgeMiddleware` / `ToolResultCacheMiddleware`? | Add manually | Yes (free) | N/A |
 | Custom internal routing / state? | Yes | No | No |
-| Default for a new role in trading_decision? | | | **Yes** |
+
+The analyst layer already uses Path 2 internally — each analyst IS a compiled `MuffinAgentBuilder.build_react_agent()` added directly to the parent graph. The patterns below are for downstream nodes (Bull, Bear, etc.) if they ever need tools / multi-step structure.
 
 ### Path 1 — Compiled subgraph with `ToolNode`
 
-When a role needs tools AND/OR has its own internal state machine (retry loop, self-critique pass, internal CoT decomposition).
+When a role needs tools AND has its own internal state machine.
 
 ```python
 # Hypothetical: trader.py after tools arrive
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
-
-
-class TraderInternalState(TypedDict, total=False):
-    messages: list[BaseMessage]
-    structured_response: TraderOutput | None
-
-
-def _trader_llm_step(state, config):
-    llm = (
-        ModelConfiguration.from_runnable_config(config)
-        .get_llm_for_role("reasoner")[0]
-        .bind_tools([compute_position_sizing])
-        .with_structured_output(TraderOutput)
-    )
-    response = llm.invoke(state["messages"])
-    return {"messages": [response]}
-
-
-def _route_trader(state) -> Literal["tools", "__end__"]:
-    last = state["messages"][-1]
-    return "tools" if getattr(last, "tool_calls", None) else END
-
-
 @lru_cache(maxsize=1)
 def build_trader_subgraph() -> CompiledStateGraph:
     g = StateGraph(TraderInternalState)
@@ -315,59 +345,37 @@ def build_trader_subgraph() -> CompiledStateGraph:
     g.add_conditional_edges("llm", _route_trader, {"tools": "tools", END: END})
     g.add_edge("tools", "llm")
     return g.compile()
-
-
-async def trader_node(state, config):
-    """Parent-graph adapter: stages messages, invokes the subgraph, unpacks output."""
-    subgraph = build_trader_subgraph()
-    sub_state = {"messages": [HumanMessage(_build_trader_context(state))]}
-    result = await subgraph.ainvoke(sub_state, config)
-    structured = result["structured_response"]
-    return {"trader": structured.model_dump()}
 ```
 
-The subgraph's internal state is private to the role. Tools, retries, branching all stay encapsulated.
+### Path 2 — `MuffinAgentBuilder` agent as graph node (analyst pattern)
 
-### Path 2 — `MuffinAgentBuilder` agent as graph node
-
-When a role needs muffin's middleware stack (tool-knowledge lessons, cross-agent caching, etc.) but doesn't need a custom topology — i.e. a standard ReAct loop is enough.
+The analyst factories already follow this pattern. Extend the same shape to a downstream node when it needs muffin's middleware stack (tool-knowledge lessons, cross-agent caching, etc.) AND can be expressed as a standard ReAct loop:
 
 ```python
-# Hypothetical: trader.py after we want tool-knowledge + caching
-@lru_cache(maxsize=1)
-def build_trader_agent() -> CompiledStateGraph:
-    cfg = ModelConfiguration.from_runnable_config({"configurable": {}})
+# Hypothetical: trader.py promoted to a tools-enabled ReAct agent
+async def build_trader_agent(config: RunnableConfig) -> CompiledStateGraph:
+    cfg = ModelConfiguration.from_runnable_config(config)
     primary, *fallbacks = cfg.get_llm_for_role("reasoner")
-    summariser = cfg.get_summariser()
+
+    class TraderAgentState(AgentState):
+        ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+        investment_judge: Annotated[dict, OmitFromSchema(input=False, output=True)]
+        trader: Annotated[dict, OmitFromSchema(input=True, output=False)]
+
     builder = (
         MuffinAgentBuilder(primary, name="trader")
-        .with_system_prompt_template("trading_decision/trader.jinja")
         .with_fallback_models(*fallbacks)
+        .with_state_schema(TraderAgentState)
+        .with_runtime_system_prompt_template("trading_decision/trader.jinja")
+        .with_response_format(TraderOutput)  # auto-unpacks to state.trader by name
         .with_tool(compute_position_sizing)
-        .with_response_format(AutoStrategy(TraderOutput))
     )
-    if summariser is not None:
-        builder = builder.with_tool_knowledge(summariser)
     return builder.build_react_agent()
 
-
-# Parent graph adds the compiled agent as a node:
-graph.add_node("trader", build_trader_agent())
+# Parent graph:
+graph.add_node("trader", await build_trader_agent(config),
+               input_schema=trader_agent.input_schema)
 ```
-
-The agent's state schema (`AgentState` with `messages` + `structured_response`) must be a subset of (or compatible via state mapping with) the parent graph's state.
-
----
-
-## Persistent reflection store (follow-up)
-
-The CLI ships with `InMemoryStore`, so reflection memory persists only within a single Python process. For cross-session persistence:
-
-* **LangGraph Platform**: the runtime injects a managed Postgres store automatically. No changes required.
-* **Self-hosted**: wire a `PostgresStore` (see [LangGraph store docs](https://langchain-ai.github.io/langgraph/reference/store/)) by passing it to `build_trading_decision_graph(store=...)`.
-* **File-backed**: not currently shipped; tracked in [roadmap.md](../roadmap.md) under "Follow-up — persistent reflection store" as a candidate for a simple SQLite-backed store.
-
-The `--from-analysis` one-shot CLI flag (runs `muffin analyze` then pipes through the adapter automatically) is also a follow-up — blocked on `thesis_synthesis_node` (which currently raises `NotImplementedError`).
 
 ---
 
@@ -375,16 +383,19 @@ The `--from-analysis` one-shot CLI flag (runs `muffin analyze` then pipes throug
 
 | Concern | File |
 |---|---|
-| Schemas | [src/muffin_agent/agents/trading_decision/schemas.py](../src/muffin_agent/agents/trading_decision/schemas.py) |
+| Schemas (Judge / Trader / PM outputs + reflection records) | [src/muffin_agent/agents/trading_decision/schemas.py](../src/muffin_agent/agents/trading_decision/schemas.py) |
 | State (flat, with reducers) | [src/muffin_agent/agents/trading_decision/state.py](../src/muffin_agent/agents/trading_decision/state.py) |
 | Configuration | [src/muffin_agent/agents/trading_decision/config.py](../src/muffin_agent/agents/trading_decision/config.py) |
 | Debate formatters | [src/muffin_agent/agents/trading_decision/_debate.py](../src/muffin_agent/agents/trading_decision/_debate.py) |
+| Analysts (4 compiled ReAct agents) | [src/muffin_agent/agents/trading_decision/analysts/](../src/muffin_agent/agents/trading_decision/analysts/) |
+| Local tool (`get_indicators`) | [src/muffin_agent/agents/trading_decision/tools.py](../src/muffin_agent/agents/trading_decision/tools.py) |
 | Researchers | [src/muffin_agent/agents/trading_decision/researchers/](../src/muffin_agent/agents/trading_decision/researchers/) |
 | Trader | [src/muffin_agent/agents/trading_decision/trader.py](../src/muffin_agent/agents/trading_decision/trader.py) |
 | Risk debaters | [src/muffin_agent/agents/trading_decision/risk_debate/](../src/muffin_agent/agents/trading_decision/risk_debate/) |
 | Portfolio Manager | [src/muffin_agent/agents/trading_decision/portfolio_manager.py](../src/muffin_agent/agents/trading_decision/portfolio_manager.py) |
 | Reflection memory | [src/muffin_agent/agents/trading_decision/reflection/](../src/muffin_agent/agents/trading_decision/reflection/) |
-| Graph builders + routers | [src/muffin_agent/agents/trading_decision/graph.py](../src/muffin_agent/agents/trading_decision/graph.py) |
-| Prompts (templates + 3 shared partials) | [src/muffin_agent/prompts/trading_decision/](../src/muffin_agent/prompts/trading_decision/) |
+| Graph builders + routers (async) | [src/muffin_agent/agents/trading_decision/graph.py](../src/muffin_agent/agents/trading_decision/graph.py) |
+| Prompts | [src/muffin_agent/prompts/trading_decision/](../src/muffin_agent/prompts/trading_decision/) |
 | CLI | [src/muffin_cli/main.py](../src/muffin_cli/main.py) (`decide` command) |
-| Tests | [tests/agents/test_trading_decision/](../tests/agents/test_trading_decision/) (~140 tests) + [tests/cli/test_decide_helpers.py](../tests/cli/test_decide_helpers.py) |
+| MuffinAgentBuilder extensions | [src/muffin_agent/utils/agent_builder.py](../src/muffin_agent/utils/agent_builder.py) (`with_state_schema`, `with_runtime_system_prompt_template`, plus auto-unpack on `with_response_format` + `with_state_schema`) |
+| Tests | [tests/agents/test_trading_decision/](../tests/agents/test_trading_decision/) + [tests/utils/test_agent_builder_state_aware.py](../tests/utils/test_agent_builder_state_aware.py) |

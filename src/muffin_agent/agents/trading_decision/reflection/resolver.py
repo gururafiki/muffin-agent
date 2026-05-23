@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class ReflectorResolveInputState(TypedDict, total=False):
     """State keys read by ``reflector_resolve_node``."""
 
-    analysis_context: dict[str, Any]
+    ticker: str
     decision_date: str
 
 
@@ -144,7 +144,7 @@ async def reflector_resolve_node(
             }
         )
 
-    ticker = state["analysis_context"].get("ticker", "")
+    ticker = state.get("ticker") or ""
     same_ticker = await memory.list_resolved_for_ticker(
         ticker, limit=cfg.reflection_max_same_ticker
     )

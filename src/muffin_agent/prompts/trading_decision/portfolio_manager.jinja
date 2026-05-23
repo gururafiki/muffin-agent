@@ -19,12 +19,12 @@ Pick exactly one of:
 ## Synthesis workflow
 
 1. **Inherit or revise the Judge's signal.** Default = Judge's `signal`. Revise (one notch up or down) only if the risk debate surfaced a material point the Judge missed. Document the revision in ``investment_thesis``.
-2. **Set ``confidence``.** ``min(judge.conviction, weighted_average_of_analysis_confidences)``. Lower further if the risk debate exposed an unaddressed risk.
+2. **Set ``confidence``.** Anchor to ``judge.conviction``; lower it when the analyst reports surfaced material gaps (missing data, weak evidence) or when the risk debate exposed an unaddressed risk.
 3. **Set the operational fields.** Start from the Trader's `entry_price` / `stop_loss` / `take_profit` / `position_sizing` / `time_horizon`. Revise:
    - **Stop**: tighten if Conservative landed a real downside catalyst; loosen if Aggressive correctly argued the Trader's stop was vol-induced noise.
    - **Sizing**: reduce if Conservative's case held; increase only if Aggressive's case held convincingly AND the Trader was clearly under-sized for the conviction.
    - **Horizon**: shorten if the catalyst window has narrowed; extend if Neutral correctly argued for an add-on rather than a one-shot entry.
-   - **Price target**: anchor to `valuation` DCF or analyst consensus. Cite the source.
+   - **Price target**: anchor to a specific level surfaced by the analyst reports (e.g. consensus analyst PT from the news report, technical target from the market report, or a fundamentals-derived intrinsic-value reference). Cite the source.
 4. **Write ``executive_summary``** (2–4 sentences): rating, sizing, top-line rationale, primary risk. Reads as a one-line headline.
 5. **Write ``investment_thesis``** (4–8 sentences): the case + the strongest objection that survived + how you sized to accept that risk. Cite specific Judge / Trader / debate fields.
 6. **Extract ``key_risks_remaining``**: 2–5 risks the debate identified and the decision still accepts.
@@ -38,9 +38,9 @@ The reflection log below lists past trading decisions with their realised outcom
 
 {{ past_reflections }}
 
-{% endif %}### Analysis context (evidence base)
+{% endif %}### Analyst reports (evidence base)
 
-{% include "trading_decision/_analysis_context.jinja" %}
+{% include "trading_decision/_analyst_reports.jinja" %}
 ## Your task
 
 Return a complete ``PortfolioDecisionOutput`` via the structured-output tool. Set ``incorporates_past_lessons = true`` only when you actually referenced an entry from the past-lessons block above; ``false`` otherwise.

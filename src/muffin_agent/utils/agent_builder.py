@@ -104,6 +104,10 @@ from ..middlewares.tool_result_cache.tools import (
 )
 from ..prompts import render_template
 from ..sandbox import get_backend
+from ._runtime_prompt_middleware import _RuntimePromptMiddleware
+from ._structured_response_to_state_middleware import (
+    _StructuredResponseToStateMiddleware,
+)
 from .backends import _SKILLS_ROOT, _memories_namespace
 
 # Permanent provider errors — never retry. Checked first because most are
@@ -326,6 +330,8 @@ class MuffinAgentBuilder:
         self._response_format: ResponseFormat[Any] | type | dict[str, Any] | None = None
         self._store: BaseStore | None = None
         self._context_schema: type | None = None
+        self._state_schema: type | None = None
+        self._runtime_prompt_template: str | None = None
         self._checkpointer: Checkpointer | None = None
 
     # ─── System prompt ───────────────────────────────────────────────────
@@ -346,6 +352,32 @@ class MuffinAgentBuilder:
         with :meth:`with_system_prompt` — the last call wins.
         """
         self._prompt.base = render_template(template, **vars)
+        return self
+
+    def with_runtime_system_prompt_template(self, template: str) -> Self:
+        """Render the system prompt from runtime state on each LLM call.
+
+        Unlike :meth:`with_system_prompt_template` (which resolves
+        variables at build time), this method re-renders the template
+        per call from the agent's state.
+
+        When :meth:`with_state_schema` is also set, the middleware
+        introspects the schema's ``OmitFromSchema`` annotations and
+        passes ONLY the input-eligible fields as Jinja variables
+        (skipping reserved fields like ``messages`` /
+        ``structured_response``). Without a state schema, all
+        non-reserved state fields are passed.
+
+        Templates reference whichever fields they need; use
+        ``{% if x %}`` to handle absent values.
+
+        Mutually exclusive with :meth:`with_system_prompt` /
+        :meth:`with_system_prompt_template` for the BASE prompt
+        (``system_prompt=None`` is forwarded to ``create_agent`` when
+        this method is used). Muffin-managed partials (sandbox, memory,
+        etc.) are still appended.
+        """
+        self._runtime_prompt_template = template
         return self
 
     # ─── Backend capabilities ────────────────────────────────────────────
@@ -705,6 +737,30 @@ class MuffinAgentBuilder:
         self._context_schema = schema
         return self
 
+    def with_state_schema(self, schema: type) -> Self:
+        """Forward a custom state schema to ``create_agent``.
+
+        The schema must extend
+        :class:`langchain.agents.middleware.types.AgentState` so the
+        ReAct loop's ``messages`` reducer is preserved. Annotate fields
+        with ``Annotated[T, OmitFromSchema(input=..., output=...)]`` to
+        control which fields flow IN from a parent graph vs OUT to a
+        parent when the compiled agent is added directly as a
+        parent-graph node.
+
+        When this method is combined with :meth:`with_response_format`,
+        ``MuffinAgentBuilder`` auto-wires
+        :class:`_StructuredResponseToStateMiddleware` so the Pydantic
+        response is unpacked into per-field state updates (each
+        Pydantic-model field maps to a same-named state field, ready
+        for the parent graph to read by name).
+
+        ReAct-only — ``build_deep_agent`` does not currently forward
+        this parameter.
+        """
+        self._state_schema = schema
+        return self
+
     def with_checkpointer(self, checkpointer: Checkpointer) -> Self:
         """Attach a checkpointer for graph state persistence."""
         self._checkpointer = checkpointer
@@ -755,15 +811,22 @@ class MuffinAgentBuilder:
             )
         self._prompt.add_partial(_PARTIAL_FILESYSTEM)
         backend_factory = self._backend.factory()
+        # When a runtime-rendered prompt is configured, the base prompt
+        # is injected per call by _RuntimePromptMiddleware. Forward
+        # ``system_prompt=None`` so create_agent doesn't double-inject.
+        system_prompt = (
+            None if self._runtime_prompt_template else self._prompt.render()
+        )
         return create_agent(
             model=self._model,
             tools=self._tools.tools or None,
-            system_prompt=self._prompt.render(),
+            system_prompt=system_prompt,
             middleware=self._assemble_middleware(
                 is_deep=False, backend_factory=backend_factory
             ),
             response_format=self._effective_response_format(),
             context_schema=self._context_schema,
+            state_schema=self._state_schema,
             checkpointer=self._checkpointer,
             store=self._store,
             name=self._name,
@@ -916,5 +979,23 @@ class MuffinAgentBuilder:
                     )
         if self._skills.filter_middleware is not None:
             stack.append(self._skills.filter_middleware)
+        # Runtime prompt + structured-response unpacking middlewares
+        # (built into the builder for the compiled-agent-as-direct-node
+        # pattern). Added just before caller-supplied middleware so
+        # custom middleware can still override behaviour.
+        if self._runtime_prompt_template is not None:
+            stack.append(
+                _RuntimePromptMiddleware(
+                    template=self._runtime_prompt_template,
+                    state_schema=self._state_schema,
+                    static_partials=tuple(self._prompt.partials),
+                )
+            )
+        # Auto-trigger structured-response unpacking when BOTH a custom
+        # state schema AND a response format are set — the unambiguous
+        # signal that this agent is meant to be added directly to a
+        # parent graph with shared per-field state keys.
+        if self._state_schema is not None and self._response_format is not None:
+            stack.append(_StructuredResponseToStateMiddleware())
         stack.extend(self._middleware)
         return stack

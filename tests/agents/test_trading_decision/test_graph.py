@@ -1,4 +1,14 @@
-"""End-to-end tests for the three trading_decision graph builders."""
+"""End-to-end tests for the three trading_decision graph builders.
+
+The 4 analyst agents (Market / Fundamentals / News / Social) are ReAct
+agents that fetch data via OpenBB MCP — far too heavyweight to drive
+through with a fake LLM in unit tests. The tests patch
+``_add_analyst_nodes`` to register lightweight stub nodes that just
+write constant report strings into state. This isolates the
+debate/judge/trader/risk/PM/reflection logic from analyst behaviour;
+the analyst agents themselves are covered by their own unit tests
+(when added).
+"""
 
 from __future__ import annotations
 
@@ -6,7 +16,9 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from langgraph.graph import StateGraph
 from langgraph.store.memory import InMemoryStore
+from langgraph.types import RetryPolicy
 
 from muffin_agent.agents.trading_decision import (
     Outcome,
@@ -21,6 +33,11 @@ from muffin_agent.agents.trading_decision.schemas import (
 )
 
 from .conftest import FakeLLM, ai
+
+_GRAPH_MODULE = "muffin_agent.agents.trading_decision.graph"
+
+
+# ── Fixtures: structured outputs the synthesis nodes consume ─────────────────
 
 
 def _judge_output() -> InvestmentJudgeOutput:
@@ -70,16 +87,16 @@ def _pm_output(**overrides) -> PortfolioDecisionOutput:
     return PortfolioDecisionOutput.model_validate(base)
 
 
-def _make_role_factory(role_responses: dict[str, Any]):
-    """Build a fake ``ModelConfiguration.from_runnable_config`` whose
-    ``get_llm_for_role`` returns a FakeLLM with a per-role response.
+# ── Fake LLM sequencing ──────────────────────────────────────────────────────
 
-    The Mock is built so each invocation returns a FRESH FakeLLM (so
-    invocations accumulate per call but the next call gets the response
-    we want).
+
+def _make_role_factory(role_responses: dict[str, Any]):
+    """Build a fake ``ModelConfiguration.from_runnable_config``.
+
+    Each ``get_llm_for_role`` call returns a FRESH FakeLLM bound to the
+    next response in the queue. All non-analyst LLM-call nodes share the
+    ``"reasoner"`` role and step through a single queue.
     """
-    # Track which roles have been called to give the right response.
-    # Since all roles share role="reasoner", we step through a queue.
     response_queue: list[Any] = role_responses["sequence"]
     counter = {"i": 0}
 
@@ -97,12 +114,7 @@ def _make_role_factory(role_responses: dict[str, Any]):
 
 
 def _patch_model_config(factory):
-    """Patch ``ModelConfiguration.from_runnable_config`` at the source.
-
-    Every per-node module imports the same ``ModelConfiguration`` class, so
-    one patch at the source class covers them all without the
-    multi-patch leak that would happen if we patched per-module.
-    """
+    """Patch ``ModelConfiguration.from_runnable_config`` at the source."""
     from muffin_agent.model_config import ModelConfiguration
 
     return patch.object(
@@ -110,31 +122,91 @@ def _patch_model_config(factory):
     )
 
 
+# ── Stub analyst nodes ───────────────────────────────────────────────────────
+
+
+_LLM_RETRY = RetryPolicy(max_attempts=2)
+
+
+async def _stub_market(state):  # noqa: ARG001
+    return {"market_report": "Market: trend up, RSI 58."}
+
+
+async def _stub_fundamentals(state):  # noqa: ARG001
+    return {"fundamentals_report": "Fund: ROIC 28%, FCF margin 22%."}
+
+
+async def _stub_news(state):  # noqa: ARG001
+    return {"news_report": "News: Q1 earnings 2026-04-25."}
+
+
+async def _stub_social(state):  # noqa: ARG001
+    return {"sentiment_report": "Sentiment: retail bullish."}
+
+
+async def _stub_add_analyst_nodes(
+    graph: StateGraph, config  # noqa: ARG001
+) -> None:
+    """Replacement for ``_add_analyst_nodes`` that wires lightweight stubs.
+
+    The real analyst agents make MCP calls + multi-step ReAct loops,
+    which are infeasible to drive end-to-end with a FakeLLM. We replace
+    them with single-function nodes that emit constant report strings.
+    """
+    graph.add_node("market_analyst", _stub_market, retry_policy=_LLM_RETRY)
+    graph.add_node(
+        "fundamentals_analyst", _stub_fundamentals, retry_policy=_LLM_RETRY
+    )
+    graph.add_node("news_analyst", _stub_news, retry_policy=_LLM_RETRY)
+    graph.add_node("social_analyst", _stub_social, retry_policy=_LLM_RETRY)
+
+
+def _patch_analyst_nodes():
+    return patch(f"{_GRAPH_MODULE}._add_analyst_nodes", new=_stub_add_analyst_nodes)
+
+
 # ── Graph compilation tests ──────────────────────────────────────────────────
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
 class TestGraphCompilation:
-    def test_investment_debate_graph_compiles(self):
-        g = build_investment_debate_graph()
-        nodes = set(g.get_graph().nodes.keys())
-        assert {"bull_researcher", "bear_researcher", "investment_judge"} <= nodes
-
-    def test_investment_thesis_graph_compiles(self):
-        g = build_investment_thesis_graph()
+    async def test_investment_debate_graph_compiles(self):
+        with _patch_analyst_nodes():
+            g = await build_investment_debate_graph(config={"configurable": {}})
         nodes = set(g.get_graph().nodes.keys())
         assert {
+            "market_analyst",
+            "fundamentals_analyst",
+            "news_analyst",
+            "social_analyst",
+            "bull_researcher",
+            "bear_researcher",
+            "investment_judge",
+        } <= nodes
+
+    async def test_investment_thesis_graph_compiles(self):
+        with _patch_analyst_nodes():
+            g = await build_investment_thesis_graph(config={"configurable": {}})
+        nodes = set(g.get_graph().nodes.keys())
+        assert {
+            "market_analyst",
             "bull_researcher",
             "bear_researcher",
             "investment_judge",
             "trader",
         } <= nodes
 
-    def test_trading_decision_graph_compiles(self):
-        g = build_trading_decision_graph()
+    async def test_trading_decision_graph_compiles(self):
+        with _patch_analyst_nodes():
+            g = await build_trading_decision_graph(config={"configurable": {}})
         nodes = set(g.get_graph().nodes.keys())
         assert {
             "reflector_resolve",
+            "market_analyst",
+            "fundamentals_analyst",
+            "news_analyst",
+            "social_analyst",
             "bull_researcher",
             "bear_researcher",
             "investment_judge",
@@ -166,35 +238,42 @@ class TestInvestmentDebateGraph:
         patcher = _patch_model_config(_make_role_factory({"sequence": responses}))
         patcher.start()
         try:
-            graph = build_investment_debate_graph()
-            result = await graph.ainvoke(
-                {"analysis_context": {"ticker": "AAPL"}},
-                config={"configurable": {"thread_id": "test-debate"}},
-            )
+            with _patch_analyst_nodes():
+                graph = await build_investment_debate_graph(
+                    config={"configurable": {}}
+                )
+                result = await graph.ainvoke(
+                    {"ticker": "AAPL"},
+                    config={"configurable": {"thread_id": "test-debate"}},
+                )
         finally:
             patcher.stop()
 
-        # All 4 debate turns accumulated.
         assert result["investment_bull_responses"] == ["bull 1", "bull 2"]
         assert result["investment_bear_responses"] == ["bear 1", "bear 2"]
-        # Judge output is set.
         assert result["investment_judge"]["signal"] == "buy"
+        # Analyst stubs wrote their reports too.
+        assert result["market_report"].startswith("Market:")
+        assert result["fundamentals_report"].startswith("Fund:")
 
     async def test_one_round_override(self):
         responses = [ai("bull"), ai("bear"), _judge_output()]
         patcher = _patch_model_config(_make_role_factory({"sequence": responses}))
         patcher.start()
         try:
-            graph = build_investment_debate_graph()
-            result = await graph.ainvoke(
-                {"analysis_context": {"ticker": "AAPL"}},
-                config={
-                    "configurable": {
-                        "thread_id": "test-1round",
-                        "max_investment_debate_rounds": 1,
-                    }
-                },
-            )
+            with _patch_analyst_nodes():
+                graph = await build_investment_debate_graph(
+                    config={"configurable": {}}
+                )
+                result = await graph.ainvoke(
+                    {"ticker": "AAPL"},
+                    config={
+                        "configurable": {
+                            "thread_id": "test-1round",
+                            "max_investment_debate_rounds": 1,
+                        }
+                    },
+                )
         finally:
             patcher.stop()
 
@@ -206,7 +285,6 @@ class TestInvestmentDebateGraph:
 @pytest.mark.asyncio
 class TestInvestmentThesisGraph:
     async def test_runs_through_to_trader(self):
-        # 1 round investment debate + judge + trader.
         responses = [
             ai("bull"),
             ai("bear"),
@@ -216,16 +294,19 @@ class TestInvestmentThesisGraph:
         patcher = _patch_model_config(_make_role_factory({"sequence": responses}))
         patcher.start()
         try:
-            graph = build_investment_thesis_graph()
-            result = await graph.ainvoke(
-                {"analysis_context": {"ticker": "AAPL"}},
-                config={
-                    "configurable": {
-                        "thread_id": "test-thesis",
-                        "max_investment_debate_rounds": 1,
-                    }
-                },
-            )
+            with _patch_analyst_nodes():
+                graph = await build_investment_thesis_graph(
+                    config={"configurable": {}}
+                )
+                result = await graph.ainvoke(
+                    {"ticker": "AAPL"},
+                    config={
+                        "configurable": {
+                            "thread_id": "test-thesis",
+                            "max_investment_debate_rounds": 1,
+                        }
+                    },
+                )
         finally:
             patcher.stop()
 
@@ -252,18 +333,22 @@ class TestTradingDecisionGraph:
         patcher = _patch_model_config(_make_role_factory({"sequence": responses}))
         patcher.start()
         try:
-            graph = build_trading_decision_graph(store=InMemoryStore())
-            result = await graph.ainvoke(
-                {"analysis_context": {"ticker": "AAPL"}},
-                config={
-                    "configurable": {
-                        "thread_id": "test-full",
-                        "user_id": "alice",
-                        "max_investment_debate_rounds": 1,
-                        "decision_date": "2026-05-17",
-                    }
-                },
-            )
+            with _patch_analyst_nodes():
+                graph = await build_trading_decision_graph(
+                    config={"configurable": {}},
+                    store=InMemoryStore(),
+                )
+                result = await graph.ainvoke(
+                    {"ticker": "AAPL"},
+                    config={
+                        "configurable": {
+                            "thread_id": "test-full",
+                            "user_id": "alice",
+                            "max_investment_debate_rounds": 1,
+                            "decision_date": "2026-05-17",
+                        }
+                    },
+                )
         finally:
             patcher.stop()
 
@@ -274,8 +359,7 @@ class TestTradingDecisionGraph:
     async def test_two_sequential_runs_inject_reflection(self):
         store = InMemoryStore()
 
-        # Run 1: no prior reflections; reflector_resolve emits no LLM calls.
-        # Sequence is: bull, bear, judge, trader, agg, cons, neut, PM.
+        # Run 1: bull, bear, judge, trader, agg, cons, neut, PM.
         run1_responses = [
             ai("bull"),
             ai("bear"),
@@ -289,22 +373,24 @@ class TestTradingDecisionGraph:
         patcher = _patch_model_config(_make_role_factory({"sequence": run1_responses}))
         patcher.start()
         try:
-            graph = build_trading_decision_graph(store=store)
-            await graph.ainvoke(
-                {"analysis_context": {"ticker": "AAPL"}},
-                config={
-                    "configurable": {
-                        "thread_id": "test-run1",
-                        "user_id": "alice",
-                        "max_investment_debate_rounds": 1,
-                        "decision_date": "2026-05-10",
-                    }
-                },
-            )
+            with _patch_analyst_nodes():
+                graph = await build_trading_decision_graph(
+                    config={"configurable": {}}, store=store
+                )
+                await graph.ainvoke(
+                    {"ticker": "AAPL"},
+                    config={
+                        "configurable": {
+                            "thread_id": "test-run1",
+                            "user_id": "alice",
+                            "max_investment_debate_rounds": 1,
+                            "decision_date": "2026-05-10",
+                        }
+                    },
+                )
         finally:
             patcher.stop()
 
-        # Run 1 wrote a pending decision.
         from muffin_agent.agents.trading_decision.reflection.memory import (
             ReflectionMemory,
         )
@@ -312,9 +398,7 @@ class TestTradingDecisionGraph:
         memory = ReflectionMemory(store, user_id="alice")
         assert len(await memory.list_pending()) == 1
 
-        # Run 2: same store, new date. Resolver will fetch outcomes for
-        # the pending entry and call the reflector. Provide a stub fetcher
-        # that returns a real outcome.
+        # Run 2: reflector LLM resolves prior, then the standard 8 calls.
         outcome = Outcome(
             raw_return_pct=4.0,
             alpha_return_pct=1.2,
@@ -322,13 +406,11 @@ class TestTradingDecisionGraph:
             decision_action="buy",
         )
 
-        async def stub_fetcher(**kwargs: Any) -> Outcome:
+        async def stub_fetcher(**kwargs: Any) -> Outcome:  # noqa: ARG001
             return outcome
 
-        # Sequence: reflector LLM (for resolving prior pending),
-        # then bull, bear, judge, trader, agg, cons, neut, PM.
         run2_responses = [
-            ai("Bull held; alpha +1.2%."),  # reflector for resolved entry
+            ai("Bull held; alpha +1.2%."),
             ai("bull r2"),
             ai("bear r2"),
             _judge_output(),
@@ -341,26 +423,27 @@ class TestTradingDecisionGraph:
         patcher = _patch_model_config(_make_role_factory({"sequence": run2_responses}))
         patcher.start()
         try:
-            graph = build_trading_decision_graph(
-                store=store, outcomes_fetcher=stub_fetcher
-            )
-            result = await graph.ainvoke(
-                {"analysis_context": {"ticker": "AAPL"}},
-                config={
-                    "configurable": {
-                        "thread_id": "test-run2",
-                        "user_id": "alice",
-                        "max_investment_debate_rounds": 1,
-                        "decision_date": "2026-05-17",
-                    }
-                },
-            )
+            with _patch_analyst_nodes():
+                graph = await build_trading_decision_graph(
+                    config={"configurable": {}},
+                    store=store,
+                    outcomes_fetcher=stub_fetcher,
+                )
+                result = await graph.ainvoke(
+                    {"ticker": "AAPL"},
+                    config={
+                        "configurable": {
+                            "thread_id": "test-run2",
+                            "user_id": "alice",
+                            "max_investment_debate_rounds": 1,
+                            "decision_date": "2026-05-17",
+                        }
+                    },
+                )
         finally:
             patcher.stop()
 
-        # Past reflection from run 1 should be present in the resolved state.
         assert len(result["resolved_decisions"]) == 1
-        # The run-1 entry is now resolved in memory.
         resolved = await memory.list_resolved_for_ticker("AAPL")
         assert len(resolved) == 1
         assert resolved[0].reflection == "Bull held; alpha +1.2%."

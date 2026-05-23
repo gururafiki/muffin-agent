@@ -25,11 +25,16 @@ from muffin_agent.agents.trading_decision.schemas import InvestmentJudgeOutput
 from .conftest import ai, fake_model_config
 
 
-def _analysis_context() -> dict:
+def _base_state() -> dict:
+    """Sample input state — flat fields the nodes now read directly."""
     return {
         "ticker": "AAPL",
         "query": "long-term hold",
         "narrative": "AAPL trades at 22x P/E.",
+        "market_report": "Technical setup is constructive.",
+        "fundamentals_report": "Services margins expanding.",
+        "news_report": "Q1 earnings expected mid-quarter.",
+        "sentiment_report": "Retail bullish, institutional cautious.",
     }
 
 
@@ -42,7 +47,7 @@ class TestBullResearcherNode:
             "from_runnable_config",
             return_value=fake_model_config(ai("bull opening argument")),
         ):
-            state = {"analysis_context": _analysis_context()}
+            state = _base_state()
             update = await bull_researcher_node(state, {})
 
         assert update == {"investment_bull_responses": ["bull opening argument"]}
@@ -55,7 +60,6 @@ class TestBullResearcherNode:
             return_value=captured,
         ):
             state = {
-                "analysis_context": _analysis_context(),
                 "investment_bull_responses": ["my opener"],
                 "investment_bear_responses": ["bear point 1", "bear point 2"],
             }
@@ -80,7 +84,7 @@ class TestBearResearcherNode:
             "from_runnable_config",
             return_value=fake_model_config(ai("bear opening")),
         ):
-            state = {"analysis_context": _analysis_context()}
+            state = _base_state()
             update = await bear_researcher_node(state, {})
 
         assert update == {"investment_bear_responses": ["bear opening"]}
@@ -93,7 +97,6 @@ class TestBearResearcherNode:
             return_value=captured,
         ):
             state = {
-                "analysis_context": _analysis_context(),
                 "investment_bull_responses": ["bull opener"],
             }
             await bear_researcher_node(state, {})
@@ -130,7 +133,6 @@ class TestInvestmentJudgeNode:
             return_value=fake_model_config(self._judge_output()),
         ):
             state = {
-                "analysis_context": _analysis_context(),
                 "investment_bull_responses": ["bull arg"],
                 "investment_bear_responses": ["bear arg"],
             }
@@ -150,7 +152,6 @@ class TestInvestmentJudgeNode:
             return_value=captured,
         ):
             state = {
-                "analysis_context": _analysis_context(),
                 "investment_bull_responses": ["B1", "B2"],
                 "investment_bear_responses": ["b1", "b2"],
             }

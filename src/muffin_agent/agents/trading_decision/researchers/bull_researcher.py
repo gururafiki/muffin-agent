@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any
+from typing import Annotated
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -20,7 +20,13 @@ class BullResearcherInputState(TypedDict, total=False):
     Any graph that satisfies this shape can reuse ``bull_researcher_node``.
     """
 
-    analysis_context: dict[str, Any]
+    ticker: str
+    query: str
+    narrative: str
+    market_report: str
+    fundamentals_report: str
+    news_report: str
+    sentiment_report: str
     investment_bull_responses: Annotated[list[str], operator.add]
     investment_bear_responses: Annotated[list[str], operator.add]
 
@@ -39,7 +45,6 @@ async def bull_researcher_node(
     Routing is decided by the graph-level ``_route_investment_debate`` function;
     this node only updates state.
     """
-    analysis_context = state["analysis_context"]
     bulls = state.get("investment_bull_responses") or []
     bears = state.get("investment_bear_responses") or []
     opposing_last: str = bears[-1] if bears else ""
@@ -52,20 +57,17 @@ async def bull_researcher_node(
 
     prompt = render_template(
         "trading_decision/researchers/bull.jinja",
-        ticker=analysis_context.get("ticker", ""),
-        query=analysis_context.get("query"),
+        ticker=state.get("ticker", ""),
+        query=state.get("query"),
+        narrative=state.get("narrative"),
+        market_report=state.get("market_report"),
+        fundamentals_report=state.get("fundamentals_report"),
+        news_report=state.get("news_report"),
+        sentiment_report=state.get("sentiment_report"),
         speaking_as="Bull",
         opposing_speaker="Bear",
         debate_history=format_debate_history(bulls, bears),
         opposing_last=opposing_last,
-        market_regime=analysis_context.get("market_regime"),
-        sector_view=analysis_context.get("sector_view"),
-        company_analysis=analysis_context.get("company_analysis"),
-        forecast=analysis_context.get("forecast"),
-        risk_assessment=analysis_context.get("risk_assessment"),
-        valuation=analysis_context.get("valuation"),
-        narrative=analysis_context.get("narrative"),
-        additional_context=analysis_context.get("additional_context") or {},
     )
 
     response = await llm.ainvoke(
