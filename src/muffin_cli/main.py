@@ -1165,7 +1165,11 @@ async def _run_decide(
     }
     if decision_date:
         configurable["decision_date"] = decision_date
-    config = RunnableConfig(callbacks=callbacks, configurable=configurable)
+    config = RunnableConfig(
+        callbacks=callbacks,
+        configurable=configurable,
+        recursion_limit=100,
+    )
 
     graph = await build_trading_decision_graph(
         config,

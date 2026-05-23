@@ -379,6 +379,25 @@ graph.add_node("trader", await build_trader_agent(config),
 
 ---
 
+## Deviations from upstream TradingAgents
+
+The port is substantially faithful to [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) and re-platforms several pieces onto more modern LangGraph primitives. Intentional deviations:
+
+- **5-tier rating vocabulary**: `strong_buy / buy / hold / sell / strong_sell` (port) vs `Buy / Overweight / Hold / Underweight / Sell` (upstream). Port aligns with [`CriteriaAnalysisSynthesis.signal`](../src/muffin_agent/agents/criteria_analysis/schemas.py) so both pipelines speak one rating language.
+- **`max_investment_debate_rounds=2`** by default (vs upstream `1`). Yields four bull/bear turns instead of two — more thorough debate at 2× the LLM cost. Override per-run via `--invest-rounds` or `configurable.max_investment_debate_rounds`.
+- **Reflection memory is `BaseStore`-backed** (`("memories", user_id, "decisions")` namespace, `f"{TICKER}:{YYYY-MM-DD}"` key) rather than the upstream append-only markdown file at `~/.tradingagents/memory/trading_memory.md`. No built-in `memory_log_max_entries` rotation knob — retention is delegated to the store layer (`PostgresStore`, LangGraph Platform's managed store, etc.).
+- **Reflection resolution is global, not per-ticker**: `reflector_resolve_node` walks ALL pending entries across tickers each run. Upstream only resolved same-ticker pending entries; the port resolves cross-ticker pending entries as well so cross-ticker lessons accumulate with real outcome figures.
+- **No `output_language` switch** — English-only. Upstream supported per-run language selection for analyst/PM outputs while keeping internal debate in English. Roadmap item.
+- **No JSON state-log / markdown report file saving** in the CLI. Observability is via LangSmith / LangFuse traces (see `setup_tracing` in [src/muffin_agent/utils/observability.py](../src/muffin_agent/utils/observability.py)) instead of post-run file writes.
+- **No "FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL**" coordination marker**. Upstream used it as a heuristic stop-signal in analyst ReAct loops; the port replaces that with structured-output schemas + per-tool `run_limit` governance, which makes the marker unnecessary.
+- **`recursion_limit=100`** is set on the `muffin decide` CLI to match upstream — the full pipeline (4 analyst ReAct loops + 4-turn investment debate + 3-turn risk debate + judge / trader / PM / reflector bookends) easily exceeds LangGraph's default of 25 steps. Callers wiring `build_trading_decision_graph` from outside the CLI should set `recursion_limit` themselves on the `RunnableConfig`.
+
+### Look-ahead-bias caveat for backtesting
+
+Upstream enforces date capping at the dataflow layer (`load_ohlcv` filters rows `<= curr_date`, `filter_financials_by_date` strips future fiscal columns). The port pushes `decision_date` into prompts and trusts the analyst LLM to pass it as the `end_date` / `curr_date` argument on OpenBB tool calls. The local `get_indicators` tool is safe — it enforces `curr_date` server-side and only fetches OHLCV up to that date. The OpenBB MCP tools (`equity_price_*`, `equity_fundamental_*`, `news_*`, `equity_ownership_*`) do **not** have a hard server-side cap. For rigorous historical backtesting, audit the tool-call trace in LangFuse / LangSmith to confirm `end_date` / `start_date` / `as_of_date` arguments are bounded by `decision_date`.
+
+---
+
 ## Where to look in the code
 
 | Concern | File |
@@ -395,7 +414,7 @@ graph.add_node("trader", await build_trader_agent(config),
 | Portfolio Manager | [src/muffin_agent/agents/trading_decision/portfolio_manager.py](../src/muffin_agent/agents/trading_decision/portfolio_manager.py) |
 | Reflection memory | [src/muffin_agent/agents/trading_decision/reflection/](../src/muffin_agent/agents/trading_decision/reflection/) |
 | Graph builders + routers (async) | [src/muffin_agent/agents/trading_decision/graph.py](../src/muffin_agent/agents/trading_decision/graph.py) |
-| Prompts | [src/muffin_agent/prompts/trading_decision/](../src/muffin_agent/prompts/trading_decision/) |
+| Prompts | [src/muffin_agent/prompts/trading_decision/](../src/muffin_agent/prompts/trading_decision/) (shared `_instrument_context.jinja` partial is included by every agent prompt to preserve exchange suffixes like `.TO` / `.L` / `.HK`) |
 | CLI | [src/muffin_cli/main.py](../src/muffin_cli/main.py) (`decide` command) |
 | MuffinAgentBuilder extensions | [src/muffin_agent/utils/agent_builder.py](../src/muffin_agent/utils/agent_builder.py) (`with_state_schema`, `with_runtime_system_prompt_template`, plus auto-unpack on `with_response_format` + `with_state_schema`) |
 | Tests | [tests/agents/test_trading_decision/](../tests/agents/test_trading_decision/) + [tests/utils/test_agent_builder_state_aware.py](../tests/utils/test_agent_builder_state_aware.py) |
