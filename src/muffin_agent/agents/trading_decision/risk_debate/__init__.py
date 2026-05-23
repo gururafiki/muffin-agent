@@ -1,11 +1,29 @@
-"""Aggressive / Conservative / Neutral risk-debate agents."""
+"""Aggressive / Conservative / Neutral risk-debate nodes."""
 
-from .aggressive_debator import create_aggressive_debator_agent
-from .conservative_debator import create_conservative_debator_agent
-from .neutral_debator import create_neutral_debator_agent
+from .aggressive_debator import (
+    AggressiveDebatorInputState,
+    AggressiveDebatorOutputState,
+    aggressive_debator_node,
+)
+from .conservative_debator import (
+    ConservativeDebatorInputState,
+    ConservativeDebatorOutputState,
+    conservative_debator_node,
+)
+from .neutral_debator import (
+    NeutralDebatorInputState,
+    NeutralDebatorOutputState,
+    neutral_debator_node,
+)
 
 __all__ = [
-    "create_aggressive_debator_agent",
-    "create_conservative_debator_agent",
-    "create_neutral_debator_agent",
+    "AggressiveDebatorInputState",
+    "AggressiveDebatorOutputState",
+    "ConservativeDebatorInputState",
+    "ConservativeDebatorOutputState",
+    "NeutralDebatorInputState",
+    "NeutralDebatorOutputState",
+    "aggressive_debator_node",
+    "conservative_debator_node",
+    "neutral_debator_node",
 ]

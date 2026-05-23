@@ -1,52 +1,70 @@
-"""Bear Researcher agent factory.
-
-Pure-reasoning ReAct agent (no tools, no subagents). Adversarial debater
-that argues against taking or growing the position. Symmetric counterpart
-to ``bull_researcher``.
-"""
+"""Bear Researcher node — symmetric counterpart to bull_researcher."""
 
 from __future__ import annotations
 
+import operator
+from typing import Annotated, Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
+from typing_extensions import TypedDict
 
 from ....model_config import ModelConfiguration
 from ....prompts import render_template
-from ....utils.agent_builder import MuffinAgentBuilder
+from .._debate import format_debate_history
 
 
-async def create_bear_researcher_agent(
-    config: RunnableConfig,
-    *,
-    ticker: str,
-    query: str | None,
-    context_vars: dict,
-    debate_history: str,
-    opposing_last: str,
-) -> CompiledStateGraph:
-    """Build the Bear Researcher debater.
+class BearResearcherInputState(TypedDict, total=False):
+    """State keys read by ``bear_researcher_node``."""
 
-    See ``create_bull_researcher_agent`` for full parameter docs — this
-    is the symmetric counterpart that argues the bearish side.
-    """
-    configuration = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = configuration.get_llm_for_role("reasoner")
-    summariser = configuration.get_summariser()
+    analysis_context: dict[str, Any]
+    investment_bull_responses: Annotated[list[str], operator.add]
+    investment_bear_responses: Annotated[list[str], operator.add]
+
+
+class BearResearcherOutputState(TypedDict, total=False):
+    """State keys written by ``bear_researcher_node``."""
+
+    investment_bear_responses: Annotated[list[str], operator.add]
+
+
+async def bear_researcher_node(
+    state: BearResearcherInputState, config: RunnableConfig
+) -> BearResearcherOutputState:
+    """One Bear Researcher turn. Free-form prose appended to the responses list."""
+    analysis_context = state["analysis_context"]
+    bulls = state.get("investment_bull_responses") or []
+    bears = state.get("investment_bear_responses") or []
+    opposing_last: str = bulls[-1] if bulls else ""
+
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
+    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
+        stop_after_attempt=3, wait_exponential_jitter=True
+    )
 
     prompt = render_template(
         "trading_decision/researchers/bear.jinja",
-        ticker=ticker,
-        query=query,
-        debate_history=debate_history,
+        ticker=analysis_context.get("ticker", ""),
+        query=analysis_context.get("query"),
+        speaking_as="Bear",
+        opposing_speaker="Bull",
+        debate_history=format_debate_history(bulls, bears),
         opposing_last=opposing_last,
-        **context_vars,
+        market_regime=analysis_context.get("market_regime"),
+        sector_view=analysis_context.get("sector_view"),
+        company_analysis=analysis_context.get("company_analysis"),
+        forecast=analysis_context.get("forecast"),
+        risk_assessment=analysis_context.get("risk_assessment"),
+        valuation=analysis_context.get("valuation"),
+        narrative=analysis_context.get("narrative"),
+        additional_context=analysis_context.get("additional_context") or {},
     )
 
-    builder = (
-        MuffinAgentBuilder(primary, name="bear_researcher")
-        .with_system_prompt(prompt)
-        .with_fallback_models(*fallbacks)
+    response = await llm.ainvoke(
+        [
+            SystemMessage(prompt),
+            HumanMessage("Make your argument now."),
+        ]
     )
-    if summariser is not None:
-        builder = builder.with_tool_knowledge(summariser)
-    return builder.build_react_agent()
+    return {"investment_bear_responses": [str(response.content).strip()]}

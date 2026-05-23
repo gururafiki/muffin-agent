@@ -1,51 +1,82 @@
-"""Trading decision pipeline — composable building blocks ported from TradingAgents.
+"""Trading decision pipeline — LangGraph-native composable building blocks.
 
-Public surface (PR 1 + PR 2 + PR 3 + PR 4):
+Public surface:
 
-* :func:`build_investment_debate_graph` — Bull ↔ Bear debate → Investment Judge
-* :func:`build_investment_thesis_graph` — debate → Judge → Trader
-* :func:`build_trading_decision_graph` — full pipeline with reflection memory
-  bookends (reflector_resolve → debate → Judge → Trader → risk debate →
-  Portfolio Manager → decision_writeback)
-* :class:`AnalysisContext` — generic envelope for upstream analysis context
-* Structured outputs: :class:`InvestmentJudgeOutput`, :class:`TraderOutput`,
-  :class:`PortfolioDecisionOutput`, :class:`Outcome`, :class:`DecisionRecord`
-* State schemas: :class:`TradingDecisionState`, :class:`InvestmentDebateState`,
-  :class:`RiskDebateState`
-* :class:`ReflectionMemory` — per-user persistent decision log
-* :class:`OutcomesFetcher` — protocol for realised-return data sources
-* Standalone agent factories: ``create_{bull_researcher,bear_researcher,
-  investment_judge,trader,aggressive_debator,conservative_debator,
-  neutral_debator,portfolio_manager,reflector}_agent``
+* Graph builders:
+  * :func:`build_investment_debate_graph` — Bull ↔ Bear → Investment Judge
+  * :func:`build_investment_thesis_graph` — debate → Judge → Trader
+  * :func:`build_trading_decision_graph` — full pipeline with reflection bookends
 
-See ``CLAUDE.md`` and the plan at
-``~/.claude/plans/explore-in-depth-agents-from-curried-muffin.md`` for the
-broader architecture.
+* Per-role nodes (each takes a typed input state, returns a typed output state):
+  ``bull_researcher_node``, ``bear_researcher_node``, ``investment_judge_node``,
+  ``trader_node``, ``aggressive_debator_node``, ``conservative_debator_node``,
+  ``neutral_debator_node``, ``portfolio_manager_node``,
+  ``reflector_resolve_node``, ``decision_writeback_node``.
+
+* Per-role state schemas (TypedDicts): ``<Role>InputState`` + ``<Role>OutputState``
+  for every node above. External callers can satisfy the input shape to reuse a
+  node in another graph.
+
+* Reflection helpers: :class:`ReflectionMemory`, :func:`reflect_on_decision`,
+  :class:`OutcomesFetcher`, :func:`fetch_outcomes_openbb`,
+  :func:`render_reflections_block`.
+
+* Configuration: :class:`TradingDecisionConfiguration` (typed per-run knobs).
+
+* Pydantic output schemas: :class:`AnalysisContext`, :class:`InvestmentJudgeOutput`,
+  :class:`TraderOutput`, :class:`PortfolioDecisionOutput`, :class:`Outcome`,
+  :class:`DecisionRecord`.
+
+See ``docs/trading-decision.md`` for composition patterns and future
+migration paths (subgraph with ``ToolNode`` vs ``MuffinAgentBuilder`` agent
+as graph node).
 """
 
+from .config import TradingDecisionConfiguration
 from .graph import (
     build_investment_debate_graph,
     build_investment_thesis_graph,
     build_trading_decision_graph,
 )
-from .portfolio_manager import create_portfolio_manager_agent
+from .portfolio_manager import (
+    PortfolioManagerInputState,
+    PortfolioManagerOutputState,
+    portfolio_manager_node,
+)
 from .reflection import (
+    DecisionWritebackInputState,
+    DecisionWritebackOutputState,
     OutcomesFetcher,
     ReflectionMemory,
-    create_reflector_agent,
+    ReflectorResolveInputState,
+    ReflectorResolveOutputState,
+    decision_writeback_node,
     fetch_outcomes_openbb,
-    generate_reflection,
+    reflect_on_decision,
+    reflector_resolve_node,
     render_reflections_block,
 )
 from .researchers import (
-    create_bear_researcher_agent,
-    create_bull_researcher_agent,
-    create_investment_judge_agent,
+    BearResearcherInputState,
+    BearResearcherOutputState,
+    BullResearcherInputState,
+    BullResearcherOutputState,
+    InvestmentJudgeInputState,
+    InvestmentJudgeOutputState,
+    bear_researcher_node,
+    bull_researcher_node,
+    investment_judge_node,
 )
 from .risk_debate import (
-    create_aggressive_debator_agent,
-    create_conservative_debator_agent,
-    create_neutral_debator_agent,
+    AggressiveDebatorInputState,
+    AggressiveDebatorOutputState,
+    ConservativeDebatorInputState,
+    ConservativeDebatorOutputState,
+    NeutralDebatorInputState,
+    NeutralDebatorOutputState,
+    aggressive_debator_node,
+    conservative_debator_node,
+    neutral_debator_node,
 )
 from .schemas import (
     AnalysisContext,
@@ -57,36 +88,63 @@ from .schemas import (
     TraderAction,
     TraderOutput,
 )
-from .state import InvestmentDebateState, RiskDebateState, TradingDecisionState
-from .trader import create_trader_agent
+from .state import TradingDecisionState
+from .trader import TraderInputState, TraderOutputState, trader_node
 
 __all__ = [
+    # Schemas
     "AnalysisContext",
     "DecisionRecord",
-    "InvestmentDebateState",
     "InvestmentJudgeOutput",
     "InvestmentSignal",
     "Outcome",
-    "OutcomesFetcher",
     "PortfolioDecisionOutput",
-    "ReflectionMemory",
-    "RiskDebateState",
     "TraderAction",
     "TraderOutput",
+    # Configuration
+    "TradingDecisionConfiguration",
+    # State
     "TradingDecisionState",
+    # Graph builders
     "build_investment_debate_graph",
     "build_investment_thesis_graph",
     "build_trading_decision_graph",
-    "create_aggressive_debator_agent",
-    "create_bear_researcher_agent",
-    "create_bull_researcher_agent",
-    "create_conservative_debator_agent",
-    "create_investment_judge_agent",
-    "create_neutral_debator_agent",
-    "create_portfolio_manager_agent",
-    "create_reflector_agent",
-    "create_trader_agent",
+    # Reflection helpers
+    "OutcomesFetcher",
+    "ReflectionMemory",
     "fetch_outcomes_openbb",
-    "generate_reflection",
+    "reflect_on_decision",
     "render_reflections_block",
+    # Nodes
+    "aggressive_debator_node",
+    "bear_researcher_node",
+    "bull_researcher_node",
+    "conservative_debator_node",
+    "decision_writeback_node",
+    "investment_judge_node",
+    "neutral_debator_node",
+    "portfolio_manager_node",
+    "reflector_resolve_node",
+    "trader_node",
+    # Per-role state TypedDicts
+    "AggressiveDebatorInputState",
+    "AggressiveDebatorOutputState",
+    "BearResearcherInputState",
+    "BearResearcherOutputState",
+    "BullResearcherInputState",
+    "BullResearcherOutputState",
+    "ConservativeDebatorInputState",
+    "ConservativeDebatorOutputState",
+    "DecisionWritebackInputState",
+    "DecisionWritebackOutputState",
+    "InvestmentJudgeInputState",
+    "InvestmentJudgeOutputState",
+    "NeutralDebatorInputState",
+    "NeutralDebatorOutputState",
+    "PortfolioManagerInputState",
+    "PortfolioManagerOutputState",
+    "ReflectorResolveInputState",
+    "ReflectorResolveOutputState",
+    "TraderInputState",
+    "TraderOutputState",
 ]

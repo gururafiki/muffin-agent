@@ -19,38 +19,10 @@ Your job is to make the strongest possible evidence-based case **against** takin
 
 ## Analysis context
 
-{% if market_regime %}**Market regime**: {{ market_regime | tojson(indent=2) }}
-
-{% endif %}{% if sector_view %}**Sector view**: {{ sector_view | tojson(indent=2) }}
-
-{% endif %}{% if company_analysis %}**Company analysis**: {{ company_analysis | tojson(indent=2) }}
-
-{% endif %}{% if forecast %}**Forecast (bull/base/bear scenarios)**: {{ forecast | tojson(indent=2) }}
-
-{% endif %}{% if risk_assessment %}**Risk assessment**: {{ risk_assessment | tojson(indent=2) }}
-
-{% endif %}{% if valuation %}**Valuation**: {{ valuation | tojson(indent=2) }}
-
-{% endif %}{% if narrative %}**Research narrative**:
-
-{{ narrative }}
-
-{% endif %}{% if additional_context %}**Additional context**: {{ additional_context | tojson(indent=2) }}
-
-{% endif %}
+{% include "trading_decision/_analysis_context.jinja" %}
 ## Debate state
 
-{% if debate_history %}**Full debate transcript so far:**
-
-{{ debate_history }}
-
-{% endif %}{% if opposing_last %}**Bull's most recent argument (rebut this directly):**
-
-{{ opposing_last }}
-
-{% else %}This is the opening bear argument of the debate. Make the strongest opening case against the position using the analysis context. Anticipate likely Bull rebuttals and pre-empt them.
-
-{% endif %}
+{% include "trading_decision/_investment_debate_state.jinja" %}
 ## Your turn
 
 Write your Bear Researcher argument now. Plain prose only — no JSON, no markdown headers, no bullets.

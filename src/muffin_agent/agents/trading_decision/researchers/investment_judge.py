@@ -1,62 +1,68 @@
-"""Investment Judge agent factory.
-
-Pure-reasoning ReAct agent with structured output. Synthesises a completed
-Bull vs Bear debate into an ``InvestmentJudgeOutput`` (signal, conviction,
-synthesised bull/bear cases, catalysts, risks, monitoring checklist,
-winning side, reasoning).
-
-Uses the primary reasoner model — synthesis is the expensive step and gets
-the strongest available model in the role chain.
-"""
+"""Investment Judge node — single LLM call with structured output."""
 
 from __future__ import annotations
 
-from langchain.agents.structured_output import AutoStrategy
+import operator
+from typing import Annotated, Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
+from typing_extensions import TypedDict
 
 from ....model_config import ModelConfiguration
 from ....prompts import render_template
-from ....utils.agent_builder import MuffinAgentBuilder
+from .._debate import format_debate_history
 from ..schemas import InvestmentJudgeOutput
 
 
-async def create_investment_judge_agent(
-    config: RunnableConfig,
-    *,
-    ticker: str,
-    query: str | None,
-    context_vars: dict,
-    debate_history: str,
-) -> CompiledStateGraph:
-    """Build the Investment Judge synthesis agent.
+class InvestmentJudgeInputState(TypedDict, total=False):
+    """State keys read by ``investment_judge_node``."""
 
-    Args:
-        config: LangGraph ``RunnableConfig``.
-        ticker: Equity ticker symbol.
-        query: Original investment mandate or analysis focus (or ``None``).
-        context_vars: ``AnalysisContext`` fields rendered as evidence in
-            the prompt.
-        debate_history: Full debate transcript to synthesise.
-    """
-    configuration = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = configuration.get_llm_for_role("reasoner")
-    summariser = configuration.get_summariser()
+    analysis_context: dict[str, Any]
+    investment_bull_responses: Annotated[list[str], operator.add]
+    investment_bear_responses: Annotated[list[str], operator.add]
+
+
+class InvestmentJudgeOutputState(TypedDict, total=False):
+    """State keys written by ``investment_judge_node``."""
+
+    investment_judge: dict[str, Any]
+
+
+async def investment_judge_node(
+    state: InvestmentJudgeInputState, config: RunnableConfig
+) -> InvestmentJudgeOutputState:
+    """Synthesise the completed Bull/Bear debate into ``InvestmentJudgeOutput``."""
+    analysis_context = state["analysis_context"]
+    bulls = state.get("investment_bull_responses") or []
+    bears = state.get("investment_bear_responses") or []
+
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
+    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
+        stop_after_attempt=3, wait_exponential_jitter=True
+    )
+    llm = llm.with_structured_output(InvestmentJudgeOutput)
 
     prompt = render_template(
         "trading_decision/researchers/investment_judge.jinja",
-        ticker=ticker,
-        query=query,
-        debate_history=debate_history,
-        **context_vars,
+        ticker=analysis_context.get("ticker", ""),
+        query=analysis_context.get("query"),
+        debate_history=format_debate_history(bulls, bears),
+        market_regime=analysis_context.get("market_regime"),
+        sector_view=analysis_context.get("sector_view"),
+        company_analysis=analysis_context.get("company_analysis"),
+        forecast=analysis_context.get("forecast"),
+        risk_assessment=analysis_context.get("risk_assessment"),
+        valuation=analysis_context.get("valuation"),
+        narrative=analysis_context.get("narrative"),
+        additional_context=analysis_context.get("additional_context") or {},
     )
 
-    builder = (
-        MuffinAgentBuilder(primary, name="investment_judge")
-        .with_system_prompt(prompt)
-        .with_fallback_models(*fallbacks)
-        .with_response_format(AutoStrategy(schema=InvestmentJudgeOutput))
+    result: InvestmentJudgeOutput = await llm.ainvoke(
+        [
+            SystemMessage(prompt),
+            HumanMessage("Synthesise the debate now."),
+        ]
     )
-    if summariser is not None:
-        builder = builder.with_tool_knowledge(summariser)
-    return builder.build_react_agent()
+    return {"investment_judge": result.model_dump()}

@@ -1,68 +1,72 @@
-"""Aggressive Risk Debator agent factory.
-
-Pure-reasoning ReAct agent (no tools, no subagents). One of three risk
-debaters that stress-test the Trader's proposal from a sharply-defined
-persona perspective. Champions higher conviction / larger sizing / more
-aggressive entry when the evidence supports it.
-"""
+"""Aggressive Risk Debator node."""
 
 from __future__ import annotations
 
+import operator
+from typing import Annotated, Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
+from typing_extensions import TypedDict
 
 from ....model_config import ModelConfiguration
 from ....prompts import render_template
-from ....utils.agent_builder import MuffinAgentBuilder
+from .._debate import format_risk_history
 
 
-async def create_aggressive_debator_agent(
-    config: RunnableConfig,
-    *,
-    ticker: str,
-    query: str | None,
-    context_vars: dict,
-    investment_judge: dict,
-    trader: dict,
-    debate_history: str,
-    opposing_last: str,
-) -> CompiledStateGraph:
-    """Build the Aggressive Risk Debator.
+class AggressiveDebatorInputState(TypedDict, total=False):
+    """State keys read by ``aggressive_debator_node``."""
 
-    Args:
-        config: LangGraph ``RunnableConfig``.
-        ticker: Equity ticker symbol.
-        query: Original investment mandate (or ``None``).
-        context_vars: ``AnalysisContext`` fields (market_regime, sector_view,
-            company_analysis, forecast, risk_assessment, valuation,
-            narrative, additional_context).
-        investment_judge: ``InvestmentJudgeOutput.model_dump()``.
-        trader: ``TraderOutput.model_dump()`` — the proposal being
-            stress-tested.
-        debate_history: Full risk debate transcript so far.
-        opposing_last: The most recent Conservative or Neutral argument
-            (empty string on the opening turn).
-    """
-    configuration = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = configuration.get_llm_for_role("reasoner")
-    summariser = configuration.get_summariser()
+    analysis_context: dict[str, Any]
+    investment_judge: dict[str, Any]
+    trader: dict[str, Any]
+    risk_aggressive_responses: Annotated[list[str], operator.add]
+    risk_conservative_responses: Annotated[list[str], operator.add]
+    risk_neutral_responses: Annotated[list[str], operator.add]
+
+
+class AggressiveDebatorOutputState(TypedDict, total=False):
+    """State keys written by ``aggressive_debator_node``."""
+
+    risk_aggressive_responses: Annotated[list[str], operator.add]
+
+
+async def aggressive_debator_node(
+    state: AggressiveDebatorInputState, config: RunnableConfig
+) -> AggressiveDebatorOutputState:
+    """One Aggressive Risk Debator turn. Prose appended to responses list."""
+    analysis_context = state["analysis_context"]
+    aggressives = state.get("risk_aggressive_responses") or []
+    conservatives = state.get("risk_conservative_responses") or []
+    neutrals = state.get("risk_neutral_responses") or []
+
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
+    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
+        stop_after_attempt=3, wait_exponential_jitter=True
+    )
 
     prompt = render_template(
         "trading_decision/risk_debate/aggressive.jinja",
-        ticker=ticker,
-        query=query,
-        investment_judge=investment_judge,
-        trader=trader,
-        debate_history=debate_history,
-        opposing_last=opposing_last,
-        **context_vars,
+        ticker=analysis_context.get("ticker", ""),
+        query=analysis_context.get("query"),
+        investment_judge=state["investment_judge"],
+        trader=state["trader"],
+        risk_debate_history=format_risk_history(aggressives, conservatives, neutrals),
+        market_regime=analysis_context.get("market_regime"),
+        sector_view=analysis_context.get("sector_view"),
+        company_analysis=analysis_context.get("company_analysis"),
+        forecast=analysis_context.get("forecast"),
+        risk_assessment=analysis_context.get("risk_assessment"),
+        valuation=analysis_context.get("valuation"),
+        narrative=analysis_context.get("narrative"),
+        additional_context=analysis_context.get("additional_context") or {},
     )
 
-    builder = (
-        MuffinAgentBuilder(primary, name="aggressive_debator")
-        .with_system_prompt(prompt)
-        .with_fallback_models(*fallbacks)
+    response = await llm.ainvoke(
+        [
+            SystemMessage(prompt),
+            HumanMessage("Make your argument now."),
+        ]
     )
-    if summariser is not None:
-        builder = builder.with_tool_knowledge(summariser)
-    return builder.build_react_agent()
+    return {"risk_aggressive_responses": [str(response.content).strip()]}

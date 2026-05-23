@@ -1,76 +1,80 @@
-"""Portfolio Manager agent factory.
-
-Final synthesis judge of the trading-decision pipeline. Reads the Judge's
-thesis, the Trader's proposal, and the 3-way risk debate transcript, and
-produces the canonical ``PortfolioDecisionOutput`` (5-tier rating + final
-operational fields + key remaining risks + confidence).
-
-Uses the primary reasoner model — this is the second deep-synthesis point
-in the pipeline (the first being the Investment Judge) and the call that
-the downstream UI / CLI / reflection memory treats as canonical.
-"""
+"""Portfolio Manager node — canonical final synthesis."""
 
 from __future__ import annotations
 
-from langchain.agents.structured_output import AutoStrategy
+import operator
+from typing import Annotated, Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
+from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
-from ...utils.agent_builder import MuffinAgentBuilder
+from ._debate import format_risk_history
 from .schemas import PortfolioDecisionOutput
 
 
-async def create_portfolio_manager_agent(
-    config: RunnableConfig,
-    *,
-    ticker: str,
-    query: str | None,
-    context_vars: dict,
-    investment_judge: dict,
-    trader: dict,
-    risk_debate_history: str,
-    past_reflections: str = "",
-) -> CompiledStateGraph:
-    """Build the Portfolio Manager.
+class PortfolioManagerInputState(TypedDict, total=False):
+    """State keys read by ``portfolio_manager_node``."""
 
-    Args:
-        config: LangGraph ``RunnableConfig``.
-        ticker: Equity ticker symbol.
-        query: Original investment mandate (or ``None``).
-        context_vars: ``AnalysisContext`` fields used as the evidence base.
-        investment_judge: ``InvestmentJudgeOutput.model_dump()`` — the
-            directional thesis the Trader translated.
-        trader: ``TraderOutput.model_dump()`` — the operational proposal
-            the risk debate stress-tested.
-        risk_debate_history: Full 3-way risk debate transcript.
-        past_reflections: Pre-rendered Markdown block of past same-ticker
-            and cross-ticker reflections (from ``ReflectionMemory`` +
-            ``render_reflections_block``). Empty string skips the block
-            entirely via Jinja conditional.
+    analysis_context: dict[str, Any]
+    investment_judge: dict[str, Any]
+    trader: dict[str, Any]
+    risk_aggressive_responses: Annotated[list[str], operator.add]
+    risk_conservative_responses: Annotated[list[str], operator.add]
+    risk_neutral_responses: Annotated[list[str], operator.add]
+    past_reflections: str
+
+
+class PortfolioManagerOutputState(TypedDict, total=False):
+    """State keys written by ``portfolio_manager_node``."""
+
+    portfolio_decision: dict[str, Any]
+
+
+async def portfolio_manager_node(
+    state: PortfolioManagerInputState, config: RunnableConfig
+) -> PortfolioManagerOutputState:
+    """Synthesise Judge + Trader + risk debate into ``PortfolioDecisionOutput``.
+
+    Also pulls in ``past_reflections`` when present so the PM prompt can
+    reference past lessons from the reflection log.
     """
-    configuration = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = configuration.get_llm_for_role("reasoner")
-    summariser = configuration.get_summariser()
+    analysis_context = state["analysis_context"]
+    aggressives = state.get("risk_aggressive_responses") or []
+    conservatives = state.get("risk_conservative_responses") or []
+    neutrals = state.get("risk_neutral_responses") or []
+
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
+    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
+        stop_after_attempt=3, wait_exponential_jitter=True
+    )
+    llm = llm.with_structured_output(PortfolioDecisionOutput)
 
     prompt = render_template(
         "trading_decision/portfolio_manager.jinja",
-        ticker=ticker,
-        query=query,
-        investment_judge=investment_judge,
-        trader=trader,
-        risk_debate_history=risk_debate_history,
-        past_reflections=past_reflections,
-        **context_vars,
+        ticker=analysis_context.get("ticker", ""),
+        query=analysis_context.get("query"),
+        investment_judge=state["investment_judge"],
+        trader=state["trader"],
+        risk_debate_history=format_risk_history(aggressives, conservatives, neutrals),
+        past_reflections=state.get("past_reflections") or "",
+        market_regime=analysis_context.get("market_regime"),
+        sector_view=analysis_context.get("sector_view"),
+        company_analysis=analysis_context.get("company_analysis"),
+        forecast=analysis_context.get("forecast"),
+        risk_assessment=analysis_context.get("risk_assessment"),
+        valuation=analysis_context.get("valuation"),
+        narrative=analysis_context.get("narrative"),
+        additional_context=analysis_context.get("additional_context") or {},
     )
 
-    builder = (
-        MuffinAgentBuilder(primary, name="portfolio_manager")
-        .with_system_prompt(prompt)
-        .with_fallback_models(*fallbacks)
-        .with_response_format(AutoStrategy(schema=PortfolioDecisionOutput))
+    result: PortfolioDecisionOutput = await llm.ainvoke(
+        [
+            SystemMessage(prompt),
+            HumanMessage("Produce the portfolio decision now."),
+        ]
     )
-    if summariser is not None:
-        builder = builder.with_tool_knowledge(summariser)
-    return builder.build_react_agent()
+    return {"portfolio_decision": result.model_dump()}

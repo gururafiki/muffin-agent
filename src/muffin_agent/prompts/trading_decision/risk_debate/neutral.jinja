@@ -18,50 +18,12 @@ You are NOT a hedger by default — you are the voice on the desk that calls out
 
 ## Inputs
 
-### Investment Judge thesis (primary)
-```json
-{{ investment_judge | tojson(indent=2) }}
-```
-
-### Trader proposal (what you are stress-testing)
-```json
-{{ trader | tojson(indent=2) }}
-```
-
+{% include "trading_decision/_risk_synthesis_inputs.jinja" %}
 ### Analysis context (evidence base)
 
-{% if market_regime %}**Market regime**: {{ market_regime | tojson(indent=2) }}
-
-{% endif %}{% if sector_view %}**Sector view**: {{ sector_view | tojson(indent=2) }}
-
-{% endif %}{% if company_analysis %}**Company analysis**: {{ company_analysis | tojson(indent=2) }}
-
-{% endif %}{% if forecast %}**Forecast**: {{ forecast | tojson(indent=2) }}
-
-{% endif %}{% if risk_assessment %}**Risk assessment**: {{ risk_assessment | tojson(indent=2) }}
-
-{% endif %}{% if valuation %}**Valuation**: {{ valuation | tojson(indent=2) }}
-
-{% endif %}{% if narrative %}**Research narrative**:
-
-{{ narrative }}
-
-{% endif %}{% if additional_context %}**Additional context**: {{ additional_context | tojson(indent=2) }}
-
-{% endif %}
-## Debate state
-
-{% if debate_history %}**Full risk debate transcript so far:**
-
-{{ debate_history }}
-
-{% endif %}{% if opposing_last %}**Most recent opposing argument (rebut this directly):**
-
-{{ opposing_last }}
-
-{% else %}This is the opening Neutral argument of the risk debate. Make the strongest case for a balanced scaled approach.
-
-{% endif %}
+{% include "trading_decision/_analysis_context.jinja" %}
 ## Your turn
 
-Write your Neutral Analyst argument now. Plain prose only — no JSON, no markdown headers, no bullets.
+{% if not risk_debate_history %}This is the opening Neutral argument of the risk debate. Make the strongest case for a balanced scaled approach.
+
+{% endif %}Write your Neutral Analyst argument now. Plain prose only — no JSON, no markdown headers, no bullets.

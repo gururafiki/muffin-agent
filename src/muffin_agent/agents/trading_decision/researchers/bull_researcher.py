@@ -1,88 +1,77 @@
-"""Bull Researcher agent factory.
-
-Pure-reasoning ReAct agent (no tools, no subagents). Adversarial debater
-that argues for taking or growing the position. Reads an
-``AnalysisContext`` plus the running debate history and produces a single
-plain-prose argument. The node wrapper in ``nodes.py`` prepends the
-speaker tag and updates the debate state.
-
-Standalone invocation:
-
-    from langchain_core.messages import HumanMessage
-    from muffin_agent.agents.trading_decision import (
-        AnalysisContext,
-        create_bull_researcher_agent,
-    )
-
-    context = AnalysisContext.from_narrative("AAPL", "...")
-    agent = await create_bull_researcher_agent(config)
-    payload = {
-        "ticker": context.ticker,
-        "query": context.query,
-        **context.model_dump(exclude={"ticker", "query"}),
-        "debate_history": "",
-        "opposing_last": "",
-    }
-    result = await agent.ainvoke({"messages": [HumanMessage("...")]})
-"""
+"""Bull Researcher node — one LLM call, prose response."""
 
 from __future__ import annotations
 
+import operator
+from typing import Annotated, Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
+from typing_extensions import TypedDict
 
 from ....model_config import ModelConfiguration
 from ....prompts import render_template
-from ....utils.agent_builder import MuffinAgentBuilder
+from .._debate import format_debate_history
 
 
-async def create_bull_researcher_agent(
-    config: RunnableConfig,
-    *,
-    ticker: str,
-    query: str | None,
-    context_vars: dict,
-    debate_history: str,
-    opposing_last: str,
-) -> CompiledStateGraph:
-    """Build the Bull Researcher debater.
+class BullResearcherInputState(TypedDict, total=False):
+    """State keys this node reads.
 
-    The system prompt is rendered up-front from the supplied per-turn
-    variables so the agent only needs a trivial ``HumanMessage`` trigger.
-    This keeps prompt-construction logic close to the agent factory and
-    lets the node wrapper stay generic.
-
-    Args:
-        config: LangGraph ``RunnableConfig``.
-        ticker: Equity ticker symbol.
-        query: Original investment mandate or analysis focus (or ``None``).
-        context_vars: Extra ``AnalysisContext`` fields rendered as evidence
-            in the prompt (e.g. ``market_regime``, ``valuation``,
-            ``narrative``). All optional — the template uses ``{% if %}``
-            guards so missing fields render as nothing.
-        debate_history: Full interleaved debate transcript so far.
-            Empty string on the opening turn.
-        opposing_last: The Bear Researcher's most recent argument.
-            Empty string on the opening turn.
+    Any graph that satisfies this shape can reuse ``bull_researcher_node``.
     """
-    configuration = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = configuration.get_llm_for_role("reasoner")
-    summariser = configuration.get_summariser()
+
+    analysis_context: dict[str, Any]
+    investment_bull_responses: Annotated[list[str], operator.add]
+    investment_bear_responses: Annotated[list[str], operator.add]
+
+
+class BullResearcherOutputState(TypedDict, total=False):
+    """State keys this node writes."""
+
+    investment_bull_responses: Annotated[list[str], operator.add]
+
+
+async def bull_researcher_node(
+    state: BullResearcherInputState, config: RunnableConfig
+) -> BullResearcherOutputState:
+    """One Bull Researcher turn. Free-form prose appended to the responses list.
+
+    Routing is decided by the graph-level ``_route_investment_debate`` function;
+    this node only updates state.
+    """
+    analysis_context = state["analysis_context"]
+    bulls = state.get("investment_bull_responses") or []
+    bears = state.get("investment_bear_responses") or []
+    opposing_last: str = bears[-1] if bears else ""
+
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
+    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
+        stop_after_attempt=3, wait_exponential_jitter=True
+    )
 
     prompt = render_template(
         "trading_decision/researchers/bull.jinja",
-        ticker=ticker,
-        query=query,
-        debate_history=debate_history,
+        ticker=analysis_context.get("ticker", ""),
+        query=analysis_context.get("query"),
+        speaking_as="Bull",
+        opposing_speaker="Bear",
+        debate_history=format_debate_history(bulls, bears),
         opposing_last=opposing_last,
-        **context_vars,
+        market_regime=analysis_context.get("market_regime"),
+        sector_view=analysis_context.get("sector_view"),
+        company_analysis=analysis_context.get("company_analysis"),
+        forecast=analysis_context.get("forecast"),
+        risk_assessment=analysis_context.get("risk_assessment"),
+        valuation=analysis_context.get("valuation"),
+        narrative=analysis_context.get("narrative"),
+        additional_context=analysis_context.get("additional_context") or {},
     )
 
-    builder = (
-        MuffinAgentBuilder(primary, name="bull_researcher")
-        .with_system_prompt(prompt)
-        .with_fallback_models(*fallbacks)
+    response = await llm.ainvoke(
+        [
+            SystemMessage(prompt),
+            HumanMessage("Make your argument now."),
+        ]
     )
-    if summariser is not None:
-        builder = builder.with_tool_knowledge(summariser)
-    return builder.build_react_agent()
+    return {"investment_bull_responses": [str(response.content).strip()]}

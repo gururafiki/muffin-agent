@@ -1,65 +1,64 @@
-"""Trader agent factory.
-
-Pure-reasoning ReAct agent with structured output. Translates the
-Investment Judge's directional view (signal + conviction + catalysts +
-risks) into concrete operational instructions: action, entry/stop/take
-profit levels, position sizing, time horizon.
-
-The Trader does not invent new data — it is a translator from a
-directional thesis to an executable proposal, anchored in the same
-analysis context the Judge used.
-"""
+"""Trader node — translates the Judge's signal into an operational proposal."""
 
 from __future__ import annotations
 
-from langchain.agents.structured_output import AutoStrategy
+from typing import Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
+from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
-from ...utils.agent_builder import MuffinAgentBuilder
 from .schemas import TraderOutput
 
 
-async def create_trader_agent(
-    config: RunnableConfig,
-    *,
-    ticker: str,
-    query: str | None,
-    context_vars: dict,
-    investment_judge: dict,
-) -> CompiledStateGraph:
-    """Build the Trader agent.
+class TraderInputState(TypedDict, total=False):
+    """State keys read by ``trader_node``."""
 
-    Args:
-        config: LangGraph ``RunnableConfig``.
-        ticker: Equity ticker symbol.
-        query: Original investment mandate (or ``None``).
-        context_vars: ``AnalysisContext`` fields used as the evidence base
-            (``market_regime``, ``sector_view``, ``valuation``, etc.).
-        investment_judge: ``InvestmentJudgeOutput.model_dump()`` — the
-            Trader's primary input. Used to derive action, sizing, and
-            time horizon.
-    """
-    configuration = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = configuration.get_llm_for_role("reasoner")
-    summariser = configuration.get_summariser()
+    analysis_context: dict[str, Any]
+    investment_judge: dict[str, Any]
+
+
+class TraderOutputState(TypedDict, total=False):
+    """State keys written by ``trader_node``."""
+
+    trader: dict[str, Any]
+
+
+async def trader_node(
+    state: TraderInputState, config: RunnableConfig
+) -> TraderOutputState:
+    """Translate the Judge's signal into an executable ``TraderOutput``."""
+    analysis_context = state["analysis_context"]
+    investment_judge = state["investment_judge"]
+
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
+    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
+        stop_after_attempt=3, wait_exponential_jitter=True
+    )
+    llm = llm.with_structured_output(TraderOutput)
 
     prompt = render_template(
         "trading_decision/trader.jinja",
-        ticker=ticker,
-        query=query,
+        ticker=analysis_context.get("ticker", ""),
+        query=analysis_context.get("query"),
         investment_judge=investment_judge,
-        **context_vars,
+        market_regime=analysis_context.get("market_regime"),
+        sector_view=analysis_context.get("sector_view"),
+        company_analysis=analysis_context.get("company_analysis"),
+        forecast=analysis_context.get("forecast"),
+        risk_assessment=analysis_context.get("risk_assessment"),
+        valuation=analysis_context.get("valuation"),
+        narrative=analysis_context.get("narrative"),
+        additional_context=analysis_context.get("additional_context") or {},
     )
 
-    builder = (
-        MuffinAgentBuilder(primary, name="trader")
-        .with_system_prompt(prompt)
-        .with_fallback_models(*fallbacks)
-        .with_response_format(AutoStrategy(schema=TraderOutput))
+    result: TraderOutput = await llm.ainvoke(
+        [
+            SystemMessage(prompt),
+            HumanMessage("Produce the trade instruction now."),
+        ]
     )
-    if summariser is not None:
-        builder = builder.with_tool_knowledge(summariser)
-    return builder.build_react_agent()
+    return {"trader": result.model_dump()}
