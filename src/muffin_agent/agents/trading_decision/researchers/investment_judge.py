@@ -43,8 +43,8 @@ async def investment_judge_node(
     bears = state.get("investment_bear_responses") or []
 
     llm = ModelConfiguration.get_chat_model_for_role(
-        config, "reasoner"
-    ).with_structured_output(InvestmentJudgeOutput)
+        config, "reasoner", schema=InvestmentJudgeOutput
+    )
 
     prompt = render_template(
         "trading_decision/researchers/investment_judge.jinja",

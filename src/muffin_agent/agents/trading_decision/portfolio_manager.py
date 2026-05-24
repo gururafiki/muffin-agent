@@ -52,8 +52,8 @@ async def portfolio_manager_node(
     neutrals = state.get("risk_neutral_responses") or []
 
     llm = ModelConfiguration.get_chat_model_for_role(
-        config, "reasoner"
-    ).with_structured_output(PortfolioDecisionOutput)
+        config, "reasoner", schema=PortfolioDecisionOutput
+    )
 
     prompt = render_template(
         "trading_decision/portfolio_manager.jinja",

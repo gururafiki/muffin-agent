@@ -39,8 +39,8 @@ async def trader_node(
     investment_judge = state["investment_judge"]
 
     llm = ModelConfiguration.get_chat_model_for_role(
-        config, "reasoner"
-    ).with_structured_output(TraderOutput)
+        config, "reasoner", schema=TraderOutput
+    )
 
     prompt = render_template(
         "trading_decision/trader.jinja",
