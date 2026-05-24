@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -38,12 +38,9 @@ async def trader_node(
     """Translate the Judge's signal into an executable ``TraderOutput``."""
     investment_judge = state["investment_judge"]
 
-    cfg = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
-    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
-        stop_after_attempt=3, wait_exponential_jitter=True
-    )
-    llm = llm.with_structured_output(TraderOutput)
+    llm = ModelConfiguration.get_chat_model_for_role(
+        config, "reasoner"
+    ).with_structured_output(TraderOutput)
 
     prompt = render_template(
         "trading_decision/trader.jinja",
@@ -57,10 +54,13 @@ async def trader_node(
         investment_judge=investment_judge,
     )
 
-    result: TraderOutput = await llm.ainvoke(
-        [
-            SystemMessage(prompt),
-            HumanMessage("Produce the trade instruction now."),
-        ]
+    result = cast(
+        TraderOutput,
+        await llm.ainvoke(
+            [
+                SystemMessage(prompt),
+                HumanMessage("Produce the trade instruction now."),
+            ]
+        ),
     )
     return {"trader": result.model_dump()}

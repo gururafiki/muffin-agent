@@ -21,8 +21,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 
+from ....utils.memory_config import MEMORIES_NAMESPACE_ROOT, MemoryConfiguration
+from ..config import TradingDecisionConfiguration
 from ..schemas import DecisionRecord, Outcome
 
 logger = logging.getLogger(__name__)
@@ -47,7 +50,7 @@ class ReflectionMemory:
     pipeline never blocks on memory infrastructure.
     """
 
-    NAMESPACE_ROOT: tuple[str, ...] = ("memories",)
+    NAMESPACE_ROOT: tuple[str, ...] = MEMORIES_NAMESPACE_ROOT
     NAMESPACE_LEAF: tuple[str, ...] = ("decisions",)
 
     def __init__(self, store: BaseStore, user_id: str) -> None:
@@ -247,3 +250,31 @@ def _render_one(record: DecisionRecord, *, compact: bool = False) -> str:
     if compact:
         return f"{head}\n  {reflection}"
     return f"{head}\n  {reflection}"
+
+
+def try_build_reflection_memory(
+    config: RunnableConfig,
+    store: BaseStore | None,
+) -> ReflectionMemory | None:
+    """Build a :class:`ReflectionMemory`, or return ``None`` if unavailable.
+
+    Three "unavailable" branches (all return ``None`` silently — these are
+    normal operating modes, not errors):
+
+    * *store* is ``None`` (caller didn't wire one).
+    * :attr:`TradingDecisionConfiguration.reflection_enabled` is ``False``.
+    * ``user_id`` is not resolvable (no ``configurable.user_id`` and no
+      ``MEMORY_DEBUG_USER_ID``).
+
+    Both reflection bookend nodes call this as their single up-front gate
+    so the per-node guard boilerplate stays a single line.
+    """
+    if store is None:
+        return None
+    cfg = TradingDecisionConfiguration.from_runnable_config(config)
+    if not cfg.reflection_enabled:
+        return None
+    user_id = MemoryConfiguration.resolve_user_id(config, allow_missing=True)
+    if user_id is None:
+        return None
+    return ReflectionMemory(store=store, user_id=user_id)

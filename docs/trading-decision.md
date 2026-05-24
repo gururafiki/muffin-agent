@@ -396,6 +396,17 @@ The port is substantially faithful to [TauricResearch/TradingAgents](https://git
 
 Upstream enforces date capping at the dataflow layer (`load_ohlcv` filters rows `<= curr_date`, `filter_financials_by_date` strips future fiscal columns). The port pushes `decision_date` into prompts and trusts the analyst LLM to pass it as the `end_date` / `curr_date` argument on OpenBB tool calls. The local `get_indicators` tool is safe — it enforces `curr_date` server-side and only fetches OHLCV up to that date. The OpenBB MCP tools (`equity_price_*`, `equity_fundamental_*`, `news_*`, `equity_ownership_*`) do **not** have a hard server-side cap. For rigorous historical backtesting, audit the tool-call trace in LangFuse / LangSmith to confirm `end_date` / `start_date` / `as_of_date` arguments are bounded by `decision_date`.
 
+### Future evolution — `DecisionReflectionMiddleware` (deferred)
+
+The reflection bookends (`reflector_resolve_node` + `decision_writeback_node` + `try_build_reflection_memory`) are the prototype for a generic capability that doesn't exist yet. When a second pipeline needs the same "write pending decision → resolve with outcome → inject past lessons" loop (e.g. `criteria_analysis` doing periodic re-evaluation, `forecast` checking projections against realised, `investment_analysis` tracking thesis quality), the right move is to:
+
+1. Promote the Portfolio Manager (and for symmetry, the Investment Judge + Trader) from plain async LLM-call nodes to `MuffinAgentBuilder`-built ReAct agents. The analyst layer proves this pattern works for single-LLM-call agents with structured output.
+2. Extract a `DecisionReflectionMiddleware(AgentMiddleware)` that handles persist + resolve + inject at `aafter_agent` / `abefore_agent`. Mount it as a new `MuffinAgentBuilder.with_decision_reflection(outcomes_fetcher=…, decision_id_key="ticker", …)` capability so any structured-output agent opts in with one line.
+3. Move `ReflectionMemory` to `utils/` with the namespace leaf parameterised; `OutcomesFetcher` and `Outcome` follow naturally.
+4. Delete the bookend nodes — the middleware now owns both halves of the loop.
+
+This is **deliberately deferred** because (a) only one consumer exists today, (b) collapsing write + resolve into one agent's middleware moves the resolve work onto the PM critical path (today's parallel-START design avoids that), and (c) the abstraction cost is real if no second consumer materialises. Revisit the moment a second decision-tracking agent shows up. Until then, the current layout — typed `ReflectionMemory` CRUD + `OutcomesFetcher` Protocol + bookend graph nodes — is the right shape and is documented in `src/muffin_agent/agents/trading_decision/reflection/__init__.py` as such.
+
 ---
 
 ## Where to look in the code

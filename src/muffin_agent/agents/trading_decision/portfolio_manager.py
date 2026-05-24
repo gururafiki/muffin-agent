@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -51,12 +51,9 @@ async def portfolio_manager_node(
     conservatives = state.get("risk_conservative_responses") or []
     neutrals = state.get("risk_neutral_responses") or []
 
-    cfg = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
-    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
-        stop_after_attempt=3, wait_exponential_jitter=True
-    )
-    llm = llm.with_structured_output(PortfolioDecisionOutput)
+    llm = ModelConfiguration.get_chat_model_for_role(
+        config, "reasoner"
+    ).with_structured_output(PortfolioDecisionOutput)
 
     prompt = render_template(
         "trading_decision/portfolio_manager.jinja",
@@ -73,10 +70,13 @@ async def portfolio_manager_node(
         past_reflections=state.get("past_reflections") or "",
     )
 
-    result: PortfolioDecisionOutput = await llm.ainvoke(
-        [
-            SystemMessage(prompt),
-            HumanMessage("Produce the portfolio decision now."),
-        ]
+    result = cast(
+        PortfolioDecisionOutput,
+        await llm.ainvoke(
+            [
+                SystemMessage(prompt),
+                HumanMessage("Produce the portfolio decision now."),
+            ]
+        ),
     )
     return {"portfolio_decision": result.model_dump()}

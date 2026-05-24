@@ -1,4 +1,4 @@
-"""Tests for the reflection-layer node functions + reflector helper."""
+"""Tests for the reflection-layer node functions + inlined reflection helper."""
 
 from __future__ import annotations
 
@@ -9,17 +9,13 @@ import pytest
 from langgraph.store.memory import InMemoryStore
 
 from muffin_agent.agents.trading_decision.reflection import (
-    reflector as reflector_module,
-)
-from muffin_agent.agents.trading_decision.reflection.memory import ReflectionMemory
-from muffin_agent.agents.trading_decision.reflection.reflector import (
-    reflect_on_decision,
-)
-from muffin_agent.agents.trading_decision.reflection.resolver import (
+    decision_writeback_node,
     reflector_resolve_node,
 )
-from muffin_agent.agents.trading_decision.reflection.writeback import (
-    decision_writeback_node,
+from muffin_agent.agents.trading_decision.reflection import resolver as resolver_module
+from muffin_agent.agents.trading_decision.reflection.memory import ReflectionMemory
+from muffin_agent.agents.trading_decision.reflection.resolver import (
+    _reflect_on_decision,
 )
 from muffin_agent.agents.trading_decision.schemas import Outcome
 
@@ -55,19 +51,24 @@ def _fixed_fetcher(outcome: Outcome | None):
     return fetcher
 
 
-# ── reflect_on_decision ──────────────────────────────────────────────────────
+# ── _reflect_on_decision (inlined helper) ──────────────────────────────────
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestReflectOnDecision:
+    """The reflection LLM call lives as a private ``_reflect_on_decision``
+    helper in ``resolver.py`` after the file consolidation. It's still
+    unit-tested directly because it's the entry point that nodes patch
+    via ``_resolve_one_pending``."""
+
     async def test_returns_llm_text(self):
         with patch.object(
-            reflector_module.ModelConfiguration,
+            resolver_module.ModelConfiguration,
             "from_runnable_config",
             return_value=fake_model_config(ai("Bull held; alpha +1.0%.")),
         ):
-            text = await reflect_on_decision(
+            text = await _reflect_on_decision(
                 {},
                 ticker="AAPL",
                 decision_date="2026-05-17",
@@ -80,11 +81,11 @@ class TestReflectOnDecision:
     async def test_includes_decision_and_outcome_in_prompt(self):
         captured = fake_model_config(ai("reflection text"))
         with patch.object(
-            reflector_module.ModelConfiguration,
+            resolver_module.ModelConfiguration,
             "from_runnable_config",
             return_value=captured,
         ):
-            await reflect_on_decision(
+            await _reflect_on_decision(
                 {},
                 ticker="AAPL",
                 decision_date="2026-05-17",
@@ -148,7 +149,7 @@ class TestReflectorResolveNode:
         state = {"ticker": "AAPL"}
 
         with patch(
-            "muffin_agent.agents.trading_decision.reflection.resolver.reflect_on_decision",
+            "muffin_agent.agents.trading_decision.reflection.resolver._reflect_on_decision",
             AsyncMock(return_value="Bull thesis held; alpha +1.0%."),
         ):
             result = await reflector_resolve_node(

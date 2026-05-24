@@ -158,3 +158,67 @@ class TestSummariserModel:
         monkeypatch.setenv("SUMMARISER_MODEL", "anthropic/claude-haiku-4-5")
         config = ModelConfiguration.from_runnable_config({"configurable": {}})
         assert config.summariser_model == "anthropic/claude-haiku-4-5"
+
+
+@pytest.mark.unit
+class TestGetChatModelForRole:
+    """``ModelConfiguration.get_chat_model_for_role`` collapses the
+    primary + fallbacks + with_retry boilerplate that downstream nodes
+    used to repeat 9 times across ``trading_decision/``."""
+
+    def test_returns_retry_wrapped_model_when_no_fallbacks(self):
+        primary = MagicMock(name="primary-model")
+        primary.with_retry.return_value = MagicMock(name="retry-wrapped")
+        fake_cfg = MagicMock()
+        fake_cfg.get_llm_for_role.return_value = [primary]
+
+        with patch.object(
+            ModelConfiguration, "from_runnable_config", return_value=fake_cfg
+        ):
+            result = ModelConfiguration.get_chat_model_for_role({}, "reasoner")
+
+        # No fallbacks → ``with_fallbacks`` is never called; ``with_retry``
+        # is applied directly to the primary.
+        primary.with_fallbacks.assert_not_called()
+        primary.with_retry.assert_called_once_with(
+            stop_after_attempt=3, wait_exponential_jitter=True
+        )
+        assert result is primary.with_retry.return_value
+
+    def test_wraps_with_fallbacks_when_present(self):
+        primary = MagicMock(name="primary-model")
+        fallback_a = MagicMock(name="fallback-a")
+        fallback_b = MagicMock(name="fallback-b")
+        with_fb = MagicMock(name="with-fallbacks")
+        with_fb.with_retry.return_value = MagicMock(name="retry-wrapped")
+        primary.with_fallbacks.return_value = with_fb
+
+        fake_cfg = MagicMock()
+        fake_cfg.get_llm_for_role.return_value = [primary, fallback_a, fallback_b]
+
+        with patch.object(
+            ModelConfiguration, "from_runnable_config", return_value=fake_cfg
+        ):
+            result = ModelConfiguration.get_chat_model_for_role({}, "reasoner")
+
+        primary.with_fallbacks.assert_called_once_with([fallback_a, fallback_b])
+        with_fb.with_retry.assert_called_once_with(
+            stop_after_attempt=3, wait_exponential_jitter=True
+        )
+        assert result is with_fb.with_retry.return_value
+
+    def test_stop_after_attempt_override(self):
+        primary = MagicMock(name="primary-model")
+        fake_cfg = MagicMock()
+        fake_cfg.get_llm_for_role.return_value = [primary]
+
+        with patch.object(
+            ModelConfiguration, "from_runnable_config", return_value=fake_cfg
+        ):
+            ModelConfiguration.get_chat_model_for_role(
+                {}, "collector", stop_after_attempt=5
+            )
+
+        primary.with_retry.assert_called_once_with(
+            stop_after_attempt=5, wait_exponential_jitter=True
+        )

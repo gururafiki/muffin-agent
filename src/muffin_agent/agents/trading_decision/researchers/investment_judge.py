@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -42,12 +42,9 @@ async def investment_judge_node(
     bulls = state.get("investment_bull_responses") or []
     bears = state.get("investment_bear_responses") or []
 
-    cfg = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
-    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
-        stop_after_attempt=3, wait_exponential_jitter=True
-    )
-    llm = llm.with_structured_output(InvestmentJudgeOutput)
+    llm = ModelConfiguration.get_chat_model_for_role(
+        config, "reasoner"
+    ).with_structured_output(InvestmentJudgeOutput)
 
     prompt = render_template(
         "trading_decision/researchers/investment_judge.jinja",
@@ -61,10 +58,13 @@ async def investment_judge_node(
         debate_history=format_debate_history(bulls, bears),
     )
 
-    result: InvestmentJudgeOutput = await llm.ainvoke(
-        [
-            SystemMessage(prompt),
-            HumanMessage("Synthesise the debate now."),
-        ]
+    result = cast(
+        InvestmentJudgeOutput,
+        await llm.ainvoke(
+            [
+                SystemMessage(prompt),
+                HumanMessage("Synthesise the debate now."),
+            ]
+        ),
     )
     return {"investment_judge": result.model_dump()}

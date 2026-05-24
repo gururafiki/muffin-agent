@@ -7,22 +7,17 @@ is unavailable; skips errored / missing decisions.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 from typing_extensions import TypedDict
 
-from ....utils.memory_config import MemoryConfiguration
-from ..config import TradingDecisionConfiguration
-from .memory import ReflectionMemory
-
-logger = logging.getLogger(__name__)
+from .memory import try_build_reflection_memory
 
 
 class DecisionWritebackInputState(TypedDict, total=False):
-    """State keys read by ``decision_writeback_node``."""
+    """State keys read by :func:`decision_writeback_node`."""
 
     ticker: str
     portfolio_decision: dict[str, Any]
@@ -30,22 +25,10 @@ class DecisionWritebackInputState(TypedDict, total=False):
 
 
 class DecisionWritebackOutputState(TypedDict, total=False):
-    """State keys written by ``decision_writeback_node``.
+    """State keys written by :func:`decision_writeback_node`.
 
     Empty — this node only writes side-effects (store persistence).
     """
-
-
-def _resolve_user_id(config: RunnableConfig) -> str | None:
-    configurable = dict(config.get("configurable") or {})
-    user_id = configurable.get("user_id")
-    if isinstance(user_id, str) and user_id:
-        return user_id
-    try:
-        debug = MemoryConfiguration.from_runnable_config(config).memory_debug_user_id
-    except Exception:
-        return None
-    return debug or None
 
 
 async def decision_writeback_node(
@@ -54,20 +37,14 @@ async def decision_writeback_node(
     *,
     store: BaseStore | None = None,
 ) -> DecisionWritebackOutputState:
-    """Persist this run's decision as a pending entry for future reflection.
+    """Persist this run's ``PortfolioDecisionOutput`` as a pending entry.
 
-    No-ops when:
-      * Reflection is disabled.
-      * The store is not wired.
-      * No ``user_id`` is resolvable.
-      * The decision payload is missing or carries an ``error`` key.
+    No-ops when reflection is disabled, the store is not wired, no
+    ``user_id`` is resolvable, or the decision payload is missing /
+    carries an ``error`` key.
     """
-    cfg = TradingDecisionConfiguration.from_runnable_config(config)
-    if not cfg.reflection_enabled or store is None:
-        return {}
-
-    user_id = _resolve_user_id(config)
-    if user_id is None:
+    memory = try_build_reflection_memory(config, store)
+    if memory is None:
         return {}
 
     decision: Any = state.get("portfolio_decision")
@@ -77,11 +54,6 @@ async def decision_writeback_node(
     ticker = state.get("ticker") or ""
     decision_date = state.get("decision_date") or ""
     if not ticker or not decision_date:
-        return {}
-
-    try:
-        memory = ReflectionMemory(store, user_id)
-    except ValueError:
         return {}
 
     await memory.write_pending(ticker=ticker, date=decision_date, decision=decision)

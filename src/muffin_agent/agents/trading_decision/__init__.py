@@ -40,8 +40,9 @@ Public surface:
   analyst.
 
 * Reflection helpers: :class:`ReflectionMemory`,
-  :func:`reflect_on_decision`, :class:`OutcomesFetcher`,
-  :func:`fetch_outcomes_openbb`, :func:`render_reflections_block`.
+  :func:`render_reflections_block`. Outcome fetching lives next to
+  :func:`get_indicators` in ``tools.py`` as :class:`OutcomesFetcher`
+  Protocol + default :func:`fetch_decision_outcome` implementation.
 
 * Configuration: :class:`TradingDecisionConfiguration` (typed per-run
   knobs).
@@ -83,13 +84,10 @@ from .portfolio_manager import (
 from .reflection import (
     DecisionWritebackInputState,
     DecisionWritebackOutputState,
-    OutcomesFetcher,
     ReflectionMemory,
     ReflectorResolveInputState,
     ReflectorResolveOutputState,
     decision_writeback_node,
-    fetch_outcomes_openbb,
-    reflect_on_decision,
     reflector_resolve_node,
     render_reflections_block,
 )
@@ -125,7 +123,7 @@ from .schemas import (
     TraderOutput,
 )
 from .state import TradingDecisionState
-from .tools import get_indicators
+from .tools import OutcomesFetcher, fetch_decision_outcome, get_indicators
 from .trader import TraderInputState, TraderOutputState, trader_node
 
 __all__ = [
@@ -160,13 +158,12 @@ __all__ = [
     "build_market_analyst_agent",
     "build_news_analyst_agent",
     "build_social_analyst_agent",
-    # Local tools
+    # Local tools / outcome fetcher
+    "OutcomesFetcher",
+    "fetch_decision_outcome",
     "get_indicators",
     # Reflection helpers
-    "OutcomesFetcher",
     "ReflectionMemory",
-    "fetch_outcomes_openbb",
-    "reflect_on_decision",
     "render_reflections_block",
     # Downstream nodes
     "aggressive_debator_node",

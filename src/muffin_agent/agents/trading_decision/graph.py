@@ -49,7 +49,6 @@ from .analysts import (
 from .config import TradingDecisionConfiguration
 from .portfolio_manager import portfolio_manager_node
 from .reflection import (
-    OutcomesFetcher,
     decision_writeback_node,
     reflector_resolve_node,
 )
@@ -64,6 +63,7 @@ from .risk_debate import (
     neutral_debator_node,
 )
 from .state import TradingDecisionState
+from .tools import OutcomesFetcher
 from .trader import trader_node
 
 # Standard retry for every LLM-call node. Second layer on top of
@@ -144,9 +144,7 @@ _RISK_DEBATE_TARGETS: list[str] = [
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-async def _add_analyst_nodes(
-    graph: StateGraph, config: RunnableConfig
-) -> None:
+async def _add_analyst_nodes(graph: StateGraph, config: RunnableConfig) -> None:
     """Build the 4 analyst ReAct agents and add them as parent-graph nodes.
 
     Each analyst is a compiled ReAct agent with a custom ``AgentState``
@@ -302,15 +300,13 @@ async def build_trading_decision_graph(
         store: Optional ``BaseStore`` for reflection memory + tool-result
             caching. When ``None``, reflection bookends degrade to no-ops.
         outcomes_fetcher: Optional ``OutcomesFetcher`` for realised-return
-            data (defaults to :func:`fetch_outcomes_openbb`).
+            data (defaults to :func:`fetch_decision_outcome`).
     """
     graph: StateGraph = StateGraph(TradingDecisionState)
 
     graph.add_node(
         "reflector_resolve",
-        partial(
-            reflector_resolve_node, store=store, outcomes_fetcher=outcomes_fetcher
-        ),
+        partial(reflector_resolve_node, store=store, outcomes_fetcher=outcomes_fetcher),
         retry_policy=_LLM_RETRY,
     )
     await _add_analyst_nodes(graph, config)

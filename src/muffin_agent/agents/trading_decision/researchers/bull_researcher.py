@@ -49,11 +49,7 @@ async def bull_researcher_node(
     bears = state.get("investment_bear_responses") or []
     opposing_last: str = bears[-1] if bears else ""
 
-    cfg = ModelConfiguration.from_runnable_config(config)
-    primary, *fallbacks = cfg.get_llm_for_role("reasoner")
-    llm = (primary.with_fallbacks(fallbacks) if fallbacks else primary).with_retry(
-        stop_after_attempt=3, wait_exponential_jitter=True
-    )
+    llm = ModelConfiguration.get_chat_model_for_role(config, "reasoner")
 
     prompt = render_template(
         "trading_decision/researchers/bull.jinja",

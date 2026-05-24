@@ -1,16 +1,17 @@
-"""Tests for the outcomes-extraction helpers (PR 4).
+"""Tests for the outcome-extraction helpers in ``trading_decision/tools.py``.
 
-The MCP-backed ``fetch_outcomes_openbb`` is not tested end-to-end here —
-it's exercised via the ``OutcomesFetcher`` protocol in node and graph
+The MCP-backed :func:`fetch_decision_outcome` is not tested end-to-end here —
+it's exercised via the :class:`OutcomesFetcher` Protocol in node and graph
 tests that supply stub fetchers. These tests cover the pure-Python parsing
 helpers that turn arbitrary OpenBB payloads into return numbers.
 """
 
 import pytest
 
-from muffin_agent.agents.trading_decision.reflection.outcomes import (
+from muffin_agent.agents.trading_decision.tools import (
     _add_calendar_buffer,
     _extract_closes,
+    _extract_results_rows,
     _window_return,
 )
 
@@ -29,15 +30,23 @@ class TestAddCalendarBuffer:
 
 
 @pytest.mark.unit
-class TestExtractCloses:
+class TestExtractClosesPipeline:
+    """``_extract_results_rows`` + ``_extract_closes`` together replace the
+    old monolithic ``_extract_closes`` — the unwrapping and the row-picking
+    are now separate concerns reused by both ``fetch_decision_outcome`` and
+    ``get_indicators``.
+    """
+
+    def _pipeline(self, raw: object) -> list[tuple[str, float]]:
+        return _extract_closes(_extract_results_rows(raw))
+
     def test_plain_list_of_dicts(self):
         raw = [
             {"date": "2026-05-17", "close": 195.0},
             {"date": "2026-05-18", "close": 197.5},
             {"date": "2026-05-19", "close": 196.0},
         ]
-        result = _extract_closes(raw)
-        assert result == [
+        assert self._pipeline(raw) == [
             ("2026-05-17", 195.0),
             ("2026-05-18", 197.5),
             ("2026-05-19", 196.0),
@@ -50,16 +59,18 @@ class TestExtractCloses:
                 {"date": "2026-05-18", "close": 198.0},
             ]
         }
-        result = _extract_closes(raw)
-        assert result == [("2026-05-17", 195.0), ("2026-05-18", 198.0)]
+        assert self._pipeline(raw) == [
+            ("2026-05-17", 195.0),
+            ("2026-05-18", 198.0),
+        ]
 
     def test_accepts_adj_close(self):
         raw = [{"date": "2026-05-17", "adj_close": 195.5}]
-        assert _extract_closes(raw) == [("2026-05-17", 195.5)]
+        assert self._pipeline(raw) == [("2026-05-17", 195.5)]
 
     def test_normalises_date_to_yyyy_mm_dd(self):
         raw = [{"date": "2026-05-17T00:00:00Z", "close": 195.0}]
-        assert _extract_closes(raw) == [("2026-05-17", 195.0)]
+        assert self._pipeline(raw) == [("2026-05-17", 195.0)]
 
     def test_drops_rows_missing_fields(self):
         raw = [
@@ -68,7 +79,7 @@ class TestExtractCloses:
             {"close": 197.0},  # no date
             "not a dict",
         ]
-        assert _extract_closes(raw) == [("2026-05-17", 195.0)]
+        assert self._pipeline(raw) == [("2026-05-17", 195.0)]
 
     def test_sorts_output_by_date(self):
         raw = [
@@ -76,12 +87,15 @@ class TestExtractCloses:
             {"date": "2026-05-17", "close": 195.0},
             {"date": "2026-05-18", "close": 197.5},
         ]
-        result = _extract_closes(raw)
+        result = self._pipeline(raw)
         assert [d for d, _ in result] == ["2026-05-17", "2026-05-18", "2026-05-19"]
 
     def test_unrecognised_payload_returns_empty(self):
-        assert _extract_closes("garbage") == []
-        assert _extract_closes(None) == []
+        # ``_extract_results_rows`` returns [] on non-dict/non-list inputs
+        # (including JSON strings that fail to decode, per its impl). The
+        # subsequent ``_extract_closes`` then maps [] → [].
+        assert self._pipeline(None) == []
+        assert _extract_closes([]) == []
 
 
 @pytest.mark.unit

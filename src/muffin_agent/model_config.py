@@ -1,8 +1,9 @@
 """Configuration and LLM provider management."""
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import RunnableConfig
 from pydantic import Field
 
 from .utils.base_config import BaseConfiguration
@@ -124,6 +125,44 @@ class ModelConfiguration(BaseConfiguration):
             self.get_llm(model=entry, temperature=temperature, **kwargs)
             for entry in chain
         ]
+
+    @classmethod
+    def get_chat_model_for_role(
+        cls,
+        config: RunnableConfig,
+        role: Role,
+        *,
+        stop_after_attempt: int = 3,
+    ) -> BaseChatModel:
+        """Return a chat model for *role* composed with fallbacks + retry.
+
+        Convenience over ``from_runnable_config(config).get_llm_for_role(role)``
+        for the common case where callers want the role's primary model
+        wrapped with its fallback chain and LangChain ``with_retry`` for
+        transient provider failures. Replaces this 5-line boilerplate that
+        otherwise gets repeated at every LLM-call node::
+
+            cfg = ModelConfiguration.from_runnable_config(config)
+            primary, *fallbacks = cfg.get_llm_for_role(role)
+            llm = (
+                primary.with_fallbacks(fallbacks) if fallbacks else primary
+            ).with_retry(stop_after_attempt=3, wait_exponential_jitter=True)
+
+        Return type is :class:`BaseChatModel` so callers can chain
+        ``.with_structured_output(SomeSchema)`` directly. The actual
+        runtime object is a ``RunnableRetry`` wrapping ``RunnableWithFallbacks``
+        wrapping the primary ``BaseChatModel`` — LangChain proxies the
+        chat-model methods through both wrappers so the cast is sound.
+        """
+        primary, *fallbacks = cls.from_runnable_config(config).get_llm_for_role(role)
+        composed = primary.with_fallbacks(fallbacks) if fallbacks else primary
+        return cast(
+            BaseChatModel,
+            composed.with_retry(
+                stop_after_attempt=stop_after_attempt,
+                wait_exponential_jitter=True,
+            ),
+        )
 
     def get_summariser(
         self,

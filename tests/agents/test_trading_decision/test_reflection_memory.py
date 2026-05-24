@@ -10,6 +10,7 @@ from muffin_agent.agents.trading_decision.reflection.memory import (
     make_key,
     render_reflections_block,
     split_key,
+    try_build_reflection_memory,
 )
 from muffin_agent.agents.trading_decision.schemas import (
     DecisionRecord,
@@ -236,3 +237,42 @@ class TestRenderReflectionsBlock:
         assert "Past same-ticker" in block
         assert "Past cross-ticker" in block
         assert block.index("same-ticker") < block.index("cross-ticker")
+
+
+@pytest.mark.unit
+class TestTryBuildReflectionMemory:
+    """Gating factory used by both reflection bookend nodes — short-circuits
+    on any of: no store, reflection disabled, no user_id."""
+
+    def test_returns_none_when_store_is_none(self):
+        config = {"configurable": {"user_id": "alice"}}
+        assert try_build_reflection_memory(config, None) is None
+
+    def test_returns_none_when_reflection_disabled(self):
+        store = InMemoryStore()
+        config = {
+            "configurable": {"user_id": "alice", "reflection_enabled": False},
+        }
+        assert try_build_reflection_memory(config, store) is None
+
+    def test_returns_none_when_user_id_unresolvable(self, monkeypatch):
+        monkeypatch.delenv("MEMORY_DEBUG_USER_ID", raising=False)
+        store = InMemoryStore()
+        config = {"configurable": {}}
+        assert try_build_reflection_memory(config, store) is None
+
+    def test_returns_memory_when_everything_wired(self):
+        store = InMemoryStore()
+        config = {"configurable": {"user_id": "alice"}}
+        memory = try_build_reflection_memory(config, store)
+        assert memory is not None
+        assert isinstance(memory, ReflectionMemory)
+        assert memory.namespace == ("memories", "alice", "decisions")
+
+    def test_uses_memory_debug_user_id_fallback(self, monkeypatch):
+        monkeypatch.setenv("MEMORY_DEBUG_USER_ID", "debug-alex")
+        store = InMemoryStore()
+        config = {"configurable": {}}
+        memory = try_build_reflection_memory(config, store)
+        assert memory is not None
+        assert memory.namespace == ("memories", "debug-alex", "decisions")
