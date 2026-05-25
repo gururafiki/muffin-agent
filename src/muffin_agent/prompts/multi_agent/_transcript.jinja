@@ -1,0 +1,14 @@
+{#
+  Multi-agent conference transcript partial.
+
+  Renders the conference transcript chronologically when present, or a
+  short opening note when empty. Use this from any conference participant
+  or judge prompt that doesn't have a domain-specific wrapper.
+
+  Usage:
+      {% include "multi_agent/_transcript.jinja" %}
+
+  Required vars (passed automatically by LLMParticipant / StructuredOutputJudge):
+      transcript: chronological text rendering of prior turns; empty string on opening
+-#}
+{% if transcript %}{{ transcript }}{% else %}_(the discussion has not yet begun — this is the opening turn)_{% endif %}

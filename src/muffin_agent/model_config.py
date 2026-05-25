@@ -1,9 +1,11 @@
 """Configuration and LLM provider management."""
 
-from typing import Any, Literal
+from typing import Any, Literal, overload
 
-from langchain_core.language_models import BaseChatModel
-from pydantic import Field
+from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable, RunnableConfig
+from pydantic import BaseModel, Field
 
 from .utils.base_config import BaseConfiguration
 
@@ -124,6 +126,77 @@ class ModelConfiguration(BaseConfiguration):
             self.get_llm(model=entry, temperature=temperature, **kwargs)
             for entry in chain
         ]
+
+    @overload
+    @classmethod
+    def get_chat_model_for_role(
+        cls,
+        config: RunnableConfig,
+        role: Role,
+        *,
+        schema: None = None,
+        stop_after_attempt: int = 3,
+    ) -> Runnable[LanguageModelInput, AIMessage]: ...
+
+    @overload
+    @classmethod
+    def get_chat_model_for_role(
+        cls,
+        config: RunnableConfig,
+        role: Role,
+        *,
+        schema: type[BaseModel] | dict[str, Any],
+        stop_after_attempt: int = 3,
+    ) -> Runnable[LanguageModelInput, BaseModel | dict[str, Any]]: ...
+
+    @classmethod
+    def get_chat_model_for_role(
+        cls,
+        config: RunnableConfig,
+        role: Role,
+        *,
+        schema: type[BaseModel] | dict[str, Any] | None = None,
+        stop_after_attempt: int = 3,
+    ) -> Runnable[LanguageModelInput, Any]:
+        """Return a runnable chat model for *role* composed with fallbacks + retry.
+
+        Convenience over ``from_runnable_config(config).get_llm_for_role(role)``
+        for graph nodes that call an LLM directly. Replaces the 5-line
+        ``primary, *fallbacks = ...; (primary.with_fallbacks(fallbacks) if
+        fallbacks else primary).with_retry(...)`` boilerplate that downstream
+        nodes would otherwise repeat at every call site.
+
+        When *schema* is provided, ``with_structured_output(schema)`` is
+        applied to the primary AND each fallback **before** composing with
+        ``with_fallbacks`` and ``with_retry``. This ordering is mandatory:
+        ``RunnableRetry`` does NOT proxy ``with_structured_output`` (the
+        ``__getattr__`` magic lives on ``RunnableBinding``, not on
+        ``RunnableBindingBase`` which is ``RunnableRetry``'s parent), so
+        applying ``with_structured_output`` AFTER ``with_retry`` raises
+        ``AttributeError`` at runtime. The same trap applies to
+        ``bind_tools`` and other chat-model methods — do them on the
+        chat models BEFORE this helper composes them, or pass them as
+        helper parameters.
+
+        Returns a ``Runnable`` (concretely a ``RunnableRetry`` at runtime),
+        NOT a ``BaseChatModel``. Callers should only invoke (``ainvoke`` /
+        ``astream`` / etc.). Any chat-model-specific composition must
+        happen via this helper's parameters or before calling it.
+        """
+        primary, *fallbacks = cls.from_runnable_config(config).get_llm_for_role(role)
+        chain: list[Runnable[LanguageModelInput, Any]]
+        if schema is not None:
+            chain = [primary.with_structured_output(schema)]
+            chain.extend(f.with_structured_output(schema) for f in fallbacks)
+        else:
+            chain = [primary, *fallbacks]
+        composed: Runnable[LanguageModelInput, Any] = (
+            chain[0].with_fallbacks(chain[1:]) if len(chain) > 1 else chain[0]
+        )
+        return composed.with_retry(
+            stop_after_attempt=stop_after_attempt,
+            wait_exponential_jitter=True,
+        )
 
     def get_summariser(
         self,

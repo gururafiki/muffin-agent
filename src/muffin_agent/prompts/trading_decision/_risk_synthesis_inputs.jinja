@@ -1,0 +1,15 @@
+### Investment Judge thesis
+```json
+{{ investment_judge | tojson(indent=2) }}
+```
+
+### Trader proposal
+```json
+{{ trader | tojson(indent=2) }}
+```
+
+{% if transcript %}### Risk debate transcript so far
+
+{{ transcript }}
+
+{% endif %}

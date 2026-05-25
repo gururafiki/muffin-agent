@@ -1124,6 +1124,175 @@ def research(
     asyncio.run(_run_research(query, mode, sources_list, task_type, user, thread))
 
 
+async def _run_decide(
+    ticker: str,
+    narrative: str | None,
+    query: str | None,
+    user: str,
+    invest_rounds: int,
+    risk_rounds: int,
+    reflection_enabled: bool,
+    decision_date: str | None,
+) -> None:
+    """Run the trading_decision pipeline for a ticker.
+
+    The four analyst agents fetch their own data via OpenBB MCP (price
+    history, fundamentals, news, ownership) and Firecrawl MCP (social /
+    web). The caller provides only the ticker + optional framing
+    (``query`` / ``narrative``); the package is self-contained and does
+    NOT consume outputs from any other muffin pipeline.
+    """
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
+
+    from muffin_agent.agents.trading_decision import build_trading_decision_graph
+    from muffin_agent.utils.observability import setup_tracing
+
+    callbacks = setup_tracing(session_id=f"decide-{ticker}")
+    # NOTE: InMemoryStore does not persist across CLI invocations, so the
+    # reflection-memory layer only accumulates learning within a single
+    # Python process. Wire a PostgresStore (or LangGraph Platform's
+    # injected store) for true cross-session persistence.
+    store = InMemoryStore()
+    configurable: dict = {
+        "thread_id": f"decide-{ticker}",
+        "user_id": user,
+        "max_investment_debate_rounds": invest_rounds,
+        "max_risk_debate_rounds": risk_rounds,
+        "reflection_enabled": reflection_enabled,
+    }
+    if decision_date:
+        configurable["decision_date"] = decision_date
+    config = RunnableConfig(
+        callbacks=callbacks,
+        configurable=configurable,
+        recursion_limit=100,
+    )
+
+    graph = await build_trading_decision_graph(
+        config,
+        checkpointer=_get_checkpointer(),
+        store=store,
+    )
+
+    initial_state: dict = {"ticker": ticker.upper()}
+    if decision_date:
+        initial_state["decision_date"] = decision_date
+    if query:
+        initial_state["query"] = query
+    if narrative:
+        initial_state["narrative"] = narrative
+
+    result = await graph.ainvoke(initial_state, config=config)
+
+    decision = result.get("portfolio_decision", {})
+    typer.echo(json.dumps(decision, indent=2, default=str))
+
+
+@app.command()
+def decide(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    narrative: Annotated[
+        str | None,
+        typer.Option(
+            "--narrative",
+            "-n",
+            help=(
+                "Optional free-form research notes. Layered into the "
+                "downstream Bull/Bear/Judge/Trader/PM prompts alongside the "
+                "four analyst reports the pipeline generates."
+            ),
+        ),
+    ] = None,
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / analysis focus"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help=(
+                "User id for per-user reflection memory namespace "
+                "(defaults to $USER or 'default-user')"
+            ),
+        ),
+    ] = os.environ.get("USER", "default-user"),
+    invest_rounds: Annotated[
+        int,
+        typer.Option(
+            "--invest-rounds",
+            help="Max Bull-Bear debate rounds (default 2 = 4 turns)",
+        ),
+    ] = 2,
+    risk_rounds: Annotated[
+        int,
+        typer.Option(
+            "--risk-rounds",
+            help="Max risk-debate rounds (default 1 = 3 turns)",
+        ),
+    ] = 1,
+    reflection_enabled: Annotated[
+        bool,
+        typer.Option(
+            "--reflection/--no-reflection",
+            help="Enable outcome-driven reflection memory (default on)",
+        ),
+    ] = True,
+    decision_date: Annotated[
+        str | None,
+        typer.Option(
+            "--decision-date",
+            help=(
+                "Override the decision date (YYYY-MM-DD). Defaults to today UTC. "
+                "Pinned for deterministic testing."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """Run the full trading-decision pipeline for a ticker.
+
+    Pipeline:
+      1. reflector_resolve — resolve prior pending decisions with realised returns
+      2. Analysts (parallel) — Market / Fundamentals / News / Social
+      3. Bull-Bear debate — N rounds (default 2)
+      4. Investment Judge — synthesise 5-tier signal
+      5. Trader — operational entry / stop / sizing
+      6. Aggressive-Conservative-Neutral risk debate — M rounds (default 1)
+      7. Portfolio Manager — canonical 5-tier decision
+      8. decision_writeback — persist as pending for future reflection
+
+    Examples::
+
+      muffin decide AAPL
+      muffin decide AAPL --query "long-term hold candidate"
+      muffin decide AAPL --narrative "Recent earnings call mentioned X..."
+
+    The four analysts fetch their own data via OpenBB MCP and Firecrawl
+    MCP — make sure both services are running (`docker compose up -d
+    openbb-mcp firecrawl-mcp`).
+
+    Reflection memory uses an in-process InMemoryStore in the CLI today
+    so prior decisions are not persisted across invocations. Wire a
+    PostgresStore (or run on LangGraph Platform) for cross-session
+    persistence.
+    """
+    asyncio.run(
+        _run_decide(
+            ticker,
+            narrative,
+            query,
+            user,
+            invest_rounds,
+            risk_rounds,
+            reflection_enabled,
+            decision_date,
+        )
+    )
+
+
 def main() -> None:
     """Entry point for the `muffin` CLI."""
     app()
