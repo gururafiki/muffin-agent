@@ -65,6 +65,8 @@ Three composable async builders share `TradingDecisionState` and let callers opt
 
 All three are **async** — each starts by building the four compiled analyst agents (so the agent construction cost is amortised to graph-build time, not per-call).
 
+> **Note:** the 3-way risk debate is wired through the [Multi-Agent Conference Framework](multi-agent.md). The three risk debators are `LLMParticipant` configs; `_build_risk_debate_subgraph(max_rounds)` adds them as a single `risk_debate` node in the parent graph. See [docs/multi-agent.md](multi-agent.md) for the conference-framework architecture (Participant kinds, per-agent persistence via `checkpointer=True`, etc.). The investment debate (Bull/Bear) still uses bespoke node functions today — its migration to the conference framework is a roadmap item.
+
 ---
 
 ## The analyst layer (compiled agents added directly as parent-graph nodes)
@@ -217,11 +219,11 @@ async def bull_researcher_node(
 
 ### State uses LangGraph reducers (no sub-state structs)
 
-`TradingDecisionState` is **flat**. Inputs (`ticker`, `decision_date`, `query`, `narrative`) and analyst outputs (`market_report`, `fundamentals_report`, `news_report`, `sentiment_report`) are top-level fields. Debate responses live in `Annotated[list[str], operator.add]` reducers per speaker (`investment_bull_responses`, `risk_aggressive_responses`, etc.). Structured outputs (`investment_judge`, `trader`, `portfolio_decision`) live in their own top-level dict fields populated via `Pydantic.model_dump()`.
+`TradingDecisionState` is **flat**. Inputs (`ticker`, `decision_date`, `query`, `narrative`) and analyst outputs (`market_report`, `fundamentals_report`, `news_report`, `sentiment_report`) are top-level fields. Bull/Bear responses live in `Annotated[list[str], operator.add]` reducers per speaker (`investment_bull_responses`, `investment_bear_responses`). The risk debate uses the [multi_agent conference framework](multi-agent.md) — turns accumulate as name-tagged `AIMessage`s in `risk_debate_messages: Annotated[list[BaseMessage], add_messages]`; per-agent cursor lives in `risk_debate_agent_cursors: dict[str, str]` (unused today since all risk debaters are `LLMParticipant`s — kept for future mixed LLM+Agent migration); `next_speaker: str | None` is the conference subgraph's internal routing field. Structured outputs (`investment_judge`, `trader`, `portfolio_decision`) live in their own top-level dict fields populated via `Pydantic.model_dump()`.
 
 ### Routing lives at the graph level
 
-`graph.py` defines `_route_investment_debate(state) -> str` and `_route_risk_debate(state) -> str` that read accumulated response lists and the per-run `TradingDecisionConfiguration` (via `langgraph.config.get_config()`). Conditional edges use the **list form** (`["bull_researcher", "bear_researcher", "investment_judge"]`) — sidesteps the `dict[Hashable, str]` mypy variance complaint.
+`graph.py` defines `_route_investment_debate(state) -> str` as the only hand-written conditional-edge router — it reads accumulated `investment_bull_responses` / `investment_bear_responses` and the per-run `TradingDecisionConfiguration` (via `langgraph.config.get_config()`). The risk debate's routing lives **inside** the conference subgraph: `_build_risk_debate_subgraph(max_rounds)` configures a `RoundRobinModerator` + `MaxRoundsTerminator` that the framework's `dispatch` node consults each turn. From the parent graph's perspective the risk debate is a single `risk_debate` node — `trader → risk_debate → portfolio_manager` is a straight edge chain. Conditional edges (for the investment debate) use the **list form** (`["bull_researcher", "bear_researcher", "investment_judge"]`) — sidesteps the `dict[Hashable, str]` mypy variance complaint.
 
 ### Two-layer retry, no fallback dicts
 
@@ -295,19 +297,20 @@ from muffin_agent.agents.trading_decision import (
     build_fundamentals_analyst_agent,
     build_news_analyst_agent,
     build_social_analyst_agent,
-    # Downstream nodes
+    # Downstream nodes (5 — the 3 risk debators are now LLMParticipant
+    # configs inside the conference subgraph, not standalone node fns)
     bull_researcher_node,
     bear_researcher_node,
     investment_judge_node,
     trader_node,
-    aggressive_debator_node,
-    conservative_debator_node,
-    neutral_debator_node,
     portfolio_manager_node,
-    # Reflection
-    reflect_on_decision,
+    # Reflection bookends + outcome fetcher
     reflector_resolve_node,
     decision_writeback_node,
+    OutcomesFetcher,
+    fetch_decision_outcome,
+    ReflectionMemory,
+    render_reflections_block,
     # Local tool
     get_indicators,
 )
@@ -414,17 +417,17 @@ This is **deliberately deferred** because (a) only one consumer exists today, (b
 | Concern | File |
 |---|---|
 | Schemas (Judge / Trader / PM outputs + reflection records) | [src/muffin_agent/agents/trading_decision/schemas.py](../src/muffin_agent/agents/trading_decision/schemas.py) |
-| State (flat, with reducers) | [src/muffin_agent/agents/trading_decision/state.py](../src/muffin_agent/agents/trading_decision/state.py) |
+| State (flat, with reducers; `risk_debate_messages` + `risk_debate_agent_cursors`) | [src/muffin_agent/agents/trading_decision/state.py](../src/muffin_agent/agents/trading_decision/state.py) |
 | Configuration | [src/muffin_agent/agents/trading_decision/config.py](../src/muffin_agent/agents/trading_decision/config.py) |
-| Debate formatters | [src/muffin_agent/agents/trading_decision/_debate.py](../src/muffin_agent/agents/trading_decision/_debate.py) |
+| Debate formatters (`format_debate_history` for Bull/Bear lists; `format_risk_history(messages)` thin wrapper over `multi_agent.render_messages_chronological`) | [src/muffin_agent/agents/trading_decision/_debate.py](../src/muffin_agent/agents/trading_decision/_debate.py) |
 | Analysts (4 compiled ReAct agents) | [src/muffin_agent/agents/trading_decision/analysts/](../src/muffin_agent/agents/trading_decision/analysts/) |
-| Local tool (`get_indicators`) | [src/muffin_agent/agents/trading_decision/tools.py](../src/muffin_agent/agents/trading_decision/tools.py) |
-| Researchers | [src/muffin_agent/agents/trading_decision/researchers/](../src/muffin_agent/agents/trading_decision/researchers/) |
+| Local tool (`get_indicators`) + `OutcomesFetcher` Protocol + default `fetch_decision_outcome` | [src/muffin_agent/agents/trading_decision/tools.py](../src/muffin_agent/agents/trading_decision/tools.py) |
+| Researchers (Bull / Bear / Judge) | [src/muffin_agent/agents/trading_decision/researchers/](../src/muffin_agent/agents/trading_decision/researchers/) |
 | Trader | [src/muffin_agent/agents/trading_decision/trader.py](../src/muffin_agent/agents/trading_decision/trader.py) |
-| Risk debaters | [src/muffin_agent/agents/trading_decision/risk_debate/](../src/muffin_agent/agents/trading_decision/risk_debate/) |
+| Risk debate (3 `LLMParticipant`s wired via `_build_risk_debate_subgraph` in `graph.py`; no standalone debator files) | [src/muffin_agent/multi_agent/](../src/muffin_agent/multi_agent/) + [docs/multi-agent.md](multi-agent.md) |
 | Portfolio Manager | [src/muffin_agent/agents/trading_decision/portfolio_manager.py](../src/muffin_agent/agents/trading_decision/portfolio_manager.py) |
 | Reflection memory | [src/muffin_agent/agents/trading_decision/reflection/](../src/muffin_agent/agents/trading_decision/reflection/) |
-| Graph builders + routers (async) | [src/muffin_agent/agents/trading_decision/graph.py](../src/muffin_agent/agents/trading_decision/graph.py) |
+| Graph builders + investment-debate router (async; `_build_risk_debate_subgraph` wraps `build_conference_graph` for the risk debate) | [src/muffin_agent/agents/trading_decision/graph.py](../src/muffin_agent/agents/trading_decision/graph.py) |
 | Prompts | [src/muffin_agent/prompts/trading_decision/](../src/muffin_agent/prompts/trading_decision/) (shared `_instrument_context.jinja` partial is included by every agent prompt to preserve exchange suffixes like `.TO` / `.L` / `.HK`) |
 | CLI | [src/muffin_cli/main.py](../src/muffin_cli/main.py) (`decide` command) |
 | MuffinAgentBuilder extensions | [src/muffin_agent/utils/agent_builder.py](../src/muffin_agent/utils/agent_builder.py) (`with_state_schema`, `with_runtime_system_prompt_template`, plus auto-unpack on `with_response_format` + `with_state_schema`) |

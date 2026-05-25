@@ -3,7 +3,7 @@
 **A hierarchical multi-agent system for comprehensive stock analysis using LangGraph**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2.6+-green.svg)](https://github.com/langchain-ai/langgraph)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.2+-green.svg)](https://github.com/langchain-ai/langgraph)
 [![License: GNU GPL v3](https://img.shields.io/badge/License-GNU_GPL_v3-yellow.svg)](LICENSE)
 
 
@@ -174,6 +174,60 @@ research = await build_research_subagent(
 # Pass to MuffinAgentBuilder.with_subagents([research, ...])
 ```
 
+### Multi-Agent Conference Framework
+
+Generic, reusable subgraph builder for "put N agents with different system prompts in conversation". Use it for debate, peer review, collaborative ideation — anywhere multiple agents take turns producing one message each. Lives at `src/muffin_agent/multi_agent/`; full guide: [docs/multi-agent.md](docs/multi-agent.md).
+
+**Three Participant kinds** (each a `Participant` Protocol implementation — mix freely in one conference):
+
+| Class | LLM cost per turn | Use when |
+|---|---|---|
+| `LLMParticipant(name, system_prompt_template)` | 1 LLM call; prior conversation rendered as text into the system prompt | Short conferences; existing prompts that already reference `{{ transcript }}` |
+| `LLMMessageParticipant(name, system_prompt_template)` | 1 LLM call; prior conversation forwarded as `BaseMessage` thread | Long conferences (prompt-cache reuse on the role-only system prompt) |
+| `AgentParticipant(name, agent)` | Full ReAct loop on a compiled muffin agent (tools / sub-agents / middleware available); persistent state across turns via the agent's own per-thread checkpointer | Participant needs tools / skills / memory. **Caller MUST build the agent with `MuffinAgentBuilder(...).with_checkpointer(True)`** (the langgraph sentinel) AND the parent graph or conference MUST be compiled with a real checkpointer instance for per-thread persistence to engage. |
+
+Three other pluggable Protocols: `Moderator` (picks next speaker — `RoundRobinModerator`, `AlternatingModerator`), `Terminator` (decides when to stop — `MaxRoundsTerminator`), optional `Judge` (post-conference synthesis — `StructuredOutputJudge` returns `result.model_dump()` from a Pydantic schema).
+
+**State shape** — one shared `messages: Annotated[list[BaseMessage], add_messages]` reducer is the single source of truth; each turn appends one `AIMessage(content, name=<speaker>)`. Per-agent cursors track the last seen message id so each `AgentParticipant` invocation only receives messages added since it last spoke. The agent's internal tool calls / intermediate AIMessages stay in its own per-thread checkpoint — never leak into parent conference state.
+
+**Worked example**:
+
+```python
+from muffin_agent.multi_agent import (
+    build_conference_graph, LLMParticipant, AgentParticipant,
+    RoundRobinModerator, MaxRoundsTerminator,
+)
+from langgraph.checkpoint.memory import InMemorySaver
+
+# Optional: an AgentParticipant with tools
+bull_agent = (
+    MuffinAgentBuilder(model, name="bull")
+    .with_system_prompt_template("debate/bull.jinja")
+    .with_tool(web_search)
+    .with_checkpointer(True)             # ← per-thread persistence sentinel
+    .build_react_agent()
+)
+
+participants = [
+    LLMParticipant("conservative", "debate/conservative.jinja"),
+    AgentParticipant("bull", bull_agent),
+]
+graph = build_conference_graph(
+    participants=participants,
+    moderator=RoundRobinModerator([p.name for p in participants]),
+    terminator=MaxRoundsTerminator(max_rounds=2, num_participants=2),
+    checkpointer=InMemorySaver(),         # required when any AgentParticipant is in the lineup
+)
+
+result = await graph.ainvoke(
+    {},
+    config={"configurable": {"thread_id": "debate-001"}},
+)
+# result["messages"] = [AIMessage(name="conservative", ...), AIMessage(name="bull", ...), ...]
+```
+
+**Current production consumer**: `agents/trading_decision/`'s 3-way risk debate (Aggressive / Conservative / Neutral) is composed via `_build_risk_debate_subgraph(max_rounds)` and added as a single `risk_debate` node in the parent graph. The investment debate (Bull/Bear) is still bespoke today; migration is a roadmap item.
+
 ### Market Regime Agent
 
 A deep agent (Step 2 of the investment process) that classifies the current macro and liquidity regime, identifies factor tailwinds and headwinds, and provides portfolio positioning guidance. Uses a **macro-focused subset** of 6 subagents — the 5 market-wide data collection agents plus data-validation — built by a private `_build_macro_subagents()` helper rather than the full 14-agent set.
@@ -342,72 +396,64 @@ Runs **sequentially** after Group 2 barrier (forecasting + risk_assessment); out
 
 ### Trading Decision Pipeline (`agents/trading_decision/`)
 
-A composable trading-decision pipeline ported from [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Decoupled from `investment_analysis` — every agent accepts a generic `AnalysisContext` envelope so callers can feed in muffin's pipeline output, free-form research notes, or any other upstream analysis. Full composition guide: [docs/trading-decision.md](docs/trading-decision.md).
+A composable trading-decision pipeline ported from [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). **Fully self-contained** — fetches its own data via OpenBB MCP (price / fundamentals / news / ownership) and Firecrawl MCP (social / web) through four compiled analyst ReAct agents that run before the Bull/Bear/Judge/Trader/PM downstream nodes. Does NOT consume outputs from any other muffin pipeline. Full architecture: [docs/trading-decision.md](docs/trading-decision.md).
 
 **Three graph builders** (same `TradingDecisionState`, different depth):
 
 | Builder | Topology | Use when |
 |---|---|---|
-| `build_investment_debate_graph` | Bull ↔ Bear → Investment Judge | You only want a structured directional view |
+| `build_investment_debate_graph` | analysts → Bull ↔ Bear → Investment Judge | You only want a structured directional view |
 | `build_investment_thesis_graph` | …+ Trader | You want operational entry / stop / sizing too |
-| `build_trading_decision_graph` | reflector_resolve → debate → Judge → Trader → risk debate → Portfolio Manager → decision_writeback | Canonical full pipeline with reflection memory |
+| `build_trading_decision_graph` | reflector_resolve → analysts (parallel) → debate → Judge → Trader → risk debate → Portfolio Manager → decision_writeback | Canonical full pipeline with reflection memory |
+
+All three are **async** — each starts by building the four compiled analyst agents (so agent construction cost is amortised to graph-build time, not per call).
+
+**The analyst layer** (4 compiled ReAct agents added directly as parent-graph nodes, running in parallel after `reflector_resolve`):
+
+| Analyst | Tools | Output field |
+|---|---|---|
+| Market | 4 OpenBB equity_price tools + local `get_indicators` (stockstats over OHLCV) | `market_report` |
+| Fundamentals | 7 OpenBB equity_fundamental_* tools | `fundamentals_report` |
+| News | `news_company` + `news_world` + `equity_ownership_insider_trading` | `news_report` |
+| Social | `news_company` + Firecrawl `firecrawl_search` | `sentiment_report` |
 
 **Adversarial debate, two layers:**
 
 | Stage | Participants | Default rounds | Output |
 |---|---|---|---|
 | Investment debate | Bull Researcher ↔ Bear Researcher | 2 rounds = 4 turns | `InvestmentJudgeOutput` (5-tier `signal`, conviction, bull/bear cases, catalysts, risks, monitoring checklist) |
-| Risk debate | Aggressive → Conservative → Neutral (round-robin) | 1 round = 3 turns | Stress-tested debate transcript |
+| Risk debate | Aggressive → Conservative → Neutral (round-robin) | 1 round = 3 turns | Name-tagged `AIMessage`s in `risk_debate_messages` |
 
-Speaker-tag routing keeps the alternation cheap (no text parsing); per-run round counts are configurable via `configurable.max_investment_debate_rounds` and `configurable.max_risk_debate_rounds`.
+The risk debate is wired through the [Multi-Agent Conference Framework](#multi-agent-conference-framework) — `_build_risk_debate_subgraph(max_rounds)` configures three `LLMParticipant`s + `RoundRobinModerator` + `MaxRoundsTerminator` and adds the result as a single `risk_debate` node in the parent graph. The investment debate (Bull/Bear) still uses bespoke node functions today; migration to the conference framework is a roadmap item.
 
 **Operational translation** — the **Trader** maps the Judge's 5-tier `signal` → 3-tier `action` (sell/hold/buy), entry price, stop loss, take profit, position sizing (anchored to conviction buckets in the prompt), and time horizon (anchored to the Judge's catalysts).
 
-**Final synthesis** — the **Portfolio Manager** consumes the Judge thesis + Trader proposal + risk debate transcript and produces `PortfolioDecisionOutput` — the canonical 5-tier rating (`strong_sell` … `strong_buy`), executive summary, detailed thesis, price target, stop loss, time horizon, position sizing, remaining risks, confidence. May revise the Judge's signal one notch up or down based on what the risk debate surfaced.
+**Final synthesis** — the **Portfolio Manager** consumes the Judge thesis + Trader proposal + `risk_debate_messages` and produces `PortfolioDecisionOutput` — the canonical 5-tier rating (`strong_sell` … `strong_buy`), executive summary, detailed thesis, price target, stop loss, time horizon, position sizing, remaining risks, confidence. May revise the Judge's signal one notch up or down based on what the risk debate surfaced.
 
-**Outcome-driven reflection memory** — decisions are persisted under per-user namespace `("memories", user_id, "decisions")` with key `f"{TICKER}:{YYYY-MM-DD}"`. On the next run, `reflector_resolve_node` walks pending entries: fetches realised returns + alpha vs benchmark (default SPY) via `fetch_outcomes_openbb` (pluggable through the `OutcomesFetcher` protocol), generates a 2–4 sentence reflection via the Reflector LLM, and injects the most-recent same-ticker + cross-ticker reflections into the next Portfolio Manager prompt. The PM marks `incorporates_past_lessons=true` when it actually cites them. All reflection components degrade silently when the store is unavailable — the pipeline always produces a decision.
+**Outcome-driven reflection memory** — decisions are persisted under per-user namespace `("memories", user_id, "decisions")` with key `f"{TICKER}:{YYYY-MM-DD}"`. On the next run, `reflector_resolve_node` walks pending entries: fetches realised returns + alpha vs benchmark (default SPY) via the default `OutcomesFetcher` (pluggable), generates a 2–4 sentence reflection via the Reflector LLM, and injects the most-recent same-ticker + cross-ticker reflections into the next Portfolio Manager prompt. The PM marks `incorporates_past_lessons=true` when it actually cites them. All reflection components degrade silently when the store is unavailable — the pipeline always produces a decision.
 
 **Per-run knobs** (all via `configurable`): `max_investment_debate_rounds` (2), `max_risk_debate_rounds` (1), `reflection_enabled` (`true`), `decision_date` (today UTC), `reflection_holding_days` (5), `reflection_benchmark` (`"SPY"`), `reflection_max_same_ticker` (5), `reflection_max_cross_ticker` (3).
-
-**Composition** — `AnalysisContext` is the abstraction that decouples this pipeline from the rest of muffin:
-
-```python
-from muffin_agent.agents.trading_decision import AnalysisContext
-
-# Mode 1: free-form research notes
-ctx = AnalysisContext.from_narrative("AAPL", "Bull thesis: ...", query="long-term hold")
-
-# Mode 2: muffin's investment_analysis pipeline output (state dict)
-ctx = AnalysisContext.from_investment_analysis_state(state, query="...")
-
-# Mode 3: hybrid (structured fields + ad-hoc notes)
-ctx = AnalysisContext.from_investment_analysis_state(
-    state, narrative="Additional context: management transition imminent."
-)
-```
 
 **CLI**:
 
 ```bash
-# Narrative-only
-muffin decide AAPL --narrative "Bull thesis: durable services growth..."
+# Minimal — the four analysts fetch their own data.
+muffin decide AAPL
 
-# From upstream analysis JSON (file or stdin)
-muffin decide AAPL --analysis-json state.json --query "long-term hold"
+# With investment mandate
+muffin decide AAPL --query "long-term hold candidate"
 
-# Combine structured analysis + free-form notes
-muffin decide AAPL --analysis-json state.json \
-                   --narrative "Add'l context: management transition"
+# Layer caller-provided notes alongside the analyst reports
+muffin decide AAPL --narrative "Recent earnings call mentioned X..." --user alice
 
-# Tune debate rounds, disable reflection, pin decision date
-muffin decide AAPL --narrative "..." \
-                   --invest-rounds 2 --risk-rounds 1 \
-                   --no-reflection \
-                   --decision-date 2026-05-17 \
-                   --user alice
+# Pin decision date + tune debate rounds (deterministic testing)
+muffin decide AAPL --decision-date 2026-05-23 --invest-rounds 1 --risk-rounds 1 \
+                   --no-reflection
 ```
 
-The CLI ships with `InMemoryStore`, so reflection memory persists only within a single Python process today. Wire `PostgresStore` (or run on LangGraph Platform) for cross-session persistence — see the [composition guide](docs/trading-decision.md) for the recipe.
+Required: `docker compose up -d openbb-mcp firecrawl-mcp searxng` (the four analysts need OpenBB MCP + Firecrawl MCP).
+
+The CLI ships with `InMemoryStore`, so reflection memory persists only within a single Python process today. Wire `PostgresStore` (or run on LangGraph Platform) for cross-session persistence — see [docs/trading-decision.md](docs/trading-decision.md) for the recipe.
 
 ### Middleware
 
@@ -676,11 +722,14 @@ muffin research "Latest news on Anthropic Claude 4.7"
 muffin research "Postgres vs MySQL for OLTP" --mode quality
 muffin research "How do I set up pgvector?" --task-type how_to --mode quality
 
-# Trading decision pipeline (Bull/Bear debate -> Judge -> Trader -> risk debate -> PM)
-muffin decide AAPL --narrative "Bull thesis: durable services growth..."
-muffin decide AAPL --analysis-json state.json --query "long-term hold"
-muffin decide AAPL --analysis-json - < state.json   # read from stdin
-muffin decide AAPL --narrative "..." --no-reflection --decision-date 2026-05-17
+# Trading decision pipeline (4 analysts -> Bull/Bear debate -> Judge -> Trader
+# -> 3-way risk debate via multi_agent conference -> Portfolio Manager).
+# The four analysts fetch their own data via OpenBB MCP + Firecrawl MCP.
+muffin decide AAPL
+muffin decide AAPL --query "long-term hold candidate"
+muffin decide AAPL --narrative "Recent earnings call mentioned X..." --user alice
+muffin decide AAPL --decision-date 2026-05-23 --invest-rounds 1 --risk-rounds 1
+muffin decide AAPL --no-reflection
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"
