@@ -1,4 +1,4 @@
-"""Tests for the pure debate-history formatters in ``_debate.py``."""
+"""Tests for the debate-history formatters in ``_debate.py``."""
 
 from __future__ import annotations
 
@@ -40,19 +40,31 @@ class TestFormatDebateHistory:
 @pytest.mark.unit
 class TestFormatRiskHistory:
     def test_empty(self):
-        assert format_risk_history([], [], []) == ""
+        assert format_risk_history([]) == ""
 
     def test_full_round(self):
-        result = format_risk_history(["agg A"], ["cons A"], ["neut A"])
+        # The conference framework's chronological formatter uses each
+        # participant's `name` as the line prefix — so the rendered
+        # transcript reflects the graph-node names directly.
+        turns = [
+            {"speaker": "aggressive_debator", "content": "agg A", "round": 1},
+            {"speaker": "conservative_debator", "content": "cons A", "round": 1},
+            {"speaker": "neutral_debator", "content": "neut A", "round": 1},
+        ]
+        result = format_risk_history(turns)
         assert result == (
-            "Aggressive Analyst: agg A\n\n"
-            "Conservative Analyst: cons A\n\n"
-            "Neutral Analyst: neut A"
+            "aggressive_debator: agg A\n\n"
+            "conservative_debator: cons A\n\n"
+            "neutral_debator: neut A"
         )
 
     def test_partial_round(self):
         # Only Aggressive and Conservative have spoken.
-        result = format_risk_history(["agg A"], ["cons A"], [])
-        assert "Aggressive Analyst: agg A" in result
-        assert "Conservative Analyst: cons A" in result
-        assert "Neutral Analyst" not in result
+        turns = [
+            {"speaker": "aggressive_debator", "content": "agg A", "round": 1},
+            {"speaker": "conservative_debator", "content": "cons A", "round": 1},
+        ]
+        result = format_risk_history(turns)
+        assert "aggressive_debator: agg A" in result
+        assert "conservative_debator: cons A" in result
+        assert "neutral_debator" not in result

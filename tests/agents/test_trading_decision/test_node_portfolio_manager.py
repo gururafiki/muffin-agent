@@ -36,9 +36,12 @@ def _base_state() -> dict:
         "ticker": "AAPL",
         "investment_judge": {"signal": "buy", "conviction": 0.7},
         "trader": {"action": "buy", "position_sizing": "2% NAV"},
-        "risk_aggressive_responses": ["press it"],
-        "risk_conservative_responses": ["careful"],
-        "risk_neutral_responses": ["scale in"],
+        # Conference-subgraph transcript: each turn is a Turn dict.
+        "risk_debate_transcript": [
+            {"speaker": "aggressive_debator", "content": "press it", "round": 1},
+            {"speaker": "conservative_debator", "content": "careful", "round": 1},
+            {"speaker": "neutral_debator", "content": "scale in", "round": 1},
+        ],
     }
 
 
@@ -71,9 +74,11 @@ class TestPortfolioManagerNode:
             await portfolio_manager_node(state, {})
 
         system_msg = captured.get_llm_for_role.return_value[0].invocations[0][0]
-        assert "Aggressive Analyst: press it" in system_msg.content
-        assert "Conservative Analyst: careful" in system_msg.content
-        assert "Neutral Analyst: scale in" in system_msg.content
+        # Transcript is rendered "<speaker>: <content>" per the multi_agent
+        # framework's chronological formatter.
+        assert "aggressive_debator: press it" in system_msg.content
+        assert "conservative_debator: careful" in system_msg.content
+        assert "neutral_debator: scale in" in system_msg.content
         assert "Past lessons" in system_msg.content
         assert "AAPL 2026-01-01" in system_msg.content
 

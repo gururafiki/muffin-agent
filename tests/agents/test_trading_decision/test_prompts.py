@@ -170,7 +170,7 @@ class TestRiskDebatePrompts:
             "trading_decision/risk_debate/aggressive.jinja",
             investment_judge=_judge_payload(),
             trader=_trader_payload(),
-            risk_debate_history="",
+            transcript="",
             **_analysis_kwargs(),
         )
         assert "Aggressive Risk Analyst" in result
@@ -183,18 +183,18 @@ class TestRiskDebatePrompts:
             "trading_decision/risk_debate/conservative.jinja",
             investment_judge=_judge_payload(),
             trader=_trader_payload(),
-            risk_debate_history="Aggressive Analyst: press it",
+            transcript="aggressive_debator: press it",
             **_analysis_kwargs(),
         )
         assert "Conservative Risk Analyst" in result
-        assert "Aggressive Analyst: press it" in result
+        assert "aggressive_debator: press it" in result
 
     def test_neutral_opening(self):
         result = render_template(
             "trading_decision/risk_debate/neutral.jinja",
             investment_judge=_judge_payload(),
             trader=_trader_payload(),
-            risk_debate_history="",
+            transcript="",
             **_analysis_kwargs(),
         )
         assert "Neutral Risk Analyst" in result
@@ -210,7 +210,7 @@ class TestPortfolioManagerPrompt:
             "trading_decision/portfolio_manager.jinja",
             investment_judge=_judge_payload(),
             trader=_trader_payload(),
-            risk_debate_history="Risk debate transcript here.",
+            transcript="Risk debate transcript here.",
             past_reflections="",
             **_analysis_kwargs(),
         )
@@ -227,7 +227,7 @@ class TestPortfolioManagerPrompt:
             "trading_decision/portfolio_manager.jinja",
             investment_judge=_judge_payload(),
             trader=_trader_payload(),
-            risk_debate_history="transcript",
+            transcript="transcript",
             past_reflections="- **AAPL 2026-01-01** → buy | raw +5%",
             **_analysis_kwargs(),
         )

@@ -7,10 +7,13 @@ agents fill in the analysis (``market_report``, ``fundamentals_report``,
 ``news_report``, ``sentiment_report``) before the Bull/Bear/Judge/
 Trader/PM downstream nodes run.
 
-Each debater's responses accumulate in a top-level ``Annotated[list[str],
-operator.add]`` field. Nodes return ``{"<field>": [new_response]}`` and
-LangGraph's reducer appends to the existing list. The "latest response" is
-``state[<field>][-1]``; the round count is ``len(bulls) + len(bears)``.
+The Bull/Bear debate still uses per-speaker ``Annotated[list[str],
+operator.add]`` fields (not migrated yet — see the multi_agent framework
+roadmap). The risk debate (Aggressive/Conservative/Neutral) is wired
+through ``muffin_agent.multi_agent.build_conference_graph`` which
+accumulates speaker-tagged ``Turn`` dicts into
+``risk_debate_transcript`` and uses ``next_speaker`` for internal
+routing.
 
 Structured outputs (``investment_judge``, ``trader``, ``portfolio_decision``)
 live in their own top-level dict fields populated by the synthesis/judge
@@ -26,6 +29,8 @@ import operator
 from typing import Annotated, Any
 
 from typing_extensions import TypedDict
+
+from ...multi_agent import Turn
 
 
 class TradingDecisionState(TypedDict, total=False):
@@ -82,10 +87,16 @@ class TradingDecisionState(TypedDict, total=False):
     trader: dict[str, Any]
     """``TraderOutput.model_dump()`` — set by the trader node."""
 
-    # ── Risk debate ────────────────────────────────────────────────────────
-    risk_aggressive_responses: Annotated[list[str], operator.add]
-    risk_conservative_responses: Annotated[list[str], operator.add]
-    risk_neutral_responses: Annotated[list[str], operator.add]
+    # ── Risk debate (wired via multi_agent.build_conference_graph) ─────────
+    risk_debate_transcript: Annotated[list[Turn], operator.add]
+    """Speaker-tagged ``Turn`` dicts accumulated by the risk-debate
+    conference subgraph. Each turn carries ``speaker``, ``content``,
+    ``round``. The Portfolio Manager reads this as the synthesis input."""
+
+    next_speaker: str | None
+    """Conference-subgraph routing field — written by the ``dispatch``
+    node, consumed by the conference's conditional edge. Set to ``None``
+    when the terminator fires (signalling end-of-conference)."""
 
     # ── Portfolio decision (canonical artifact) ────────────────────────────
     portfolio_decision: dict[str, Any]

@@ -26,9 +26,11 @@ Public surface:
 * Per-role downstream nodes (each takes a typed input state, returns a
   typed output state): ``bull_researcher_node``,
   ``bear_researcher_node``, ``investment_judge_node``, ``trader_node``,
-  ``aggressive_debator_node``, ``conservative_debator_node``,
-  ``neutral_debator_node``, ``portfolio_manager_node``,
-  ``reflector_resolve_node``, ``decision_writeback_node``.
+  ``portfolio_manager_node``, ``reflector_resolve_node``,
+  ``decision_writeback_node``. The 3-way risk debate has migrated to
+  the multi_agent conference framework — it no longer exposes per-role
+  node functions; the conference subgraph is built inline in
+  :mod:`graph`.
 
 * Per-role state schemas (TypedDicts):
   ``<Role>InputState`` / ``<Role>OutputState`` for each downstream
@@ -102,17 +104,6 @@ from .researchers import (
     bull_researcher_node,
     investment_judge_node,
 )
-from .risk_debate import (
-    AggressiveDebatorInputState,
-    AggressiveDebatorOutputState,
-    ConservativeDebatorInputState,
-    ConservativeDebatorOutputState,
-    NeutralDebatorInputState,
-    NeutralDebatorOutputState,
-    aggressive_debator_node,
-    conservative_debator_node,
-    neutral_debator_node,
-)
 from .schemas import (
     DecisionRecord,
     InvestmentJudgeOutput,
@@ -166,31 +157,22 @@ __all__ = [
     "ReflectionMemory",
     "render_reflections_block",
     # Downstream nodes
-    "aggressive_debator_node",
     "bear_researcher_node",
     "bull_researcher_node",
-    "conservative_debator_node",
     "decision_writeback_node",
     "investment_judge_node",
-    "neutral_debator_node",
     "portfolio_manager_node",
     "reflector_resolve_node",
     "trader_node",
     # Per-role state TypedDicts
-    "AggressiveDebatorInputState",
-    "AggressiveDebatorOutputState",
     "BearResearcherInputState",
     "BearResearcherOutputState",
     "BullResearcherInputState",
     "BullResearcherOutputState",
-    "ConservativeDebatorInputState",
-    "ConservativeDebatorOutputState",
     "DecisionWritebackInputState",
     "DecisionWritebackOutputState",
     "InvestmentJudgeInputState",
     "InvestmentJudgeOutputState",
-    "NeutralDebatorInputState",
-    "NeutralDebatorOutputState",
     "PortfolioManagerInputState",
     "PortfolioManagerOutputState",
     "ReflectorResolveInputState",

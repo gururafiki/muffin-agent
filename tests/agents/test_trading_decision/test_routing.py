@@ -3,6 +3,11 @@
 These functions are called by LangGraph's conditional edges. They read
 state directly (no Command, no node coupling) and return the literal
 name of the next node.
+
+The 3-way risk debate no longer has its own router — it's wired through
+the multi_agent conference framework whose internal routing is exercised
+in ``tests/multi_agent/test_conference.py``. The bull/bear investment
+debate keeps its bespoke router and is tested here.
 """
 
 from __future__ import annotations
@@ -11,10 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from muffin_agent.agents.trading_decision.graph import (
-    _route_investment_debate,
-    _route_risk_debate,
-)
+from muffin_agent.agents.trading_decision.graph import _route_investment_debate
 
 
 def _config(**configurable) -> dict:
@@ -92,55 +94,3 @@ class TestRouteInvestmentDebate:
             return_value=_config(max_investment_debate_rounds=rounds),
         ):
             assert _route_investment_debate(state) == expected
-
-
-@pytest.mark.unit
-class TestRouteRiskDebate:
-    def test_opening_routes_to_aggressive(self):
-        with patch(
-            "muffin_agent.agents.trading_decision.graph._active_config",
-            return_value=_config(),
-        ):
-            assert _route_risk_debate({}) == "aggressive_debator"
-
-    def test_round_robin_progression_default_1_round(self):
-        # Default = 1 round = 3 turns (one per persona).
-        with patch(
-            "muffin_agent.agents.trading_decision.graph._active_config",
-            return_value=_config(),
-        ):
-            # After Aggressive
-            state = {"risk_aggressive_responses": ["a"]}
-            assert _route_risk_debate(state) == "conservative_debator"
-
-            # After Conservative
-            state["risk_conservative_responses"] = ["c"]
-            assert _route_risk_debate(state) == "neutral_debator"
-
-            # After Neutral
-            state["risk_neutral_responses"] = ["n"]
-            assert _route_risk_debate(state) == "portfolio_manager"
-
-    def test_two_round_progression(self):
-        # 2 rounds = 6 turns.
-        with patch(
-            "muffin_agent.agents.trading_decision.graph._active_config",
-            return_value=_config(max_risk_debate_rounds=2),
-        ):
-            # After 1 round, next is Aggressive (round 2).
-            state = {
-                "risk_aggressive_responses": ["a1"],
-                "risk_conservative_responses": ["c1"],
-                "risk_neutral_responses": ["n1"],
-            }
-            assert _route_risk_debate(state) == "aggressive_debator"
-
-            # Halfway through round 2.
-            state["risk_aggressive_responses"].append("a2")
-            assert _route_risk_debate(state) == "conservative_debator"
-
-            state["risk_conservative_responses"].append("c2")
-            assert _route_risk_debate(state) == "neutral_debator"
-
-            state["risk_neutral_responses"].append("n2")
-            assert _route_risk_debate(state) == "portfolio_manager"

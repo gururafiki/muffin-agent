@@ -20,8 +20,12 @@ The agent build is amortised to graph-construction time; per-call
 invocation is just LLM + tool work.
 
 Routing is **graph-level** — non-analyst nodes return state-update
-dicts only, never ``Command(goto=...)``. Conditional edges (list form)
-decide next nodes based on the accumulated debate-response lists.
+dicts only, never ``Command(goto=...)``. The bull/bear debate uses a
+hand-written conditional-edge router; the 3-way risk debate is wired
+through ``muffin_agent.multi_agent.build_conference_graph`` which
+generates a self-contained subgraph (round-robin moderator + max-rounds
+terminator + no judge — the Portfolio Manager runs in the parent graph
+and reads the conference transcript directly).
 
 Retry layering: every LLM-call node carries a ``RetryPolicy`` so
 LangGraph retries the whole node on exception (one layer above
@@ -40,6 +44,12 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 
+from ...multi_agent import (
+    LLMParticipant,
+    MaxRoundsTerminator,
+    RoundRobinModerator,
+    build_conference_graph,
+)
 from .analysts import (
     build_fundamentals_analyst_agent,
     build_market_analyst_agent,
@@ -57,11 +67,6 @@ from .researchers import (
     bull_researcher_node,
     investment_judge_node,
 )
-from .risk_debate import (
-    aggressive_debator_node,
-    conservative_debator_node,
-    neutral_debator_node,
-)
 from .state import TradingDecisionState
 from .tools import OutcomesFetcher
 from .trader import trader_node
@@ -75,6 +80,12 @@ _ANALYST_NAMES: tuple[str, str, str, str] = (
     "fundamentals_analyst",
     "news_analyst",
     "social_analyst",
+)
+
+_RISK_DEBATE_PARTICIPANT_NAMES: tuple[str, str, str] = (
+    "aggressive_debator",
+    "conservative_debator",
+    "neutral_debator",
 )
 
 
@@ -107,37 +118,6 @@ _INVESTMENT_DEBATE_TARGETS: list[str] = [
     "bull_researcher",
     "bear_researcher",
     "investment_judge",
-]
-
-
-def _route_risk_debate(state: TradingDecisionState) -> str:
-    """Pick the next risk-debate node (round-robin) or hand off to PM.
-
-    Round-robin order: Aggressive → Conservative → Neutral. The next speaker
-    is whichever role has the fewest responses so far; ties are broken in
-    the canonical order. Hands off to the Portfolio Manager once each role
-    has spoken ``max_risk_debate_rounds`` times.
-    """
-    cfg = TradingDecisionConfiguration.from_runnable_config(_active_config())
-    aggressives = len(state.get("risk_aggressive_responses") or [])
-    conservatives = len(state.get("risk_conservative_responses") or [])
-    neutrals = len(state.get("risk_neutral_responses") or [])
-    total = aggressives + conservatives + neutrals
-    if total >= 3 * cfg.max_risk_debate_rounds:
-        return "portfolio_manager"
-    # Whichever role is behind by count goes next; canonical order on ties.
-    if aggressives <= conservatives and aggressives <= neutrals:
-        return "aggressive_debator"
-    if conservatives <= neutrals:
-        return "conservative_debator"
-    return "neutral_debator"
-
-
-_RISK_DEBATE_TARGETS: list[str] = [
-    "aggressive_debator",
-    "conservative_debator",
-    "neutral_debator",
-    "portfolio_manager",
 ]
 
 
@@ -195,6 +175,47 @@ def _wire_analysts_to(graph: StateGraph, *, from_node: str, to_node: str) -> Non
     for analyst in _ANALYST_NAMES:
         graph.add_edge(from_node, analyst)
         graph.add_edge(analyst, to_node)
+
+
+def _build_risk_debate_subgraph(
+    max_rounds: int,
+) -> CompiledStateGraph:
+    """Compile the 3-way risk-debate conference subgraph.
+
+    Round-robin moderator (Aggressive → Conservative → Neutral) with a
+    hard ``max_rounds × 3`` turn cap. No in-conference judge — the
+    Portfolio Manager runs in the parent graph and consumes the
+    ``risk_debate_transcript`` directly.
+    """
+    participants = [
+        LLMParticipant(
+            name="aggressive_debator",
+            system_prompt_template="trading_decision/risk_debate/aggressive.jinja",
+            user_prompt="Make your argument now.",
+        ),
+        LLMParticipant(
+            name="conservative_debator",
+            system_prompt_template="trading_decision/risk_debate/conservative.jinja",
+            user_prompt="Make your argument now.",
+        ),
+        LLMParticipant(
+            name="neutral_debator",
+            system_prompt_template="trading_decision/risk_debate/neutral.jinja",
+            user_prompt="Make your argument now.",
+        ),
+    ]
+    return build_conference_graph(
+        participants=participants,
+        moderator=RoundRobinModerator(
+            speaker_order=list(_RISK_DEBATE_PARTICIPANT_NAMES)
+        ),
+        terminator=MaxRoundsTerminator(
+            max_rounds=max_rounds,
+            num_participants=len(participants),
+        ),
+        state_schema=TradingDecisionState,
+        transcript_field="risk_debate_transcript",
+    )
 
 
 # ── Builders ──────────────────────────────────────────────────────────────────
@@ -284,8 +305,11 @@ async def build_trading_decision_graph(
                                   trader
                                      │
                                      ▼
-                aggressive_debator → conservative_debator → neutral_debator
-                                     (M rounds via round-robin)
+                    risk_debate (conference subgraph)
+                       └── aggressive_debator
+                       └── conservative_debator
+                       └── neutral_debator
+                       (round-robin × M rounds via build_conference_graph)
                                      │
                                      ▼
                              portfolio_manager
@@ -295,13 +319,15 @@ async def build_trading_decision_graph(
 
     Args:
         config: Active ``RunnableConfig`` — required to build the four
-            analyst ReAct agents at graph-construction time.
+            analyst ReAct agents at graph-construction time. Also read for
+            ``max_risk_debate_rounds`` to size the risk-debate subgraph.
         checkpointer: Optional LangGraph checkpointer for graph state.
         store: Optional ``BaseStore`` for reflection memory + tool-result
             caching. When ``None``, reflection bookends degrade to no-ops.
         outcomes_fetcher: Optional ``OutcomesFetcher`` for realised-return
             data (defaults to :func:`fetch_decision_outcome`).
     """
+    cfg = TradingDecisionConfiguration.from_runnable_config(config)
     graph: StateGraph = StateGraph(TradingDecisionState)
 
     graph.add_node(
@@ -315,12 +341,9 @@ async def build_trading_decision_graph(
     graph.add_node("investment_judge", investment_judge_node, retry_policy=_LLM_RETRY)
     graph.add_node("trader", trader_node, retry_policy=_LLM_RETRY)
     graph.add_node(
-        "aggressive_debator", aggressive_debator_node, retry_policy=_LLM_RETRY
+        "risk_debate",
+        _build_risk_debate_subgraph(max_rounds=cfg.max_risk_debate_rounds),
     )
-    graph.add_node(
-        "conservative_debator", conservative_debator_node, retry_policy=_LLM_RETRY
-    )
-    graph.add_node("neutral_debator", neutral_debator_node, retry_policy=_LLM_RETRY)
     graph.add_node("portfolio_manager", portfolio_manager_node, retry_policy=_LLM_RETRY)
     # Pure-IO node — no LLM, no retry beyond the store's own behaviour.
     graph.add_node("decision_writeback", partial(decision_writeback_node, store=store))
@@ -334,16 +357,8 @@ async def build_trading_decision_graph(
         "bear_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
     )
     graph.add_edge("investment_judge", "trader")
-    graph.add_conditional_edges("trader", _route_risk_debate, _RISK_DEBATE_TARGETS)
-    graph.add_conditional_edges(
-        "aggressive_debator", _route_risk_debate, _RISK_DEBATE_TARGETS
-    )
-    graph.add_conditional_edges(
-        "conservative_debator", _route_risk_debate, _RISK_DEBATE_TARGETS
-    )
-    graph.add_conditional_edges(
-        "neutral_debator", _route_risk_debate, _RISK_DEBATE_TARGETS
-    )
+    graph.add_edge("trader", "risk_debate")
+    graph.add_edge("risk_debate", "portfolio_manager")
     graph.add_edge("portfolio_manager", "decision_writeback")
     graph.add_edge("decision_writeback", END)
 

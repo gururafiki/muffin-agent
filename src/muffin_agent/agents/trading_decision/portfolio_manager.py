@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
+from ...multi_agent import Turn
 from ...prompts import render_template
 from ._debate import format_risk_history
 from .schemas import PortfolioDecisionOutput
@@ -27,9 +28,7 @@ class PortfolioManagerInputState(TypedDict, total=False):
     sentiment_report: str
     investment_judge: dict[str, Any]
     trader: dict[str, Any]
-    risk_aggressive_responses: Annotated[list[str], operator.add]
-    risk_conservative_responses: Annotated[list[str], operator.add]
-    risk_neutral_responses: Annotated[list[str], operator.add]
+    risk_debate_transcript: Annotated[list[Turn], operator.add]
     past_reflections: str
 
 
@@ -47,9 +46,7 @@ async def portfolio_manager_node(
     Also pulls in ``past_reflections`` when present so the PM prompt can
     reference past lessons from the reflection log.
     """
-    aggressives = state.get("risk_aggressive_responses") or []
-    conservatives = state.get("risk_conservative_responses") or []
-    neutrals = state.get("risk_neutral_responses") or []
+    risk_turns = state.get("risk_debate_transcript") or []
 
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=PortfolioDecisionOutput
@@ -66,7 +63,7 @@ async def portfolio_manager_node(
         sentiment_report=state.get("sentiment_report"),
         investment_judge=state["investment_judge"],
         trader=state["trader"],
-        risk_debate_history=format_risk_history(aggressives, conservatives, neutrals),
+        transcript=format_risk_history(risk_turns),
         past_reflections=state.get("past_reflections") or "",
     )
 

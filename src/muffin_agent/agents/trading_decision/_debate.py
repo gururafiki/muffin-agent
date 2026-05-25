@@ -1,11 +1,21 @@
 """Pure debate-transcript formatters.
 
-The only Python helpers shared across per-role node files. Everything else
-(state reads, LLM resolution, prompt rendering, routing) lives inline at
-each node's call site so reads are explicit.
+Two helpers serve the two distinct shapes of transcript the package
+maintains today:
+
+* :func:`format_debate_history` — Bull/Bear two-list format (legacy
+  pattern; will be retired when the bull/bear debate migrates onto the
+  multi_agent conference framework).
+* :func:`format_risk_history` — speaker-tagged ``Turn`` list emitted by
+  the risk-debate conference subgraph. Consumed by the Portfolio Manager.
+
+Both produce the same "<Speaker name>: <content>" line shape so prompts
+that interleave the two transcripts read consistently.
 """
 
 from __future__ import annotations
+
+from ...multi_agent import Turn, render_transcript_chronological
 
 
 def format_debate_history(bull_responses: list[str], bear_responses: list[str]) -> str:
@@ -25,29 +35,13 @@ def format_debate_history(bull_responses: list[str], bear_responses: list[str]) 
     return "\n\n".join(rows)
 
 
-def format_risk_history(
-    aggressive_responses: list[str],
-    conservative_responses: list[str],
-    neutral_responses: list[str],
-) -> str:
-    """Interleave Aggressive, Conservative, Neutral turns chronologically.
+def format_risk_history(turns: list[Turn]) -> str:
+    """Render the risk-debate conference transcript chronologically.
 
-    Round-robin order: Aggressive → Conservative → Neutral. Used by both
-    the three debator prompts (each sees full transcript) and the Portfolio
-    Manager prompt for synthesis.
+    Thin wrapper around :func:`render_transcript_chronological` from the
+    multi_agent framework — kept here so trading_decision consumers don't
+    need to import from ``multi_agent`` directly. Each ``Turn``'s speaker
+    name is rendered as the line prefix (e.g. ``aggressive_debator:`` /
+    ``conservative_debator:`` / ``neutral_debator:``).
     """
-    rows: list[str] = []
-    for i in range(
-        max(
-            len(aggressive_responses),
-            len(conservative_responses),
-            len(neutral_responses),
-        )
-    ):
-        if i < len(aggressive_responses):
-            rows.append(f"Aggressive Analyst: {aggressive_responses[i]}")
-        if i < len(conservative_responses):
-            rows.append(f"Conservative Analyst: {conservative_responses[i]}")
-        if i < len(neutral_responses):
-            rows.append(f"Neutral Analyst: {neutral_responses[i]}")
-    return "\n\n".join(rows)
+    return render_transcript_chronological(turns)

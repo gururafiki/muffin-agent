@@ -201,6 +201,8 @@ class TestGraphCompilation:
         with _patch_analyst_nodes():
             g = await build_trading_decision_graph(config={"configurable": {}})
         nodes = set(g.get_graph().nodes.keys())
+        # The 3 risk debators now live inside the `risk_debate` conference
+        # subgraph, not as top-level nodes.
         assert {
             "reflector_resolve",
             "market_analyst",
@@ -211,9 +213,7 @@ class TestGraphCompilation:
             "bear_researcher",
             "investment_judge",
             "trader",
-            "aggressive_debator",
-            "conservative_debator",
-            "neutral_debator",
+            "risk_debate",
             "portfolio_manager",
             "decision_writeback",
         } <= nodes
