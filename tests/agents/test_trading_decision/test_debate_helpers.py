@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from muffin_agent.agents.trading_decision._debate import (
     format_debate_history,
@@ -43,15 +44,14 @@ class TestFormatRiskHistory:
         assert format_risk_history([]) == ""
 
     def test_full_round(self):
-        # The conference framework's chronological formatter uses each
-        # participant's `name` as the line prefix — so the rendered
-        # transcript reflects the graph-node names directly.
-        turns = [
-            {"speaker": "aggressive_debator", "content": "agg A", "round": 1},
-            {"speaker": "conservative_debator", "content": "cons A", "round": 1},
-            {"speaker": "neutral_debator", "content": "neut A", "round": 1},
+        # The conference framework writes name-tagged AIMessages; the
+        # chronological formatter renders them as "<name>: <content>".
+        messages = [
+            AIMessage(content="agg A", name="aggressive_debator"),
+            AIMessage(content="cons A", name="conservative_debator"),
+            AIMessage(content="neut A", name="neutral_debator"),
         ]
-        result = format_risk_history(turns)
+        result = format_risk_history(messages)
         assert result == (
             "aggressive_debator: agg A\n\n"
             "conservative_debator: cons A\n\n"
@@ -60,11 +60,11 @@ class TestFormatRiskHistory:
 
     def test_partial_round(self):
         # Only Aggressive and Conservative have spoken.
-        turns = [
-            {"speaker": "aggressive_debator", "content": "agg A", "round": 1},
-            {"speaker": "conservative_debator", "content": "cons A", "round": 1},
+        messages = [
+            AIMessage(content="agg A", name="aggressive_debator"),
+            AIMessage(content="cons A", name="conservative_debator"),
         ]
-        result = format_risk_history(turns)
+        result = format_risk_history(messages)
         assert "aggressive_debator: agg A" in result
         assert "conservative_debator: cons A" in result
         assert "neutral_debator" not in result

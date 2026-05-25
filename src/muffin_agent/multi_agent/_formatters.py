@@ -1,36 +1,40 @@
-"""Pure functions for rendering conference transcripts.
+"""Pure functions for rendering conference message lists.
 
 Kept separate from the participant / judge classes so they're trivial to
 unit-test and to reuse from downstream prompt-builders (e.g. a Portfolio
-Manager that consumes a conference transcript outside the conference
+Manager that consumes a conference message list outside the conference
 subgraph).
 """
 
 from __future__ import annotations
 
-from .state import Turn
+from langchain_core.messages import BaseMessage
 
 
-def render_transcript_chronological(turns: list[Turn]) -> str:
-    """Render turns as ``Speaker: content`` lines, joined with blank lines.
+def render_messages_chronological(messages: list[BaseMessage]) -> str:
+    """Render shared messages as ``<Speaker>: <content>`` lines.
 
-    Matches the format produced by the legacy ``format_risk_history`` /
-    ``format_debate_history`` helpers so migrated prompts see the same shape.
+    Uses ``msg.name`` for the speaker prefix; falls back to the message
+    class name (``HumanMessage`` / ``AIMessage``) if ``name`` is absent.
     Empty list returns the empty string.
     """
-    if not turns:
+    if not messages:
         return ""
-    return "\n\n".join(f"{turn['speaker']}: {turn['content']}" for turn in turns)
+    return "\n\n".join(
+        f"{m.name or type(m).__name__}: {m.content}" for m in messages
+    )
 
 
-def last_opposing_turn(turns: list[Turn], speaker: str) -> Turn | None:
-    """Return the most recent turn by anyone OTHER than ``speaker``.
+def last_opposing_message(
+    messages: list[BaseMessage], speaker: str
+) -> BaseMessage | None:
+    """Return the most recent message authored by someone OTHER than ``speaker``.
 
     Convenience for participants who want a direct handle on the most
     recent opponent's argument for head-on rebuttal. Returns ``None`` if
-    there are no opposing turns yet (e.g. the opening turn of a debate).
+    there are no opposing messages yet (e.g. the opening turn).
     """
-    for turn in reversed(turns):
-        if turn["speaker"] != speaker:
-            return turn
+    for m in reversed(messages):
+        if (m.name or "") != speaker:
+            return m
     return None

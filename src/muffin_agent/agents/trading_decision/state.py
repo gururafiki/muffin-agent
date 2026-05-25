@@ -11,8 +11,8 @@ The Bull/Bear debate still uses per-speaker ``Annotated[list[str],
 operator.add]`` fields (not migrated yet — see the multi_agent framework
 roadmap). The risk debate (Aggressive/Conservative/Neutral) is wired
 through ``muffin_agent.multi_agent.build_conference_graph`` which
-accumulates speaker-tagged ``Turn`` dicts into
-``risk_debate_transcript`` and uses ``next_speaker`` for internal
+accumulates name-tagged ``AIMessage`` instances into
+``risk_debate_messages`` and uses ``next_speaker`` for internal
 routing.
 
 Structured outputs (``investment_judge``, ``trader``, ``portfolio_decision``)
@@ -28,9 +28,9 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Any
 
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
-
-from ...multi_agent import Turn
 
 
 class TradingDecisionState(TypedDict, total=False):
@@ -88,10 +88,17 @@ class TradingDecisionState(TypedDict, total=False):
     """``TraderOutput.model_dump()`` — set by the trader node."""
 
     # ── Risk debate (wired via multi_agent.build_conference_graph) ─────────
-    risk_debate_transcript: Annotated[list[Turn], operator.add]
-    """Speaker-tagged ``Turn`` dicts accumulated by the risk-debate
-    conference subgraph. Each turn carries ``speaker``, ``content``,
-    ``round``. The Portfolio Manager reads this as the synthesis input."""
+    risk_debate_messages: Annotated[list[BaseMessage], add_messages]
+    """Name-tagged ``AIMessage`` instances accumulated by the risk-debate
+    conference subgraph. One ``AIMessage(content, name=<speaker>)`` per
+    turn. The Portfolio Manager reads this as the synthesis input via
+    :func:`format_risk_history`."""
+
+    risk_debate_agent_cursors: dict[str, str]
+    """Per-agent last-seen message id (populated by the multi_agent
+    framework when AgentParticipants are wired into the risk debate).
+    Unused today because all risk debaters are ``LLMParticipant`` — kept
+    for future migration to a mix of LLM + Agent participants."""
 
     next_speaker: str | None
     """Conference-subgraph routing field — written by the ``dispatch``

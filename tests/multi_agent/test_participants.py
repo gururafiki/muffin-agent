@@ -1,4 +1,11 @@
-"""Tests for ``LLMParticipant`` and ``LLMMessageParticipant``."""
+"""Tests for the LLM-driven participants.
+
+Covers ``LLMParticipant`` and ``LLMMessageParticipant``.
+
+``AgentParticipant`` is covered by ``test_conference.py`` since it's wired
+into the conference graph rather than invoked through the ``Participant``
+Protocol directly.
+"""
 
 from __future__ import annotations
 
@@ -20,9 +27,6 @@ from .conftest import ai, fake_model_config
 @pytest.mark.asyncio
 class TestLLMParticipant:
     async def test_returns_stripped_content_from_response(self):
-        # Uses the multi_agent/_transcript.jinja partial as a trivial real
-        # template. On an empty transcript it renders the opening-turn
-        # placeholder text.
         cfg, _ = fake_model_config(ai("  aggressive reply  "))
         with patch.object(
             participants_mod.ModelConfiguration,
@@ -49,9 +53,9 @@ class TestLLMParticipant:
                 system_prompt_template="multi_agent/_transcript.jinja",
             )
             state = {
-                "transcript": [
-                    {"speaker": "conservative", "content": "be careful", "round": 1},
-                    {"speaker": "neutral", "content": "scale in", "round": 1},
+                "messages": [
+                    AIMessage(content="be careful", name="conservative"),
+                    AIMessage(content="scale in", name="neutral"),
                 ],
             }
             await participant.speak(state, {})
@@ -63,7 +67,7 @@ class TestLLMParticipant:
         assert isinstance(human_msg, HumanMessage)
         assert human_msg.content == "Take your turn now."
 
-    async def test_empty_transcript_renders_opening_placeholder(self):
+    async def test_empty_messages_renders_opening_placeholder(self):
         cfg, fake_llm = fake_model_config(ai("opener"))
         with patch.object(
             participants_mod.ModelConfiguration,
@@ -74,7 +78,7 @@ class TestLLMParticipant:
                 name="aggressive",
                 system_prompt_template="multi_agent/_transcript.jinja",
             )
-            await participant.speak({"transcript": []}, {})
+            await participant.speak({"messages": []}, {})
 
         system_msg = fake_llm.invocations[0][0]
         assert "discussion has not yet begun" in system_msg.content
@@ -100,7 +104,7 @@ class TestLLMParticipant:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestLLMMessageParticipant:
-    async def test_materialises_prior_turns_as_message_thread(self):
+    async def test_materialises_prior_messages_as_message_thread(self):
         cfg, fake_llm = fake_model_config(ai("reply"))
         with patch.object(
             participants_mod.ModelConfiguration,
@@ -112,10 +116,10 @@ class TestLLMMessageParticipant:
                 system_prompt_template="multi_agent/_transcript.jinja",
             )
             state = {
-                "transcript": [
-                    {"speaker": "bob", "content": "first", "round": 1},
-                    {"speaker": "alice", "content": "self-reply", "round": 1},
-                    {"speaker": "carol", "content": "third", "round": 1},
+                "messages": [
+                    AIMessage(content="first", name="bob"),
+                    AIMessage(content="self-reply", name="alice"),
+                    AIMessage(content="third", name="carol"),
                 ],
             }
             await participant.speak(state, {})
@@ -135,7 +139,7 @@ class TestLLMMessageParticipant:
         assert isinstance(messages[4], HumanMessage)
         assert messages[4].content == "Take your turn now."
 
-    async def test_empty_transcript_just_system_and_user(self):
+    async def test_empty_messages_just_system_and_user(self):
         cfg, fake_llm = fake_model_config(ai("opener"))
         with patch.object(
             participants_mod.ModelConfiguration,

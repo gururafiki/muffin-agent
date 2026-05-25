@@ -1,63 +1,65 @@
-"""Tests for the pure transcript formatters."""
+"""Tests for the pure message-list formatters."""
 
 from __future__ import annotations
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 from muffin_agent.multi_agent import (
-    Turn,
-    last_opposing_turn,
-    render_transcript_chronological,
+    last_opposing_message,
+    render_messages_chronological,
 )
 
 
 @pytest.mark.unit
-class TestRenderTranscriptChronological:
+class TestRenderMessagesChronological:
     def test_empty(self):
-        assert render_transcript_chronological([]) == ""
+        assert render_messages_chronological([]) == ""
 
-    def test_single_turn(self):
-        turn: Turn = {"speaker": "alice", "content": "hello", "round": 1}
-        assert render_transcript_chronological([turn]) == "alice: hello"
+    def test_single_message_with_name(self):
+        msgs = [AIMessage(content="hello", name="alice")]
+        assert render_messages_chronological(msgs) == "alice: hello"
 
-    def test_multiple_turns_chronological_order(self):
-        turns: list[Turn] = [
-            {"speaker": "alice", "content": "open", "round": 1},
-            {"speaker": "bob", "content": "rebut", "round": 1},
-            {"speaker": "alice", "content": "press", "round": 2},
+    def test_falls_back_to_class_name_when_no_name(self):
+        msgs = [HumanMessage(content="hi there")]
+        assert render_messages_chronological(msgs) == "HumanMessage: hi there"
+
+    def test_multiple_messages_chronological_order(self):
+        msgs = [
+            AIMessage(content="open", name="alice"),
+            AIMessage(content="rebut", name="bob"),
+            AIMessage(content="press", name="alice"),
         ]
-        assert render_transcript_chronological(turns) == (
+        assert render_messages_chronological(msgs) == (
             "alice: open\n\nbob: rebut\n\nalice: press"
         )
 
 
 @pytest.mark.unit
-class TestLastOpposingTurn:
+class TestLastOpposingMessage:
     def test_empty(self):
-        assert last_opposing_turn([], "alice") is None
+        assert last_opposing_message([], "alice") is None
 
     def test_no_opposing_speakers(self):
-        turns: list[Turn] = [
-            {"speaker": "alice", "content": "monologue", "round": 1}
-        ]
-        assert last_opposing_turn(turns, "alice") is None
+        msgs = [AIMessage(content="monologue", name="alice")]
+        assert last_opposing_message(msgs, "alice") is None
 
     def test_returns_most_recent_other_speaker(self):
-        turns: list[Turn] = [
-            {"speaker": "bob", "content": "first", "round": 1},
-            {"speaker": "alice", "content": "rebut", "round": 1},
-            {"speaker": "carol", "content": "last", "round": 1},
+        msgs = [
+            AIMessage(content="first", name="bob"),
+            AIMessage(content="rebut", name="alice"),
+            AIMessage(content="last", name="carol"),
         ]
-        result = last_opposing_turn(turns, "alice")
+        result = last_opposing_message(msgs, "alice")
         assert result is not None
-        assert result["speaker"] == "carol"
-        assert result["content"] == "last"
+        assert result.name == "carol"
+        assert result.content == "last"
 
-    def test_skips_self_turns(self):
-        turns: list[Turn] = [
-            {"speaker": "bob", "content": "bob-says", "round": 1},
-            {"speaker": "alice", "content": "alice-says", "round": 2},
+    def test_skips_self_messages(self):
+        msgs = [
+            AIMessage(content="bob-says", name="bob"),
+            AIMessage(content="alice-says", name="alice"),
         ]
-        result = last_opposing_turn(turns, "alice")
+        result = last_opposing_message(msgs, "alice")
         assert result is not None
-        assert result["speaker"] == "bob"
+        assert result.name == "bob"

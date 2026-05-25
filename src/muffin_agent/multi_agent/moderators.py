@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
-from .state import Turn
+from langchain_core.messages import BaseMessage
 
 
 @runtime_checkable
@@ -25,7 +25,7 @@ class Moderator(Protocol):
 class RoundRobinModerator:
     """Cycle through ``speaker_order`` in canonical order.
 
-    Maps ``len(state['transcript']) % len(speaker_order)`` to the next
+    Maps ``len(state['messages']) % len(speaker_order)`` to the next
     speaker, so after each full round the cycle restarts at index 0.
     """
 
@@ -33,19 +33,16 @@ class RoundRobinModerator:
 
     def next_speaker(self, state: dict[str, Any]) -> str:
         """Return the next speaker in the round-robin cycle."""
-        turns: list[Turn] = state.get("transcript") or []
-        return self.speaker_order[len(turns) % len(self.speaker_order)]
+        messages: list[BaseMessage] = state.get("messages") or []
+        return self.speaker_order[len(messages) % len(self.speaker_order)]
 
 
 @dataclass
 class AlternatingModerator:
     """Two-speaker alternation; lead count breaks ties.
 
-    If ``speaker_a`` has more turns than ``speaker_b``, ``speaker_b`` goes
-    next. Otherwise (including the opening turn), ``speaker_a`` goes.
-    Mirrors the legacy ``_route_investment_debate`` Bull/Bear alternation
-    exactly so a future bull/bear migration drops in without behaviour
-    change.
+    If ``speaker_a`` has more messages than ``speaker_b``, ``speaker_b``
+    goes next. Otherwise (including the opening turn), ``speaker_a`` goes.
     """
 
     speaker_a: str
@@ -53,7 +50,7 @@ class AlternatingModerator:
 
     def next_speaker(self, state: dict[str, Any]) -> str:
         """Return whichever speaker is behind (ties resolve to ``speaker_a``)."""
-        turns: list[Turn] = state.get("transcript") or []
-        a = sum(1 for t in turns if t["speaker"] == self.speaker_a)
-        b = sum(1 for t in turns if t["speaker"] == self.speaker_b)
+        messages: list[BaseMessage] = state.get("messages") or []
+        a = sum(1 for m in messages if (m.name or "") == self.speaker_a)
+        b = sum(1 for m in messages if (m.name or "") == self.speaker_b)
         return self.speaker_b if a > b else self.speaker_a

@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from muffin_agent.multi_agent import judges as judges_mod
@@ -38,7 +38,7 @@ class TestStructuredOutputJudge:
 
         assert result == {"decision": "buy", "confidence": 0.8}
 
-    async def test_prompt_includes_rendered_transcript_text(self):
+    async def test_prompt_includes_rendered_messages_text(self):
         cfg, fake_llm = fake_model_config(
             _Verdict(decision="hold", confidence=0.5)
         )
@@ -53,9 +53,9 @@ class TestStructuredOutputJudge:
                 output_schema=_Verdict,
             )
             state = {
-                "transcript": [
-                    {"speaker": "alice", "content": "argue", "round": 1},
-                    {"speaker": "bob", "content": "counter", "round": 1},
+                "messages": [
+                    AIMessage(content="argue", name="alice"),
+                    AIMessage(content="counter", name="bob"),
                 ]
             }
             await judge.adjudicate(state, {})

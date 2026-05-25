@@ -14,6 +14,13 @@ def setup_tracing(*, session_id: str | None = None) -> list:
 
     Args:
         session_id: Optional session ID for grouping traces (e.g. ticker).
+            With langfuse v4, session_id propagation requires a
+            ``propagate_attributes()`` context manager wrapped around the
+            agent invocation — see the langfuse v3 → v4 upgrade guide.
+            If supplied here it's logged but not currently wired; callers
+            who need session-scoped tracing should use
+            ``langfuse.propagate_attributes`` directly until we expose
+            a per-invocation context helper.
 
     Returns:
         List of callback handlers to pass to LangGraph config.
@@ -29,7 +36,11 @@ def setup_tracing(*, session_id: str | None = None) -> list:
         handler = CallbackHandler()
 
         if session_id:
-            client.update_current_trace(session_id=session_id)
+            logger.debug(
+                "session_id=%s requested but langfuse v4 requires "
+                "propagate_attributes() context — skipping",
+                session_id,
+            )
 
         logger.info(
             "LangFuse tracing enabled (host=%s)",

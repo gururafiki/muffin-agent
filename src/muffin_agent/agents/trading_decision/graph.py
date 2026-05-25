@@ -214,7 +214,8 @@ def _build_risk_debate_subgraph(
             num_participants=len(participants),
         ),
         state_schema=TradingDecisionState,
-        transcript_field="risk_debate_transcript",
+        messages_field="risk_debate_messages",
+        agent_cursors_field="risk_debate_agent_cursors",
     )
 
 

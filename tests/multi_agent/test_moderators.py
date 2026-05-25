@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from muffin_agent.multi_agent import (
     AlternatingModerator,
     RoundRobinModerator,
-    Turn,
 )
+
+
+def _msg(name: str) -> AIMessage:
+    return AIMessage(content="", name=name)
 
 
 @pytest.mark.unit
@@ -19,18 +23,18 @@ class TestRoundRobinModerator:
 
     def test_cycles_through_in_order(self):
         mod = RoundRobinModerator(["alpha", "beta", "gamma"])
-        turns: list[Turn] = []
+        msgs: list = []
         names: list[str] = []
         for _ in range(7):
-            name = mod.next_speaker({"transcript": list(turns)})
+            name = mod.next_speaker({"messages": list(msgs)})
             names.append(name)
-            turns.append({"speaker": name, "content": "", "round": 1})
+            msgs.append(_msg(name))
         assert names == ["alpha", "beta", "gamma", "alpha", "beta", "gamma", "alpha"]
 
     def test_index_modulo_handles_partial_rounds(self):
         mod = RoundRobinModerator(["a", "b", "c"])
-        # 4 prior turns → index = 4 % 3 = 1 → "b"
-        state = {"transcript": [{"speaker": "x", "content": "", "round": 1}] * 4}
+        # 4 prior messages → index = 4 % 3 = 1 → "b"
+        state = {"messages": [_msg("x")] * 4}
         assert mod.next_speaker(state) == "b"
 
 
@@ -42,40 +46,32 @@ class TestAlternatingModerator:
 
     def test_after_a_routes_to_b(self):
         mod = AlternatingModerator("bull", "bear")
-        state = {"transcript": [{"speaker": "bull", "content": "", "round": 1}]}
+        state = {"messages": [_msg("bull")]}
         assert mod.next_speaker(state) == "bear"
 
     def test_after_b_routes_back_to_a(self):
         mod = AlternatingModerator("bull", "bear")
-        state = {
-            "transcript": [
-                {"speaker": "bull", "content": "", "round": 1},
-                {"speaker": "bear", "content": "", "round": 1},
-            ]
-        }
+        state = {"messages": [_msg("bull"), _msg("bear")]}
         assert mod.next_speaker(state) == "bull"
 
     def test_lead_count_breaks_tie_to_a_when_equal(self):
         mod = AlternatingModerator("bull", "bear")
-        # Equal counts → a wins the tie.
         state = {
-            "transcript": [
-                {"speaker": "bull", "content": "", "round": 1},
-                {"speaker": "bear", "content": "", "round": 1},
-                {"speaker": "bull", "content": "", "round": 2},
-                {"speaker": "bear", "content": "", "round": 2},
+            "messages": [
+                _msg("bull"),
+                _msg("bear"),
+                _msg("bull"),
+                _msg("bear"),
             ]
         }
         assert mod.next_speaker(state) == "bull"
 
-    def test_ignores_non_participant_turns(self):
-        # If state contains turns from unknown speakers, they should not
-        # affect the alternation count.
+    def test_ignores_non_participant_messages(self):
         mod = AlternatingModerator("bull", "bear")
         state = {
-            "transcript": [
-                {"speaker": "moderator", "content": "intro", "round": 1},
-                {"speaker": "bull", "content": "open", "round": 1},
+            "messages": [
+                _msg("moderator"),
+                _msg("bull"),
             ]
         }
         # 1 bull, 0 bear → bear is next.

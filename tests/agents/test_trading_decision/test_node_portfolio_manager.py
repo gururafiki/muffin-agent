@@ -32,15 +32,17 @@ def _pm_output(**overrides) -> PortfolioDecisionOutput:
 
 
 def _base_state() -> dict:
+    from langchain_core.messages import AIMessage
+
     return {
         "ticker": "AAPL",
         "investment_judge": {"signal": "buy", "conviction": 0.7},
         "trader": {"action": "buy", "position_sizing": "2% NAV"},
-        # Conference-subgraph transcript: each turn is a Turn dict.
-        "risk_debate_transcript": [
-            {"speaker": "aggressive_debator", "content": "press it", "round": 1},
-            {"speaker": "conservative_debator", "content": "careful", "round": 1},
-            {"speaker": "neutral_debator", "content": "scale in", "round": 1},
+        # Conference-subgraph messages: one name-tagged AIMessage per turn.
+        "risk_debate_messages": [
+            AIMessage(content="press it", name="aggressive_debator"),
+            AIMessage(content="careful", name="conservative_debator"),
+            AIMessage(content="scale in", name="neutral_debator"),
         ],
     }
 
