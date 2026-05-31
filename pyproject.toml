@@ -46,7 +46,7 @@ muffin = "muffin_cli.main:main"
 [project.optional-dependencies]
 dev = [
     "mypy>=2.1",
-    "ruff>=0.15",
+    "ruff>=0.15.15",
     "pytest>=9.0",
     "pytest-cov>=7.0",
     "pytest-mock>=3.15",
