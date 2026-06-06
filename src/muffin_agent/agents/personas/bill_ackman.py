@@ -1,60 +1,170 @@
-"""Bill Ackman persona — activist + business quality + catalyst.
+"""Bill Ackman persona — compiled subgraph (collect → compute → verdict).
 
-Four sub-scores (max 20 total): business quality, financial discipline,
-activism potential, valuation.  Mirrors ai-hedge-fund's ``bill_ackman.py``.
+Activist + business quality + catalyst lens. See ``warren_buffett.py`` for the
+canonical v4 reference. Reference: ``ai-hedge-fund/src/agents/bill_ackman.py``.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
+from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
 from ...tools.scoring_helpers import compute_intrinsic_value_dcf
-from ._base import (
-    PersonaInputState,
-    PersonaOutputState,
-    PersonaSpec,
-    register_persona,
-)
-from .schemas import AnalystSignal, ScoreDetail
+from ...utils.agent_builder import MuffinAgentBuilder
+from ..data_collection.utils import get_tools
+from .schemas import AnalystSignal
 
 logger = logging.getLogger(__name__)
+_LLM_RETRY = RetryPolicy(max_attempts=2)
+
+
+# ── Typed sub-evidence ────────────────────────────────────────────────────────
+
+
+class BillAckmanBusinessQuality(BaseModel):
+    revenue_growth_pct: float | None
+    latest_operating_margin: float | None
+    fcf_positive_periods: int
+    fcf_total_periods: int
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class BillAckmanFinancialDiscipline(BaseModel):
+    debt_to_equity: float | None
+    dividends_paid_years: int
+    dividends_window_years: int
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class BillAckmanActivismPotential(BaseModel):
+    shares_change_pct: float | None
+    op_margin_compression_pp: float | None
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class BillAckmanValuation(BaseModel):
+    score: int
+    max_score: int
+    reasoning: str
 
 
 class BillAckmanEvidence(BaseModel):
-    """Persona-specific evidence — sub-scores, computed metrics."""
-
-    business_quality: ScoreDetail
-    financial_discipline: ScoreDetail
-    activism_potential: ScoreDetail
-    valuation: ScoreDetail
-    intrinsic_value: float | None
-    margin_of_safety: float | None
-    market_cap: float | None
+    business_quality: BillAckmanBusinessQuality
+    financial_discipline: BillAckmanFinancialDiscipline
+    activism_potential: BillAckmanActivismPotential
+    valuation: BillAckmanValuation
+    intrinsic_value: float | None = None
+    margin_of_safety_pct: float | None = None
+    market_cap: float | None = None
     total_score: float
     max_score: float
 
 
 class BillAckmanSignal(AnalystSignal):
-    """Persona structured signal with narrowed evidence type."""
-
     agent_id: Literal["bill_ackman"] = Field(default="bill_ackman")
     evidence: BillAckmanEvidence
 
 
-def _score_business_quality(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    revenues = [v for v in line_items.get("revenue", []) if v is not None]
-    op_margins = [v for v in line_items.get("operating_margin", []) if v is not None]
-    fcf = [v for v in line_items.get("free_cash_flow", []) if v is not None]
+# ── RawData ───────────────────────────────────────────────────────────────────
+
+
+class BillAckmanRawData(BaseModel):
+    """Ackman MCP extraction. Series oldest -> newest."""
+
+    revenue_series: list[float | None] = Field(default_factory=list)
+    operating_margin_series: list[float | None] = Field(default_factory=list)
+    free_cash_flow_series: list[float | None] = Field(default_factory=list)
+    total_debt_series: list[float | None] = Field(default_factory=list)
+    shareholders_equity_series: list[float | None] = Field(default_factory=list)
+    dividends_series: list[float | None] = Field(
+        default_factory=list,
+        description=(
+            "dividends_and_other_cash_distributions, SIGNED (negative = outflow), "
+            "oldest -> newest."
+        ),
+    )
+    outstanding_shares_series: list[float | None] = Field(default_factory=list)
+    market_cap: float | None = None
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+
+class BillAckmanInput(TypedDict, total=False):
+    ticker: str
+    as_of_date: str
+    query: str | None
+
+
+class BillAckmanOutput(TypedDict, total=False):
+    persona_signals: list[dict[str, Any]]
+
+
+class BillAckmanState(AgentState):
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
+    revenue_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    operating_margin_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    free_cash_flow_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    total_debt_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    shareholders_equity_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    dividends_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    outstanding_shares_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    evidence: Annotated[
+        BillAckmanEvidence | None, OmitFromSchema(input=True, output=True)
+    ]
+    persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+
+
+# ── Composite scorers ─────────────────────────────────────────────────────────
+
+
+def _score_ackman_business_quality(
+    state: BillAckmanState,
+) -> BillAckmanBusinessQuality:
+    revenues = [v for v in (state.get("revenue_series") or []) if v is not None]
+    op_margins = [
+        v for v in (state.get("operating_margin_series") or []) if v is not None
+    ]
+    fcf = [v for v in (state.get("free_cash_flow_series") or []) if v is not None]
 
     score = 0
     parts: list[str] = []
+    growth: float | None = None
     if len(revenues) >= 2 and revenues[0] and revenues[0] > 0:
         growth = (revenues[-1] - revenues[0]) / revenues[0]
         if growth > 0.5:
@@ -63,36 +173,41 @@ def _score_business_quality(line_items: dict[str, list[float | None]]) -> ScoreD
         elif growth > 0.2:
             score += 1
 
-    if op_margins and op_margins[-1] is not None:
-        if op_margins[-1] > 0.20:
+    latest_om: float | None = op_margins[-1] if op_margins else None
+    if latest_om is not None:
+        if latest_om > 0.20:
             score += 2
-            parts.append(f"Op margin {op_margins[-1]:.1%} (strong)")
-        elif op_margins[-1] > 0.10:
+            parts.append(f"Op margin {latest_om:.1%} (strong)")
+        elif latest_om > 0.10:
             score += 1
 
-    if fcf:
-        positive = sum(1 for f in fcf if f > 0)
-        if positive == len(fcf):
-            score += 1
-            parts.append("FCF positive every period")
+    positives = sum(1 for f in fcf if f > 0) if fcf else 0
+    if fcf and positives == len(fcf):
+        score += 1
+        parts.append("FCF positive every period")
 
-    return ScoreDetail(
-        score=min(score, 5), max_score=5, details="; ".join(parts) or "Limited data"
+    return BillAckmanBusinessQuality(
+        revenue_growth_pct=growth * 100 if growth is not None else None,
+        latest_operating_margin=latest_om,
+        fcf_positive_periods=positives,
+        fcf_total_periods=len(fcf),
+        score=min(score, 5),
+        max_score=5,
+        reasoning="; ".join(parts) or "Limited data",
     )
 
 
-def _score_financial_discipline(
-    line_items: dict[str, list[float | None]],
-) -> ScoreDetail:
-    total_debt = [v for v in line_items.get("total_debt", []) if v is not None]
-    equity = [v for v in line_items.get("shareholders_equity", []) if v is not None]
-    dividends = [
-        v
-        for v in line_items.get("dividends_and_other_cash_distributions", [])
-        if v is not None
+def _score_ackman_financial_discipline(
+    state: BillAckmanState,
+) -> BillAckmanFinancialDiscipline:
+    total_debt = [v for v in (state.get("total_debt_series") or []) if v is not None]
+    equity = [
+        v for v in (state.get("shareholders_equity_series") or []) if v is not None
     ]
+    dividends = [v for v in (state.get("dividends_series") or []) if v is not None]
     score = 0
     parts: list[str] = []
+    de: float | None = None
     if total_debt and equity and equity[-1] and equity[-1] > 0:
         de = total_debt[-1] / equity[-1]
         if de < 0.5:
@@ -100,25 +215,33 @@ def _score_financial_discipline(
             parts.append(f"D/E {de:.2f}")
         elif de < 1.0:
             score += 1
-    if dividends:
-        paid = sum(1 for d in dividends if d < 0)
-        if paid >= len(dividends) // 2:
-            score += 2
-            parts.append(f"Pays dividends ({paid}/{len(dividends)} years)")
-    return ScoreDetail(
-        score=min(score, 5), max_score=5, details="; ".join(parts) or "Limited data"
+    paid_years = sum(1 for d in dividends if d < 0) if dividends else 0
+    if dividends and paid_years >= len(dividends) // 2:
+        score += 2
+        parts.append(f"Pays dividends ({paid_years}/{len(dividends)} years)")
+    return BillAckmanFinancialDiscipline(
+        debt_to_equity=de,
+        dividends_paid_years=paid_years,
+        dividends_window_years=len(dividends),
+        score=min(score, 5),
+        max_score=5,
+        reasoning="; ".join(parts) or "Limited data",
     )
 
 
-def _score_activism_potential(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    """Ackman's activism radar (max 5).
-
-    Share count trends + own-margin trend (proxy for sector gap).
-    """
-    shares = [v for v in line_items.get("outstanding_shares", []) if v is not None]
-    op_margins = [v for v in line_items.get("operating_margin", []) if v is not None]
+def _score_ackman_activism_potential(
+    state: BillAckmanState,
+) -> BillAckmanActivismPotential:
+    shares = [
+        v for v in (state.get("outstanding_shares_series") or []) if v is not None
+    ]
+    op_margins = [
+        v for v in (state.get("operating_margin_series") or []) if v is not None
+    ]
     score = 0
     parts: list[str] = []
+    delta: float | None = None
+    gap: float | None = None
     if len(shares) >= 2 and shares[0] > 0:
         delta = (shares[-1] - shares[0]) / shares[0]
         if delta > 0.05:
@@ -136,19 +259,21 @@ def _score_activism_potential(line_items: dict[str, list[float | None]]) -> Scor
             parts.append(f"Op margin compression {gap:+.1%} — turnaround thesis")
         elif gap > 0.02:
             score += 1
-    return ScoreDetail(
+    return BillAckmanActivismPotential(
+        shares_change_pct=delta * 100 if delta is not None else None,
+        op_margin_compression_pp=gap * 100 if gap is not None else None,
         score=min(score, 5),
         max_score=5,
-        details="; ".join(parts) or "No activism catalysts",
+        reasoning="; ".join(parts) or "No activism catalysts",
     )
 
 
-def _score_valuation(
+def _score_ackman_valuation(
     fcf_latest: float | None, market_cap: float | None
-) -> tuple[ScoreDetail, float | None, float | None]:
+) -> tuple[BillAckmanValuation, float | None, float | None]:
     if not fcf_latest or fcf_latest <= 0 or not market_cap or market_cap <= 0:
         return (
-            ScoreDetail(score=0, max_score=5, details="Cannot compute DCF"),
+            BillAckmanValuation(score=0, max_score=5, reasoning="Cannot compute DCF"),
             None,
             None,
         )
@@ -161,7 +286,7 @@ def _score_valuation(
     )
     if iv is None:
         return (
-            ScoreDetail(score=0, max_score=5, details="DCF inputs invalid"),
+            BillAckmanValuation(score=0, max_score=5, reasoning="DCF inputs invalid"),
             None,
             None,
         )
@@ -174,19 +299,26 @@ def _score_valuation(
         score = 3
     elif mos > -0.1:
         score = 1
-    return ScoreDetail(score=score, max_score=5, details="; ".join(parts)), iv, mos
+    return (
+        BillAckmanValuation(score=score, max_score=5, reasoning="; ".join(parts)),
+        iv,
+        mos * 100,
+    )
 
 
-def _compute_ackman_facts(data_bundle: dict[str, Any]) -> BillAckmanEvidence:
-    line_items = data_bundle.get("line_items", {})
-    market_cap = data_bundle.get("market_cap")
-    fcf_series = line_items.get("free_cash_flow", [])
-    fcf_latest = fcf_series[-1] if fcf_series else None
+# ── Graph nodes ───────────────────────────────────────────────────────────────
 
-    quality = _score_business_quality(line_items)
-    discipline = _score_financial_discipline(line_items)
-    activism = _score_activism_potential(line_items)
-    valuation, iv, mos = _score_valuation(fcf_latest, market_cap)
+
+def compute_evidence_node(state: BillAckmanState) -> dict[str, Any]:
+    quality = _score_ackman_business_quality(state)
+    discipline = _score_ackman_financial_discipline(state)
+    activism = _score_ackman_activism_potential(state)
+    fcf = state.get("free_cash_flow_series") or []
+    fcf_latest = fcf[-1] if fcf else None
+    valuation, iv, mos_pct = _score_ackman_valuation(
+        fcf_latest, state.get("market_cap")
+    )
+
     total = quality.score + discipline.score + activism.score + valuation.score
     max_total = (
         quality.max_score
@@ -194,62 +326,44 @@ def _compute_ackman_facts(data_bundle: dict[str, Any]) -> BillAckmanEvidence:
         + activism.max_score
         + valuation.max_score
     )
-    return BillAckmanEvidence(
+
+    evidence = BillAckmanEvidence(
         business_quality=quality,
         financial_discipline=discipline,
         activism_potential=activism,
         valuation=valuation,
         intrinsic_value=iv,
-        margin_of_safety=mos,
-        market_cap=market_cap,
+        margin_of_safety_pct=mos_pct,
+        market_cap=state.get("market_cap"),
         total_score=total,
         max_score=max_total,
     )
+    return {"evidence": evidence}
 
 
-async def bill_ackman_node(
-    state: PersonaInputState, config: RunnableConfig
-) -> PersonaOutputState:
-    """Render the Bill Ackman verdict from state["data_bundle"]."""
+async def render_verdict_node(
+    state: BillAckmanState, config: RunnableConfig
+) -> dict[str, Any]:
     ticker = state.get("ticker", "")
+    as_of_date = state.get("as_of_date", "")
     query = state.get("query")
-    data_bundle = state.get("data_bundle") or {}
-
-    if not data_bundle or "error" in data_bundle:
-        fallback = BillAckmanSignal(
-            agent_id="bill_ackman",
-            signal="hold",
-            confidence=0.0,
-            reasoning="Insufficient data",
-            evidence=BillAckmanEvidence(
-                business_quality=ScoreDetail(score=0, max_score=5, details="no data"),
-                financial_discipline=ScoreDetail(
-                    score=0, max_score=5, details="no data"
-                ),
-                activism_potential=ScoreDetail(score=0, max_score=5, details="no data"),
-                valuation=ScoreDetail(score=0, max_score=5, details="no data"),
-                intrinsic_value=None,
-                margin_of_safety=None,
-                market_cap=None,
-                total_score=0,
-                max_score=20,
-            ),
+    evidence = state.get("evidence")
+    if evidence is None:
+        raise RuntimeError(
+            "render_verdict_node called without evidence — "
+            "compute_evidence_node must run first in v4 subgraphs"
         )
-        return {"persona_signals": [fallback.model_dump()]}
 
-    evidence = _compute_ackman_facts(data_bundle)
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=BillAckmanSignal
     )
     prompt = render_template(
         "personas/bill_ackman.jinja",
         ticker=ticker,
-        as_of_date=data_bundle.get("as_of_date", ""),
-        facts=evidence.model_dump(mode="json"),
+        as_of_date=as_of_date,
+        evidence=evidence,
+        market_cap=state.get("market_cap"),
         query=query,
-        persona_display_name="Bill Ackman",
-        persona_slug="bill_ackman",
-        signal_schema_name="BillAckmanSignal",
     )
     result = cast(
         BillAckmanSignal,
@@ -260,15 +374,57 @@ async def bill_ackman_node(
     return {"persona_signals": [result.model_dump()]}
 
 
-PERSONA_SPEC = register_persona(
-    PersonaSpec(
-        slug="bill_ackman",
-        display_name="Bill Ackman",
-        investing_style=(
-            "Concentrated activist; business quality + financial discipline + "
-            "identifiable catalysts; multi-year horizon"
-        ),
-        node=bill_ackman_node,
-        signal_schema=BillAckmanSignal,
+# ── Data-collection sub-agent + subgraph builder ──────────────────────────────
+
+
+_MCP_TOOLS = [
+    "equity_fundamental_metrics",
+    "equity_fundamental_income",
+    "equity_fundamental_balance",
+    "equity_fundamental_cash",
+    "equity_fundamental_ratios",
+    "equity_ownership_share_statistics",
+]
+
+
+async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateGraph:
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("collector")
+    mcp_tools = await get_tools(config, _MCP_TOOLS)
+    builder = (
+        MuffinAgentBuilder(primary, name="bill_ackman_data_collection")
+        .with_fallback_models(*fallbacks)
+        .with_state_schema(BillAckmanState)
+        .with_runtime_system_prompt_template(
+            "personas/bill_ackman_data_collection.jinja"
+        )
+        .with_response_format(BillAckmanRawData)
+        .with_model_call_limit(run_limit=8, exit_behavior="end")
     )
-)
+    for tool in mcp_tools:
+        builder = builder.with_tool(tool, run_limit=2)
+    return builder.build_react_agent()
+
+
+async def build_bill_ackman_agent(config: RunnableConfig) -> CompiledStateGraph:
+    data_agent = await _build_data_collection_agent(config)
+    graph = StateGraph(
+        BillAckmanState,
+        input_schema=BillAckmanInput,
+        output_schema=BillAckmanOutput,
+    )
+    graph.add_node(
+        "collect_data",
+        data_agent,
+        input_schema=data_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node("compute_evidence", compute_evidence_node)
+    graph.add_node("render_verdict", render_verdict_node, retry_policy=_LLM_RETRY)
+    graph.add_edge(START, "collect_data")
+    graph.add_edge("collect_data", "compute_evidence")
+    graph.add_edge("compute_evidence", "render_verdict")
+    graph.add_edge("render_verdict", END)
+    return graph.compile()
+
+

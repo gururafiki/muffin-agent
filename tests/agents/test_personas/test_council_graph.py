@@ -1,4 +1,4 @@
-"""Tests for the council graph wiring, single-persona graph, and judge node."""
+"""Tests for the council graph wiring and judge node (v4)."""
 
 from __future__ import annotations
 
@@ -7,45 +7,67 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from muffin_agent.agents.personas import (
-    PERSONA_REGISTRY,
     CouncilSynthesisOutput,
     build_council_graph,
-    build_single_persona_graph,
     council_judge_node,
 )
+from muffin_agent.agents.personas.council_graph import PERSONA_BUILDERS
 
 
 @pytest.mark.unit
+class TestPersonaBuildersWiring:
+    """v4 wiring: the council imports persona factories directly, no registry."""
+
+    def test_persona_builders_list_has_all_13(self):
+        assert len(PERSONA_BUILDERS) == 13
+        slugs = {slug for slug, _ in PERSONA_BUILDERS}
+        assert len(slugs) == 13  # all unique
+
+    def test_persona_builders_are_callable(self):
+        for _, builder in PERSONA_BUILDERS:
+            assert callable(builder)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 class TestCouncilGraphWiring:
-    def test_graph_compiles(self):
-        graph = build_council_graph()
+    """Compile-time topology checks. MCP is mocked so tests don't hit the network."""
+
+    async def test_graph_compiles_with_all_13_personas(self):
+        # Mock the MCP fetch each persona's _build_data_collection_agent uses.
+        # Mock the underlying MCP client so MultiServerMCPClient.get_tools()
+        # returns nothing without touching the network. Patching the deep
+        # entry point catches all persona modules at once (no per-file patch).
+        mock_client = AsyncMock()
+        mock_client.get_tools = AsyncMock(return_value=[])
+        with patch(
+            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
+            return_value=mock_client,
+        ):
+            graph = await build_council_graph()
         nodes = list(graph.get_graph().nodes)
-        # __start__, __end__, persona_data_collection, council_judge, and 13 personas
-        assert "persona_data_collection" in nodes
+        # 13 persona slugs + council_judge (+ __start__/__end__).
         assert "council_judge" in nodes
-        for slug in PERSONA_REGISTRY:
+        for slug, _ in PERSONA_BUILDERS:
             assert slug in nodes
+        # v4: NO shared persona_data_collection node — each persona owns its
+        # own data fetch inside its subgraph.
+        assert "persona_data_collection" not in nodes
 
-    def test_module_level_graph_exists(self):
-        from muffin_agent.agents.personas.council_graph import graph
-
-        # Should be a CompiledStateGraph
-        assert graph is not None
-        assert hasattr(graph, "ainvoke")
-
-
-@pytest.mark.unit
-class TestSinglePersonaGraph:
-    def test_compiles_for_each_persona(self):
-        for slug in PERSONA_REGISTRY:
-            g = build_single_persona_graph(slug)
-            nodes = list(g.get_graph().nodes)
-            assert "persona_data_collection" in nodes
-            assert slug in nodes
-
-    def test_unknown_slug_raises(self):
-        with pytest.raises(KeyError, match="Unknown persona slug"):
-            build_single_persona_graph("not_a_real_persona")
+    async def test_graph_compiles_with_specialists(self):
+        # Mock the underlying MCP client so MultiServerMCPClient.get_tools()
+        # returns nothing without touching the network. Patching the deep
+        # entry point catches all persona modules at once (no per-file patch).
+        mock_client = AsyncMock()
+        mock_client.get_tools = AsyncMock(return_value=[])
+        with patch(
+            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
+            return_value=mock_client,
+        ):
+            graph = await build_council_graph(include_specialists=True)
+        nodes = list(graph.get_graph().nodes)
+        assert "technicals" in nodes
+        assert "sentiment" in nodes
 
 
 @pytest.mark.unit
@@ -57,7 +79,6 @@ class TestCouncilJudgeNode:
         assert synth["ticker"] == "ZAB"
         assert synth["consensus_rating"] == "hold"
         assert synth["weighted_confidence"] == 0.0
-        # Vote breakdown should still have the 5 expected keys
         assert set(synth["vote_breakdown"]) == {
             "strong_sell",
             "sell",
@@ -127,7 +148,6 @@ class TestCouncilJudgeNode:
         assert synth["consensus_rating"] == "buy"
         assert synth["vote_breakdown"]["strong_buy"] == ["warren_buffett"]
         assert mock_llm.ainvoke.await_count == 1
-        # System prompt should reference the personas
         sent = mock_llm.ainvoke.call_args.args[0]
         system_prompt = sent[0].content
         assert "warren_buffett" in system_prompt

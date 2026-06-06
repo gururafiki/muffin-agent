@@ -1,6 +1,6 @@
 # Persona Council
 
-A council of 13 well-known investor personas evaluates a ticker through their distinct lenses and produces a synthesised verdict.  Each persona is a single-LLM-call node that consumes precomputed deterministic facts (ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund)) and emits an `AnalystSignal` with a 5-tier rating (`strong_sell` / `sell` / `hold` / `buy` / `strong_buy`).
+A council of 13 well-known investor personas evaluates a ticker through their distinct lenses and produces a synthesised verdict. Each persona is a self-contained compiled subgraph that owns its own data collection + deterministic scoring + a single-LLM-call verdict, emitting an `AnalystSignal` with a 5-tier rating (`strong_sell` / `sell` / `hold` / `buy` / `strong_buy`).
 
 ## At a glance
 
@@ -31,35 +31,52 @@ muffin council AAPL
 
 # Council with a custom investment mandate
 muffin council MSFT -q "Long-only quality bias, 5-year horizon"
+
+# Council including the deterministic specialists (technicals + sentiment)
+muffin council AAPL --include-specialists
 ```
 
 Outputs are JSON — see `AnalystSignal` / `CouncilSynthesisOutput` schemas for the exact shape.
 
-## Architecture
+## Architecture (v4)
 
 ```
 START
-  ↓
-[persona_data_collection]   ← one deep-agent run gathers PersonaDataBundle
-  ↓
-[Send fan-out × 13 personas]
-  │
+  │  (13 edges — one per persona, all run in parallel)
   ▼
-┌────────────────────────────────────────────────────────────┐
-│  Each persona is a single LLM call:                         │
-│    1. Compute facts via tools/scoring_helpers.py            │
-│    2. Render prompt extending personas/_persona_base.jinja  │
-│    3. LLM → <Persona>Signal (5-tier rating + evidence)      │
-└────────────────────────────────────────────────────────────┘
-  │
-  │  (fan-in: persona_signals via operator.add reducer)
+┌────────────────────────────────────────────────────────────────────┐
+│  Each persona is a compiled subgraph with 3 nodes:                  │
+│                                                                     │
+│    collect_data  →  compute_evidence  →  render_verdict             │
+│    (ReAct,         (deterministic        (single LLM call           │
+│     MCP fetch)      Python scoring        with response_format =    │
+│                     via                   <Persona>Signal)          │
+│                     scoring_helpers)                                │
+└────────────────────────────────────────────────────────────────────┘
+  │  (fan-in barrier: persona_signals accumulated via operator.add)
   ▼
-[council_judge]             ← LLM-mediated synthesis
+council_judge             ← LLM-mediated synthesis
   ↓
 END
 ```
 
-The data collection step (`persona_data_collection_node`) runs **once** and produces a [`PersonaDataBundle`](../src/muffin_agent/agents/personas/data.py) with 28 line items + ~16 financial metrics + market cap + 5y market-cap history + 1y insider trades + 1y company news + 1y OHLCV.  All 13 personas read the same bundle — no per-persona MCP overhead.
+There is **no shared front-of-flow data-collection step** — each persona owns its data fetching via a curated set of OpenBB MCP tools. The `ToolResultCacheMiddleware` (and the matching [`cached_invoke`](../src/muffin_agent/middlewares/tool_result_cache/cache.py) helper used by the deterministic specialists) shares cache hits across all 13 personas, so an MCP call from `warren_buffett`'s `collect_data` ReAct loop is reused by `ben_graham`'s loop later in the same council run.
+
+## Persona internals
+
+Each persona file (e.g. [`warren_buffett.py`](../src/muffin_agent/agents/personas/warren_buffett.py)) ships ~600-1000 LOC of strictly v4 code:
+
+1. **Typed sub-evidence Pydantics** — replace the generic `ScoreDetail`. For Buffett these are `WarrenBuffettFundamentals`, `WarrenBuffettMoat`, `WarrenBuffettPricingPower`, etc. — every score / value / reasoning string the verdict prompt needs is a typed field.
+2. **`<Persona>Evidence`** — the full evidence Pydantic combining all sub-evidence + DCF outputs + margin of safety.
+3. **`<Persona>Signal(AnalystSignal)`** — narrows `evidence` to the typed model so the council judge sees a self-describing structure.
+4. **`<Persona>RawData`** — the structured response of the `collect_data` ReAct sub-agent. Field descriptions teach the LLM exactly which OpenBB MCP endpoint each value comes from.
+5. **`<Persona>State(AgentState)`** — internal subgraph state; `OmitFromSchema` annotations control what flows in/out at the council boundary.
+6. **`<Persona>Input` / `<Persona>Output`** — explicit `TypedDict` boundaries passed to `StateGraph(state, input_schema=..., output_schema=...)`. The council only sees `ticker` / `as_of_date` / `query` on the input side and `persona_signals` on the output side.
+7. **Composite scorers** — `_score_<persona>_<aspect>(state) -> <SubEvidence>` private Python functions. Use atomic helpers from [`tools/scoring_helpers.py`](../src/muffin_agent/tools/scoring_helpers.py) (`score_roe`, `compute_owner_earnings`, `compute_buffett_3stage_dcf`, etc.) plus persona-specific aggregation logic.
+8. **`compute_evidence_node(state)`** — deterministic Python node that wires all composite scorers together. Never crosses an LLM boundary.
+9. **`render_verdict_node(state, config)`** — single LLM call via `ModelConfiguration.get_chat_model_for_role(config, "reasoner", schema=<Persona>Signal)`. The Jinja template receives the typed evidence Pydantic instance directly (not `.model_dump()`) so the prompt uses granular dotted-attribute access + conditional rule blocks.
+10. **`_build_data_collection_agent(config)`** — compiled ReAct sub-agent wired with the persona's curated MCP tool list, `response_format=<Persona>RawData`. The `_StructuredResponseToStateMiddleware` auto-unpacks the RawData fields into the subgraph state.
+11. **`build_<persona>_agent(config)`** — async factory that wires the 3 nodes into a `StateGraph(<Persona>State, input_schema=<Persona>Input, output_schema=<Persona>Output)`. Used by the council + `muffin persona <slug>` CLI.
 
 ## Council judge
 
@@ -78,39 +95,36 @@ class CouncilSynthesisOutput(BaseModel):
     reasoning: str
 ```
 
-The judge **may override the numerical majority** when a small number of personas have very high-confidence dissent grounded in specific data the majority overlooked.  See [`council_judge.jinja`](../src/muffin_agent/prompts/personas/council_judge.jinja) for the explicit override criteria.
-
-## Persona node template
-
-Each persona file (e.g. [`warren_buffett.py`](../src/muffin_agent/agents/personas/warren_buffett.py)) is ~150-250 LOC with five sections:
-
-1. **Evidence model** — `<Persona>Evidence(BaseModel)` with typed sub-scores
-2. **Signal model** — `<Persona>Signal(AnalystSignal)` with `agent_id: Literal[<slug>]`
-3. **Fact computer** — `_compute_<slug>_facts(data_bundle) -> <Persona>Evidence` (pure-Python deterministic scoring via `tools/scoring_helpers.py`)
-4. **Node** — `<slug>_node(state, config) -> {persona_signals: [...]}` (single LLM call)
-5. **Registry entry** — `PERSONA_SPEC = register_persona(PersonaSpec(...))`
-
-Adding a new persona is a 150-line file + a Jinja prompt + an import in [`personas/__init__.py`](../src/muffin_agent/agents/personas/__init__.py).
+The judge **may override the numerical majority** when a small number of personas have very high-confidence dissent grounded in specific data the majority overlooked. See [`council_judge.jinja`](../src/muffin_agent/prompts/personas/council_judge.jinja) for the explicit override criteria.
 
 ## Pluggability
 
-The `PERSONA_REGISTRY` dict exposes every persona by slug:
-
 ```python
-from muffin_agent.agents.personas import PERSONA_REGISTRY
-from langgraph.types import Send
+from muffin_agent.agents.personas.council_graph import PERSONA_BUILDERS
 
-def fanout_personas(state):
-    return [
-        Send(spec.slug, {
-            "ticker": state["ticker"],
-            "data_bundle": state["data_bundle"],
-        })
-        for spec in PERSONA_REGISTRY.values()
-    ]
-
-# Wire into any external LangGraph
-graph.add_conditional_edges("my_node", fanout_personas, list(PERSONA_REGISTRY))
+# PERSONA_BUILDERS is a list of (slug, async_builder) pairs — that's the
+# whole "registry". Adding a persona = adding one entry here + writing
+# the per-persona file + verdict + data-collection prompts.
+for slug, builder in PERSONA_BUILDERS:
+    agent = await builder(config)
+    parent_graph.add_node(slug, agent, input_schema=agent.input_schema)
+    parent_graph.add_edge(START, slug)
+    parent_graph.add_edge(slug, "my_aggregator_node")
 ```
 
-This is how the [paper-trading pipeline](paper-trading.md) reuses the council per ticker without re-implementing the data-collection step.
+This is how the [paper-trading pipeline](paper-trading.md) reuses the council per ticker.
+
+## Specialists
+
+Two deterministic specialists ([`agents/specialists/`](../src/muffin_agent/agents/specialists/)) emit the same `AnalystSignal` contract without an LLM call:
+
+* **`technicals`** — 5-strategy ensemble (trend / mean-reversion / momentum / volatility-regime / stat-arb) over 1-year OHLCV. 2-node subgraph: `fetch_ohlcv` (via `cached_invoke`) → `compute_technical_signal`.
+* **`sentiment`** — 30/70 weighted insider + benzinga news sentiment aggregation. 3-node subgraph with parallel `fetch_insider_trades` + `fetch_company_news` → `compute_sentiment_signal`.
+
+Enable them in the council via `build_council_graph(config, include_specialists=True)` or invoke standalone via `muffin technicals <TICKER>` / `muffin sentiment <TICKER>`. Their MCP fetches share the same cache as the persona ReAct loops thanks to `cached_invoke` matching the middleware's namespace + hash scheme.
+
+## Cache sharing
+
+`MuffinAgentBuilder.with_tool(...)` defaults to `is_cacheable=True`, which wires the `ToolResultCacheMiddleware`. Personas inherit this automatically. The specialists' deterministic `cached_invoke` helper writes to the same `("cache", tool_name)` namespace with the same `get_args_hash(args)` key, so a single OpenBB call for e.g. `equity_fundamental_metrics(AAPL, annual, 5)` from the first persona that runs is reused by the remaining 12 personas (and by any subsequent specialist) in the same council run.
+
+See [`cache.py`](../src/muffin_agent/middlewares/tool_result_cache/cache.py) for the `cache_lookup` / `cache_store` / `cached_invoke` primitives and the parity tests in [`tests/middlewares/tool_result_cache/test_cache.py`](../tests/middlewares/tool_result_cache/test_cache.py).

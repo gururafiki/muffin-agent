@@ -841,21 +841,31 @@ async def _run_persona(slug: str, ticker: str, query: str | None, user: str) -> 
     from langchain_core.runnables import RunnableConfig
     from langgraph.store.memory import InMemoryStore
 
-    from muffin_agent.agents.personas import build_single_persona_graph
+    # v4: import the persona's build factory directly. Adding a new persona =
+    # add an entry to PERSONA_BUILDERS (see agents/personas/council_graph.py).
+    from muffin_agent.agents.personas.council_graph import PERSONA_BUILDERS
     from muffin_agent.utils.observability import setup_tracing
+
+    builders_by_slug = dict(PERSONA_BUILDERS)
+    if slug not in builders_by_slug:
+        typer.echo(
+            f"Unknown persona slug {slug!r}. Available: {sorted(builders_by_slug)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
     session_id = f"persona-{slug}-{ticker}"
     callbacks = setup_tracing(session_id=session_id)
-    store = InMemoryStore()
-    graph = build_single_persona_graph(slug, store=store)
-
-    result = await graph.ainvoke(
-        {"ticker": ticker, "query": query},
-        config=RunnableConfig(
-            callbacks=callbacks,
-            configurable={"thread_id": session_id, "user_id": user},
-        ),
+    config = RunnableConfig(
+        callbacks=callbacks,
+        configurable={"thread_id": session_id, "user_id": user},
     )
+
+    store = InMemoryStore()  # noqa: F841 — kept for parity; subgraph reads via get_store()
+    builder = builders_by_slug[slug]
+    graph = await builder(config)
+
+    result = await graph.ainvoke({"ticker": ticker, "query": query}, config=config)
 
     signals = result.get("persona_signals") or []
     if not signals:
@@ -911,18 +921,17 @@ async def _run_council(ticker: str, query: str | None, user: str) -> None:
     session_id = f"council-{ticker}"
     callbacks = setup_tracing(session_id=session_id)
     store = InMemoryStore()
-    graph = build_council_graph(
+    config = RunnableConfig(
+        callbacks=callbacks,
+        configurable={"thread_id": session_id, "user_id": user},
+    )
+    graph = await build_council_graph(
+        config,
         checkpointer=_get_checkpointer(),
         store=store,
     )
 
-    result = await graph.ainvoke(
-        {"ticker": ticker, "query": query},
-        config=RunnableConfig(
-            callbacks=callbacks,
-            configurable={"thread_id": session_id, "user_id": user},
-        ),
-    )
+    result = await graph.ainvoke({"ticker": ticker, "query": query}, config=config)
 
     output = {
         "ticker": ticker,
@@ -966,15 +975,30 @@ async def _run_specialist(slug: str, ticker: str, query: str | None, user: str) 
     import json
 
     from langchain_core.runnables import RunnableConfig
-    from langgraph.store.memory import InMemoryStore
+    from langgraph.store.memory import InMemoryStore  # noqa: F401
 
-    from muffin_agent.agents.specialists import build_single_specialist_graph
+    from muffin_agent.agents.specialists.sentiment_analysis import (
+        build_sentiment_analysis_agent,
+    )
+    from muffin_agent.agents.specialists.technical_analysis import (
+        build_technical_analysis_agent,
+    )
     from muffin_agent.utils.observability import setup_tracing
+
+    builders = {
+        "technicals": build_technical_analysis_agent,
+        "sentiment": build_sentiment_analysis_agent,
+    }
+    if slug not in builders:
+        typer.echo(
+            f"Unknown specialist slug {slug!r}. Available: {sorted(builders)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
     session_id = f"specialist-{slug}-{ticker}"
     callbacks = setup_tracing(session_id=session_id)
-    store = InMemoryStore()
-    graph = build_single_specialist_graph(slug, store=store)
+    graph = builders[slug]()
 
     result = await graph.ainvoke(
         {"ticker": ticker, "query": query},
@@ -1096,7 +1120,12 @@ async def _run_trade(
     session_id = f"trade-{'-'.join(tickers)}"
     callbacks = setup_tracing(session_id=session_id)
     store = InMemoryStore()
-    graph = build_portfolio_decision_graph(
+    config = RunnableConfig(
+        callbacks=callbacks,
+        configurable={"thread_id": session_id, "user_id": user},
+    )
+    graph = await build_portfolio_decision_graph(
+        config=config,
         checkpointer=_get_checkpointer(),
         store=store,
     )
@@ -1113,10 +1142,7 @@ async def _run_trade(
             "portfolio": portfolio.model_dump(),
             "current_prices": {},
         },
-        config=RunnableConfig(
-            callbacks=callbacks,
-            configurable={"thread_id": session_id, "user_id": user},
-        ),
+        config=config,
     )
 
     output = {

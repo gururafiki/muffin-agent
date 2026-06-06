@@ -145,8 +145,8 @@ class BacktestEngine:
 
         Returns ``(orders, executed_trades, council_synthesis_by_ticker)``.
         """
-        graph = build_portfolio_decision_graph(
-            checkpointer=self.checkpointer, store=self.store
+        graph = await build_portfolio_decision_graph(
+            config=config, checkpointer=self.checkpointer, store=self.store
         )
         result = await graph.ainvoke(
             {
@@ -178,7 +178,7 @@ class BacktestEngine:
         to test signal quality without exercising the trade-execution
         machinery.
         """
-        council = build_council_graph(store=self.store)
+        council = await build_council_graph(config, store=self.store)
         synth_by_ticker: dict[str, dict[str, Any]] = {}
         for ticker in self.tickers:
             result = await council.ainvoke(

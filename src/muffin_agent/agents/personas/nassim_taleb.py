@@ -1,57 +1,206 @@
-"""Nassim Taleb persona — antifragility, tail risk, convexity, via negativa.
+"""Nassim Taleb persona — compiled subgraph (collect → compute → verdict).
 
-Uses price-series data for tail-risk metrics (skew, kurtosis, drawdown,
-vol regime), plus standard line items for fragility / antifragility
-scoring.  Mirrors ai-hedge-fund's ``nassim_taleb.py`` (which is the only
-upstream persona that pulls prices directly).
+Antifragility + tail risk lens; uses price series for distribution metrics.
+See ``warren_buffett.py`` for the canonical v4 reference.
+Reference: ``ai-hedge-fund/src/agents/nassim_taleb.py``.
 """
 
 from __future__ import annotations
 
 import logging
 import statistics
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
+from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
 from ...tools.scoring_helpers import compute_volatility_metrics
-from ._base import (
-    PersonaInputState,
-    PersonaOutputState,
-    PersonaSpec,
-    register_persona,
-)
-from .schemas import AnalystSignal, ScoreDetail
+from ...utils.agent_builder import MuffinAgentBuilder
+from ..data_collection.utils import get_tools
+from .schemas import AnalystSignal
 
 logger = logging.getLogger(__name__)
+_LLM_RETRY = RetryPolicy(max_attempts=2)
 
 
-class NassimTalebEvidence(BaseModel):
-    """Persona-specific evidence — sub-scores, computed metrics."""
+# ── Typed sub-evidence ────────────────────────────────────────────────────────
 
-    tail_risk: ScoreDetail
-    antifragility: ScoreDetail
-    convexity: ScoreDetail
-    fragility: ScoreDetail
-    skin_in_game: ScoreDetail
-    vol_regime: ScoreDetail
-    annualized_volatility: float | None
+
+class NassimTalebTailRisk(BaseModel):
     skewness: float | None
     excess_kurtosis: float | None
     max_drawdown_pct: float | None
+    annualized_volatility: float | None
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class NassimTalebAntifragility(BaseModel):
+    net_cash: float | None
+    debt_to_assets: float | None
+    margin_cv: float | None
+    fcf_positive_periods: int
+    fcf_total_periods: int
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class NassimTalebConvexity(BaseModel):
+    rd_intensity: float | None
+    cash_to_market_cap: float | None
+    fcf_yield: float | None
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class NassimTalebFragility(BaseModel):
+    debt_to_equity: float | None
+    interest_coverage: float | None
+    earnings_cv: float | None
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class NassimTalebSkinInGame(BaseModel):
+    insider_buys: int
+    insider_sells: int
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class NassimTalebVolRegime(BaseModel):
+    recent_to_older_vol_ratio: float | None
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class NassimTalebEvidence(BaseModel):
+    tail_risk: NassimTalebTailRisk
+    antifragility: NassimTalebAntifragility
+    convexity: NassimTalebConvexity
+    fragility: NassimTalebFragility
+    skin_in_game: NassimTalebSkinInGame
+    vol_regime: NassimTalebVolRegime
+    annualized_volatility: float | None = None
+    skewness: float | None = None
+    excess_kurtosis: float | None = None
+    max_drawdown_pct: float | None = None
     total_score: float
     max_score: float
 
 
 class NassimTalebSignal(AnalystSignal):
-    """Persona structured signal with narrowed evidence type."""
-
     agent_id: Literal["nassim_taleb"] = Field(default="nassim_taleb")
     evidence: NassimTalebEvidence
+
+
+# ── RawData ───────────────────────────────────────────────────────────────────
+
+
+class NassimTalebRawData(BaseModel):
+    """Taleb MCP extraction.  Series oldest -> newest."""
+
+    cash_and_equivalents_series: list[float | None] = Field(default_factory=list)
+    total_debt_series: list[float | None] = Field(default_factory=list)
+    total_assets_series: list[float | None] = Field(default_factory=list)
+    operating_margin_series: list[float | None] = Field(default_factory=list)
+    free_cash_flow_series: list[float | None] = Field(default_factory=list)
+    revenue_series: list[float | None] = Field(default_factory=list)
+    research_and_development_series: list[float | None] = Field(default_factory=list)
+    shareholders_equity_series: list[float | None] = Field(default_factory=list)
+    ebit_series: list[float | None] = Field(default_factory=list)
+    interest_expense_series: list[float | None] = Field(default_factory=list)
+    net_income_series: list[float | None] = Field(default_factory=list)
+    insider_trades: list[dict[str, Any]] = Field(default_factory=list)
+    prices_1y: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Past 252 days of daily OHLCV from equity_price_historical "
+            "(provider=yfinance). Each entry must include `close`."
+        ),
+    )
+    market_cap: float | None = None
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+
+class NassimTalebInput(TypedDict, total=False):
+    ticker: str
+    as_of_date: str
+    query: str | None
+
+
+class NassimTalebOutput(TypedDict, total=False):
+    persona_signals: list[dict[str, Any]]
+
+
+class NassimTalebState(AgentState):
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
+    cash_and_equivalents_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    total_debt_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    total_assets_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    operating_margin_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    free_cash_flow_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    revenue_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    research_and_development_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    shareholders_equity_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    ebit_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    interest_expense_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    net_income_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    insider_trades: Annotated[
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+    ]
+    prices_1y: Annotated[
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+    ]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    evidence: Annotated[
+        NassimTalebEvidence | None, OmitFromSchema(input=True, output=True)
+    ]
+    persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+
+
+# ── Composite scorers ─────────────────────────────────────────────────────────
 
 
 def _daily_returns_from_bars(bars: list[dict[str, Any]]) -> list[float]:
@@ -64,9 +213,9 @@ def _daily_returns_from_bars(bars: list[dict[str, Any]]) -> list[float]:
     return returns
 
 
-def _score_tail_risk(
+def _score_taleb_tail_risk(
     returns: list[float],
-) -> tuple[ScoreDetail, dict[str, float | None]]:
+) -> NassimTalebTailRisk:
     metrics = compute_volatility_metrics(returns)
     score = 0
     parts: list[str] = []
@@ -87,7 +236,7 @@ def _score_tail_risk(
         elif skew > -0.5:
             score += 1
     if dd is not None:
-        if dd > -15:  # max_drawdown_pct is negative
+        if dd > -15:
             score += 2
             parts.append(f"Max drawdown {dd:.1f}% (shallow)")
         elif dd > -30:
@@ -95,22 +244,34 @@ def _score_tail_risk(
     if metrics["annualized_volatility"] is not None:
         parts.append(f"Annualised vol {metrics['annualized_volatility']:.1%}")
 
-    return ScoreDetail(
-        score=min(score, 8), max_score=8, details="; ".join(parts) or "No price data"
-    ), metrics
+    return NassimTalebTailRisk(
+        skewness=skew,
+        excess_kurtosis=kurt,
+        max_drawdown_pct=dd,
+        annualized_volatility=metrics["annualized_volatility"],
+        score=min(score, 8),
+        max_score=8,
+        reasoning="; ".join(parts) or "No price data",
+    )
 
 
-def _score_antifragility(
-    line_items: dict[str, list[float | None]], market_cap: float | None
-) -> ScoreDetail:
-    """Net cash, low debt, stable margins, consistent FCF."""
-    cash = [v for v in line_items.get("cash_and_equivalents", []) if v is not None]
-    debt = [v for v in line_items.get("total_debt", []) if v is not None]
-    assets = [v for v in line_items.get("total_assets", []) if v is not None]
-    margins = [v for v in line_items.get("operating_margin", []) if v is not None]
-    fcf = [v for v in line_items.get("free_cash_flow", []) if v is not None]
+def _score_taleb_antifragility(state: NassimTalebState) -> NassimTalebAntifragility:
+    cash = [
+        v for v in (state.get("cash_and_equivalents_series") or []) if v is not None
+    ]
+    debt = [v for v in (state.get("total_debt_series") or []) if v is not None]
+    assets = [v for v in (state.get("total_assets_series") or []) if v is not None]
+    margins = [v for v in (state.get("operating_margin_series") or []) if v is not None]
+    fcf = [v for v in (state.get("free_cash_flow_series") or []) if v is not None]
+    market_cap = state.get("market_cap")
+
     score = 0
     parts: list[str] = []
+    net_cash: float | None = None
+    de_ratio: float | None = None
+    margin_cv: float | None = None
+    positives = 0
+
     if cash and debt:
         net_cash = cash[-1] - debt[-1]
         if net_cash > 0:
@@ -123,22 +284,22 @@ def _score_antifragility(
         elif debt and assets and debt[-1] / assets[-1] < 0.30:
             score += 1
     if debt and assets and assets[-1] and assets[-1] > 0:
-        de = debt[-1] / assets[-1]
-        if de < 0.30:
+        de_ratio = debt[-1] / assets[-1]
+        if de_ratio < 0.30:
             score += 2
-            parts.append(f"D/assets {de:.2f}")
-        elif de < 0.50:
+            parts.append(f"D/assets {de_ratio:.2f}")
+        elif de_ratio < 0.50:
             score += 1
     if margins and len(margins) >= 3:
         mean = sum(margins) / len(margins)
         if mean > 0:
-            cv = statistics.pstdev(margins) / mean
-            if cv < 0.15 and mean > 0.15:
+            margin_cv = statistics.pstdev(margins) / mean
+            if margin_cv < 0.15 and mean > 0.15:
                 score += 3
-                parts.append(f"Stable margins (CV {cv:.1%}, mean {mean:.1%})")
-            elif cv < 0.30 and mean > 0.10:
+                parts.append(f"Stable margins (CV {margin_cv:.1%}, mean {mean:.1%})")
+            elif margin_cv < 0.30 and mean > 0.10:
                 score += 2
-            elif cv < 0.30:
+            elif margin_cv < 0.30:
                 score += 1
     if fcf:
         positives = sum(1 for v in fcf if v > 0)
@@ -147,60 +308,88 @@ def _score_antifragility(
             parts.append("FCF positive every period")
         elif positives >= len(fcf) // 2:
             score += 1
-    return ScoreDetail(
-        score=min(score, 10), max_score=10, details="; ".join(parts) or "Limited data"
+
+    return NassimTalebAntifragility(
+        net_cash=net_cash,
+        debt_to_assets=de_ratio,
+        margin_cv=margin_cv,
+        fcf_positive_periods=positives,
+        fcf_total_periods=len(fcf),
+        score=min(score, 10),
+        max_score=10,
+        reasoning="; ".join(parts) or "Limited data",
     )
 
 
-def _score_convexity(
-    line_items: dict[str, list[float | None]], market_cap: float | None
-) -> ScoreDetail:
-    """R&D intensity + cash optionality + FCF yield."""
-    rd = [v for v in line_items.get("research_and_development", []) if v is not None]
-    revenues = [v for v in line_items.get("revenue", []) if v is not None]
-    cash = [v for v in line_items.get("cash_and_equivalents", []) if v is not None]
-    fcf = [v for v in line_items.get("free_cash_flow", []) if v is not None]
+def _score_taleb_convexity(state: NassimTalebState) -> NassimTalebConvexity:
+    rd = [
+        v for v in (state.get("research_and_development_series") or []) if v is not None
+    ]
+    revenues = [v for v in (state.get("revenue_series") or []) if v is not None]
+    cash = [
+        v for v in (state.get("cash_and_equivalents_series") or []) if v is not None
+    ]
+    fcf = [v for v in (state.get("free_cash_flow_series") or []) if v is not None]
+    market_cap = state.get("market_cap")
+
     score = 0
     parts: list[str] = []
+    rd_intensity: float | None = None
+    cash_ratio: float | None = None
+    fcf_yield: float | None = None
+
     if rd and revenues and revenues[-1] and revenues[-1] > 0:
-        intensity = rd[-1] / revenues[-1]
-        if intensity > 0.15:
+        rd_intensity = rd[-1] / revenues[-1]
+        if rd_intensity > 0.15:
             score += 3
-            parts.append(f"R&D intensity {intensity:.1%} (high convexity)")
-        elif intensity > 0.08:
+            parts.append(f"R&D intensity {rd_intensity:.1%} (high convexity)")
+        elif rd_intensity > 0.08:
             score += 2
-        elif intensity > 0.03:
+        elif rd_intensity > 0.03:
             score += 1
     if cash and market_cap and market_cap > 0:
-        ratio = cash[-1] / market_cap
-        if ratio > 0.30:
+        cash_ratio = cash[-1] / market_cap
+        if cash_ratio > 0.30:
             score += 3
-            parts.append(f"Cash {ratio:.1%} of mkt cap (option value)")
-        elif ratio > 0.15:
+            parts.append(f"Cash {cash_ratio:.1%} of mkt cap (option value)")
+        elif cash_ratio > 0.15:
             score += 2
-        elif ratio > 0.05:
+        elif cash_ratio > 0.05:
             score += 1
     if fcf and market_cap and market_cap > 0:
-        yield_ = fcf[-1] / market_cap
-        if yield_ > 0.10:
+        fcf_yield = fcf[-1] / market_cap
+        if fcf_yield > 0.10:
             score += 2
-            parts.append(f"FCF yield {yield_:.1%}")
-        elif yield_ > 0.05:
+            parts.append(f"FCF yield {fcf_yield:.1%}")
+        elif fcf_yield > 0.05:
             score += 1
-    return ScoreDetail(
-        score=min(score, 10), max_score=10, details="; ".join(parts) or "Limited data"
+
+    return NassimTalebConvexity(
+        rd_intensity=rd_intensity,
+        cash_to_market_cap=cash_ratio,
+        fcf_yield=fcf_yield,
+        score=min(score, 10),
+        max_score=10,
+        reasoning="; ".join(parts) or "Limited data",
     )
 
 
-def _score_fragility(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    """Via negativa — score what should be AVOIDED.  High score = LESS fragile."""
-    debt = [v for v in line_items.get("total_debt", []) if v is not None]
-    equity = [v for v in line_items.get("shareholders_equity", []) if v is not None]
-    ebit = [v for v in line_items.get("ebit", []) if v is not None]
-    interest = [v for v in line_items.get("interest_expense", []) if v is not None]
-    net_income = [v for v in line_items.get("net_income", []) if v is not None]
+def _score_taleb_fragility(state: NassimTalebState) -> NassimTalebFragility:
+    debt = [v for v in (state.get("total_debt_series") or []) if v is not None]
+    equity = [
+        v for v in (state.get("shareholders_equity_series") or []) if v is not None
+    ]
+    ebit = [v for v in (state.get("ebit_series") or []) if v is not None]
+    interest = [
+        v for v in (state.get("interest_expense_series") or []) if v is not None
+    ]
+    net_income = [v for v in (state.get("net_income_series") or []) if v is not None]
     score = 0
     parts: list[str] = []
+    de: float | None = None
+    cov: float | None = None
+    earnings_cv: float | None = None
+
     if debt and equity and equity[-1] and equity[-1] > 0:
         de = debt[-1] / equity[-1]
         if de < 0.5:
@@ -216,53 +405,92 @@ def _score_fragility(line_items: dict[str, list[float | None]]) -> ScoreDetail:
         cov = ebit[-1] / interest[-1]
         if cov > 10:
             score += 2
-            parts.append(f"Interest coverage {cov:.1f}×")
+            parts.append(f"Interest coverage {cov:.1f}x")
         elif cov > 5:
             score += 1
     if net_income and len(net_income) >= 3:
         mean = sum(net_income) / len(net_income)
         if mean > 0:
-            cv = statistics.pstdev(net_income) / mean
-            if cv < 0.20:
+            earnings_cv = statistics.pstdev(net_income) / mean
+            if earnings_cv < 0.20:
                 score += 2
-                parts.append(f"Stable earnings (CV {cv:.1%})")
-            elif cv < 0.50:
+                parts.append(f"Stable earnings (CV {earnings_cv:.1%})")
+            elif earnings_cv < 0.50:
                 score += 1
-    return ScoreDetail(
-        score=min(score, 8), max_score=8, details="; ".join(parts) or "Limited data"
+    return NassimTalebFragility(
+        debt_to_equity=de,
+        interest_coverage=cov,
+        earnings_cv=earnings_cv,
+        score=min(score, 8),
+        max_score=8,
+        reasoning="; ".join(parts) or "Limited data",
     )
 
 
-def _score_skin_in_game(insider_trades: list[dict[str, Any]]) -> ScoreDetail:
+def _score_taleb_skin_in_game(state: NassimTalebState) -> NassimTalebSkinInGame:
+    insider_trades = state.get("insider_trades") or []
     buys = sum(1 for t in insider_trades if (t.get("transaction_shares") or 0) > 0)
     sells = sum(1 for t in insider_trades if (t.get("transaction_shares") or 0) < 0)
     if buys + sells == 0:
-        return ScoreDetail(score=0, max_score=4, details="No insider activity data")
+        return NassimTalebSkinInGame(
+            insider_buys=0,
+            insider_sells=0,
+            score=0,
+            max_score=4,
+            reasoning="No insider activity data",
+        )
     ratio = buys / max(sells, 1)
     if ratio > 2:
-        return ScoreDetail(
-            score=4, max_score=4, details=f"Strong net buying ({buys}/{sells})"
+        return NassimTalebSkinInGame(
+            insider_buys=buys,
+            insider_sells=sells,
+            score=4,
+            max_score=4,
+            reasoning=f"Strong net buying ({buys}/{sells})",
         )
     if ratio > 0.5:
-        return ScoreDetail(score=3, max_score=4, details=f"Net buying ({buys}/{sells})")
-    if buys > 0:
-        return ScoreDetail(
-            score=2, max_score=4, details=f"Some buying ({buys}/{sells})"
+        return NassimTalebSkinInGame(
+            insider_buys=buys,
+            insider_sells=sells,
+            score=3,
+            max_score=4,
+            reasoning=f"Net buying ({buys}/{sells})",
         )
-    return ScoreDetail(score=1, max_score=4, details="No insider buying")
+    if buys > 0:
+        return NassimTalebSkinInGame(
+            insider_buys=buys,
+            insider_sells=sells,
+            score=2,
+            max_score=4,
+            reasoning=f"Some buying ({buys}/{sells})",
+        )
+    return NassimTalebSkinInGame(
+        insider_buys=buys,
+        insider_sells=sells,
+        score=1,
+        max_score=4,
+        reasoning="No insider buying",
+    )
 
 
-def _score_vol_regime(returns: list[float]) -> ScoreDetail:
-    """Score vol regime — Taleb's "turkey problem" detector."""
+def _score_taleb_vol_regime(returns: list[float]) -> NassimTalebVolRegime:
     if len(returns) < 63:
-        return ScoreDetail(score=0, max_score=6, details="Insufficient price history")
+        return NassimTalebVolRegime(
+            recent_to_older_vol_ratio=None,
+            score=0,
+            max_score=6,
+            reasoning="Insufficient price history",
+        )
     recent = returns[-21:]
     older = returns[-63:-21] if len(returns) >= 63 else returns[:-21]
     recent_vol = statistics.pstdev(recent) if recent else 0
     older_vol = statistics.pstdev(older) if older else 0
     if older_vol == 0:
-        return ScoreDetail(
-            score=0, max_score=6, details="Zero historical vol — anomaly"
+        return NassimTalebVolRegime(
+            recent_to_older_vol_ratio=None,
+            score=0,
+            max_score=6,
+            reasoning="Zero historical vol — anomaly",
         )
     regime = recent_vol / older_vol
     score = 0
@@ -283,22 +511,27 @@ def _score_vol_regime(returns: list[float]) -> ScoreDetail:
     else:
         score = 2
         parts.append(f"Extreme vol regime {regime:.2f}")
-    return ScoreDetail(score=score, max_score=6, details="; ".join(parts))
+    return NassimTalebVolRegime(
+        recent_to_older_vol_ratio=regime,
+        score=score,
+        max_score=6,
+        reasoning="; ".join(parts),
+    )
 
 
-def _compute_taleb_facts(data_bundle: dict[str, Any]) -> NassimTalebEvidence:
-    line_items = data_bundle.get("line_items", {})
-    market_cap = data_bundle.get("market_cap")
-    insider_trades = data_bundle.get("insider_trades", [])
-    prices_1y = data_bundle.get("prices_1y", [])
-    returns = _daily_returns_from_bars(prices_1y)
+# ── Graph nodes ───────────────────────────────────────────────────────────────
 
-    tail_risk, vol_metrics = _score_tail_risk(returns)
-    antifragility = _score_antifragility(line_items, market_cap)
-    convexity = _score_convexity(line_items, market_cap)
-    fragility = _score_fragility(line_items)
-    skin = _score_skin_in_game(insider_trades)
-    vol_regime = _score_vol_regime(returns)
+
+def compute_evidence_node(state: NassimTalebState) -> dict[str, Any]:
+    prices = state.get("prices_1y") or []
+    returns = _daily_returns_from_bars(prices)
+
+    tail_risk = _score_taleb_tail_risk(returns)
+    antifragility = _score_taleb_antifragility(state)
+    convexity = _score_taleb_convexity(state)
+    fragility = _score_taleb_fragility(state)
+    skin = _score_taleb_skin_in_game(state)
+    vol_regime = _score_taleb_vol_regime(returns)
 
     total = (
         tail_risk.score
@@ -316,67 +549,46 @@ def _compute_taleb_facts(data_bundle: dict[str, Any]) -> NassimTalebEvidence:
         + skin.max_score
         + vol_regime.max_score
     )
-
-    return NassimTalebEvidence(
+    evidence = NassimTalebEvidence(
         tail_risk=tail_risk,
         antifragility=antifragility,
         convexity=convexity,
         fragility=fragility,
         skin_in_game=skin,
         vol_regime=vol_regime,
-        annualized_volatility=vol_metrics["annualized_volatility"],
-        skewness=vol_metrics["skewness"],
-        excess_kurtosis=vol_metrics["excess_kurtosis"],
-        max_drawdown_pct=vol_metrics["max_drawdown_pct"],
+        annualized_volatility=tail_risk.annualized_volatility,
+        skewness=tail_risk.skewness,
+        excess_kurtosis=tail_risk.excess_kurtosis,
+        max_drawdown_pct=tail_risk.max_drawdown_pct,
         total_score=total,
         max_score=max_total,
     )
+    return {"evidence": evidence}
 
 
-async def nassim_taleb_node(
-    state: PersonaInputState, config: RunnableConfig
-) -> PersonaOutputState:
-    """Render the Nassim Taleb verdict from state["data_bundle"]."""
+async def render_verdict_node(
+    state: NassimTalebState, config: RunnableConfig
+) -> dict[str, Any]:
     ticker = state.get("ticker", "")
+    as_of_date = state.get("as_of_date", "")
     query = state.get("query")
-    data_bundle = state.get("data_bundle") or {}
-
-    if not data_bundle or "error" in data_bundle:
-        fallback = NassimTalebSignal(
-            agent_id="nassim_taleb",
-            signal="hold",
-            confidence=0.0,
-            reasoning="Insufficient data",
-            evidence=NassimTalebEvidence(
-                tail_risk=ScoreDetail(score=0, max_score=8, details="no data"),
-                antifragility=ScoreDetail(score=0, max_score=10, details="no data"),
-                convexity=ScoreDetail(score=0, max_score=10, details="no data"),
-                fragility=ScoreDetail(score=0, max_score=8, details="no data"),
-                skin_in_game=ScoreDetail(score=0, max_score=4, details="no data"),
-                vol_regime=ScoreDetail(score=0, max_score=6, details="no data"),
-                annualized_volatility=None,
-                skewness=None,
-                excess_kurtosis=None,
-                max_drawdown_pct=None,
-                total_score=0,
-                max_score=46,
-            ),
+    evidence = state.get("evidence")
+    if evidence is None:
+        raise RuntimeError(
+            "render_verdict_node called without evidence — "
+            "compute_evidence_node must run first in v4 subgraphs"
         )
-        return {"persona_signals": [fallback.model_dump()]}
 
-    evidence = _compute_taleb_facts(data_bundle)
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=NassimTalebSignal
     )
     prompt = render_template(
         "personas/nassim_taleb.jinja",
         ticker=ticker,
-        as_of_date=data_bundle.get("as_of_date", ""),
-        facts=evidence.model_dump(mode="json"),
+        as_of_date=as_of_date,
+        evidence=evidence,
+        market_cap=state.get("market_cap"),
         query=query,
-        persona_display_name="Nassim Taleb",
-        persona_slug="nassim_taleb",
-        signal_schema_name="NassimTalebSignal",
     )
     result = cast(
         NassimTalebSignal,
@@ -387,15 +599,57 @@ async def nassim_taleb_node(
     return {"persona_signals": [result.model_dump()]}
 
 
-PERSONA_SPEC = register_persona(
-    PersonaSpec(
-        slug="nassim_taleb",
-        display_name="Nassim Taleb",
-        investing_style=(
-            "Antifragility + convexity + via negativa; tail-risk-aware; "
-            "barbell strategy; penalises fragility & turkey-problem vol"
-        ),
-        node=nassim_taleb_node,
-        signal_schema=NassimTalebSignal,
+# ── Data-collection sub-agent + subgraph builder ──────────────────────────────
+
+
+_MCP_TOOLS = [
+    "equity_fundamental_income",
+    "equity_fundamental_balance",
+    "equity_fundamental_cash",
+    "equity_fundamental_ratios",
+    "equity_ownership_insider_trading",
+    "equity_price_historical",
+]
+
+
+async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateGraph:
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("collector")
+    mcp_tools = await get_tools(config, _MCP_TOOLS)
+    builder = (
+        MuffinAgentBuilder(primary, name="nassim_taleb_data_collection")
+        .with_fallback_models(*fallbacks)
+        .with_state_schema(NassimTalebState)
+        .with_runtime_system_prompt_template(
+            "personas/nassim_taleb_data_collection.jinja"
+        )
+        .with_response_format(NassimTalebRawData)
+        .with_model_call_limit(run_limit=10, exit_behavior="end")
     )
-)
+    for tool in mcp_tools:
+        builder = builder.with_tool(tool, run_limit=2)
+    return builder.build_react_agent()
+
+
+async def build_nassim_taleb_agent(config: RunnableConfig) -> CompiledStateGraph:
+    data_agent = await _build_data_collection_agent(config)
+    graph = StateGraph(
+        NassimTalebState,
+        input_schema=NassimTalebInput,
+        output_schema=NassimTalebOutput,
+    )
+    graph.add_node(
+        "collect_data",
+        data_agent,
+        input_schema=data_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node("compute_evidence", compute_evidence_node)
+    graph.add_node("render_verdict", render_verdict_node, retry_policy=_LLM_RETRY)
+    graph.add_edge(START, "collect_data")
+    graph.add_edge("collect_data", "compute_evidence")
+    graph.add_edge("compute_evidence", "render_verdict")
+    graph.add_edge("render_verdict", END)
+    return graph.compile()
+
+

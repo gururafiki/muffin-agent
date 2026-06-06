@@ -1,72 +1,179 @@
-"""Peter Lynch persona — GARP + PEG + ten-bagger hunting.
+"""Peter Lynch persona — compiled subgraph (collect → compute → verdict).
 
-Five sub-scores weighted 30/25/20/15/10 (growth / valuation / fundamentals /
-sentiment / insider).  Mirrors ai-hedge-fund's ``peter_lynch.py``.
+GARP via PEG; ten-bagger hunt. See ``warren_buffett.py`` for canonical v4 ref.
+Reference: ``ai-hedge-fund/src/agents/peter_lynch.py``.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
+from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
-from ...tools.scoring_helpers import (
-    compute_peg_ratio,
-    score_insider_buy_ratio,
-)
+from ...tools.scoring_helpers import compute_peg_ratio, score_insider_buy_ratio
 from ...tools.sentiment import aggregate_news_sentiment
-from ._base import (
-    PersonaInputState,
-    PersonaOutputState,
-    PersonaSpec,
-    register_persona,
-)
-from .schemas import AnalystSignal, ScoreDetail
+from ...utils.agent_builder import MuffinAgentBuilder
+from ..data_collection.utils import get_tools
+from .schemas import AnalystSignal
 
 logger = logging.getLogger(__name__)
+_LLM_RETRY = RetryPolicy(max_attempts=2)
+
+
+# ── Typed sub-evidence ────────────────────────────────────────────────────────
+
+
+class PeterLynchGrowth(BaseModel):
+    revenue_cagr: float | None
+    eps_cagr: float | None
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PeterLynchFundamentals(BaseModel):
+    debt_to_equity: float | None
+    operating_margin: float | None
+    fcf_latest: float | None
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PeterLynchValuation(BaseModel):
+    pe_ratio: float | None
+    peg_ratio: float | None
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PeterLynchSentiment(BaseModel):
+    bullish_articles: int
+    bearish_articles: int
+    total_articles: int
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PeterLynchInsiderActivity(BaseModel):
+    raw_insider_score: int
+    score: float
+    max_score: float
+    reasoning: str
 
 
 class PeterLynchEvidence(BaseModel):
-    """Persona-specific evidence — sub-scores, computed metrics."""
-
-    growth: ScoreDetail
-    fundamentals: ScoreDetail
-    valuation: ScoreDetail
-    sentiment: ScoreDetail
-    insider_activity: ScoreDetail
-    peg_ratio: float | None
+    growth: PeterLynchGrowth
+    fundamentals: PeterLynchFundamentals
+    valuation: PeterLynchValuation
+    sentiment: PeterLynchSentiment
+    insider_activity: PeterLynchInsiderActivity
+    peg_ratio: float | None = None
     weighted_score: float
-    market_cap: float | None
+    market_cap: float | None = None
     total_score: float
     max_score: float
 
 
 class PeterLynchSignal(AnalystSignal):
-    """Persona structured signal with narrowed evidence type."""
-
     agent_id: Literal["peter_lynch"] = Field(default="peter_lynch")
     evidence: PeterLynchEvidence
 
 
-def _score_growth(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    revenues = [v for v in line_items.get("revenue", []) if v is not None]
-    eps = [v for v in line_items.get("earnings_per_share", []) if v is not None]
+# ── RawData ───────────────────────────────────────────────────────────────────
+
+
+class PeterLynchRawData(BaseModel):
+    """Lynch MCP extraction. Series oldest -> newest."""
+
+    revenue_series: list[float | None] = Field(default_factory=list)
+    eps_series: list[float | None] = Field(default_factory=list)
+    free_cash_flow_series: list[float | None] = Field(default_factory=list)
+    debt_to_equity_latest: float | None = None
+    operating_margin_latest: float | None = None
+    pe_ratio_latest: float | None = None
+    insider_trades: list[dict[str, Any]] = Field(default_factory=list)
+    company_news: list[dict[str, Any]] = Field(default_factory=list)
+    market_cap: float | None = None
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+
+class PeterLynchInput(TypedDict, total=False):
+    ticker: str
+    as_of_date: str
+    query: str | None
+
+
+class PeterLynchOutput(TypedDict, total=False):
+    persona_signals: list[dict[str, Any]]
+
+
+class PeterLynchState(AgentState):
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
+    revenue_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    eps_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    free_cash_flow_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    debt_to_equity_latest: Annotated[
+        float | None, OmitFromSchema(input=True, output=True)
+    ]
+    operating_margin_latest: Annotated[
+        float | None, OmitFromSchema(input=True, output=True)
+    ]
+    pe_ratio_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    insider_trades: Annotated[
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+    ]
+    company_news: Annotated[
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+    ]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    evidence: Annotated[
+        PeterLynchEvidence | None, OmitFromSchema(input=True, output=True)
+    ]
+    persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+
+
+# ── Composite scorers ─────────────────────────────────────────────────────────
+
+
+def _cagr(series: list[float | None]) -> float | None:
+    vals = [v for v in series if v is not None]
+    if len(vals) < 2 or vals[0] is None or vals[0] <= 0:
+        return None
+    years = len(vals) - 1
+    if vals[-1] <= 0:
+        return None
+    return (vals[-1] / vals[0]) ** (1 / years) - 1
+
+
+def _score_lynch_growth(state: PeterLynchState) -> PeterLynchGrowth:
+    rev_cagr = _cagr(state.get("revenue_series") or [])
+    eps_cagr = _cagr(state.get("eps_series") or [])
     score = 0
     parts: list[str] = []
-
-    def cagr(series: list[float]) -> float | None:
-        if len(series) < 2 or series[0] <= 0:
-            return None
-        years = len(series) - 1
-        return (series[-1] / series[0]) ** (1 / years) - 1
-
-    rev_cagr = cagr(revenues)
-    eps_cagr = cagr(eps)
     if rev_cagr is not None:
         if rev_cagr > 0.25:
             score += 3
@@ -84,19 +191,20 @@ def _score_growth(line_items: dict[str, list[float | None]]) -> ScoreDetail:
         elif eps_cagr > 0.02:
             score += 1
     normalised = (score / 6) * 10
-    return ScoreDetail(
+    return PeterLynchGrowth(
+        revenue_cagr=rev_cagr,
+        eps_cagr=eps_cagr,
         score=normalised,
         max_score=10,
-        details="; ".join(parts) or "Limited growth data",
+        reasoning="; ".join(parts) or "Limited growth data",
     )
 
 
-def _score_fundamentals(
-    latest_metrics: dict[str, Any], line_items: dict[str, list[float | None]]
-) -> ScoreDetail:
-    de = latest_metrics.get("debt_to_equity")
-    om = latest_metrics.get("operating_margin")
-    fcf = line_items.get("free_cash_flow", [])
+def _score_lynch_fundamentals(state: PeterLynchState) -> PeterLynchFundamentals:
+    de = state.get("debt_to_equity_latest")
+    om = state.get("operating_margin_latest")
+    fcf_series = state.get("free_cash_flow_series") or []
+    fcf_latest = fcf_series[-1] if fcf_series else None
     score = 0
     parts: list[str] = []
     if de is not None:
@@ -111,28 +219,26 @@ def _score_fundamentals(
             parts.append(f"Op margin {om:.1%}")
         elif om > 0.10:
             score += 1
-    if fcf and fcf[-1] is not None and fcf[-1] > 0:
+    if fcf_latest is not None and fcf_latest > 0:
         score += 2
-        parts.append(f"FCF positive {fcf[-1]:,.0f}")
+        parts.append(f"FCF positive {fcf_latest:,.0f}")
     normalised = (score / 6) * 10
-    return ScoreDetail(
+    return PeterLynchFundamentals(
+        debt_to_equity=de,
+        operating_margin=om,
+        fcf_latest=fcf_latest,
         score=normalised,
         max_score=10,
-        details="; ".join(parts) or "Limited fundamentals",
+        reasoning="; ".join(parts) or "Limited fundamentals",
     )
 
 
-def _score_valuation(
-    latest_metrics: dict[str, Any], line_items: dict[str, list[float | None]]
-) -> tuple[ScoreDetail, float | None]:
-    pe = latest_metrics.get("price_to_earnings_ratio")
-    eps = line_items.get("earnings_per_share", [])
-    growth = None
-    if len(eps) >= 2 and eps[0] and eps[0] > 0:
-        years = len(eps) - 1
-        if eps[-1] > 0:
-            growth = (eps[-1] / eps[0]) ** (1 / years) - 1
-    peg = compute_peg_ratio(pe, growth)
+def _score_lynch_valuation(
+    state: PeterLynchState,
+) -> tuple[PeterLynchValuation, float | None]:
+    pe = state.get("pe_ratio_latest")
+    eps_cagr = _cagr(state.get("eps_series") or [])
+    peg = compute_peg_ratio(pe, eps_cagr)
     score = 0
     parts: list[str] = []
     if pe is not None:
@@ -150,56 +256,82 @@ def _score_valuation(
         elif peg < 3:
             score += 1
     normalised = (score / 5) * 10
-    return ScoreDetail(
-        score=normalised, max_score=10, details="; ".join(parts) or "Cannot compute PEG"
-    ), peg
+    return (
+        PeterLynchValuation(
+            pe_ratio=pe,
+            peg_ratio=peg,
+            score=normalised,
+            max_score=10,
+            reasoning="; ".join(parts) or "Cannot compute PEG",
+        ),
+        peg,
+    )
 
 
-def _score_sentiment(articles: list[dict[str, Any]]) -> ScoreDetail:
+def _score_lynch_sentiment(state: PeterLynchState) -> PeterLynchSentiment:
+    articles = state.get("company_news") or []
     agg = aggregate_news_sentiment(articles)
-    bullish = agg["bullish_articles"]
-    bearish = agg["bearish_articles"]
-    total = agg["total_articles"]
+    bullish = int(agg.get("bullish_articles", 0))
+    bearish = int(agg.get("bearish_articles", 0))
+    total = int(agg.get("total_articles", 0))
     if total == 0:
-        return ScoreDetail(
-            score=5, max_score=10, details="No news data — neutral default"
+        return PeterLynchSentiment(
+            bullish_articles=0,
+            bearish_articles=0,
+            total_articles=0,
+            score=5,
+            max_score=10,
+            reasoning="No news data — neutral default",
         )
     if bearish / max(total, 1) > 0.30:
-        return ScoreDetail(
-            score=3, max_score=10, details=f"Bearish-leaning news ({bearish}/{total})"
+        return PeterLynchSentiment(
+            bullish_articles=bullish,
+            bearish_articles=bearish,
+            total_articles=total,
+            score=3,
+            max_score=10,
+            reasoning=f"Bearish-leaning news ({bearish}/{total})",
         )
     if bullish > bearish:
-        return ScoreDetail(
-            score=8, max_score=10, details=f"Bullish news ({bullish}/{total})"
+        return PeterLynchSentiment(
+            bullish_articles=bullish,
+            bearish_articles=bearish,
+            total_articles=total,
+            score=8,
+            max_score=10,
+            reasoning=f"Bullish news ({bullish}/{total})",
         )
-    return ScoreDetail(
-        score=6, max_score=10, details=f"Mixed news ({bullish}/{bearish}/{total})"
-    )
-
-
-def _score_insider(insider_trades: list[dict[str, Any]]) -> ScoreDetail:
-    inner = score_insider_buy_ratio(insider_trades)
-    # Convert 0–8 scale to 0–10
-    return ScoreDetail(
-        score=(inner.score / 8) * 10,
+    return PeterLynchSentiment(
+        bullish_articles=bullish,
+        bearish_articles=bearish,
+        total_articles=total,
+        score=6,
         max_score=10,
-        details=inner.details,
+        reasoning=f"Mixed news ({bullish}/{bearish}/{total})",
     )
 
 
-def _compute_lynch_facts(data_bundle: dict[str, Any]) -> PeterLynchEvidence:
-    line_items = data_bundle.get("line_items", {})
-    metrics = data_bundle.get("financial_metrics", [])
-    latest_metrics = metrics[0] if metrics else {}
-    insider_trades = data_bundle.get("insider_trades", [])
-    news = data_bundle.get("company_news", [])
-    market_cap = data_bundle.get("market_cap")
+def _score_lynch_insider(state: PeterLynchState) -> PeterLynchInsiderActivity:
+    insider_trades = state.get("insider_trades") or []
+    inner = score_insider_buy_ratio(insider_trades)
+    raw = int(inner.score)
+    return PeterLynchInsiderActivity(
+        raw_insider_score=raw,
+        score=(raw / 8) * 10,
+        max_score=10,
+        reasoning=inner.details,
+    )
 
-    growth = _score_growth(line_items)
-    fundamentals = _score_fundamentals(latest_metrics, line_items)
-    valuation, peg = _score_valuation(latest_metrics, line_items)
-    sentiment = _score_sentiment(news)
-    insider = _score_insider(insider_trades)
+
+# ── Graph nodes ───────────────────────────────────────────────────────────────
+
+
+def compute_evidence_node(state: PeterLynchState) -> dict[str, Any]:
+    growth = _score_lynch_growth(state)
+    fundamentals = _score_lynch_fundamentals(state)
+    valuation, peg = _score_lynch_valuation(state)
+    sentiment = _score_lynch_sentiment(state)
+    insider = _score_lynch_insider(state)
     weighted = (
         0.30 * growth.score
         + 0.25 * valuation.score
@@ -221,7 +353,7 @@ def _compute_lynch_facts(data_bundle: dict[str, Any]) -> PeterLynchEvidence:
         + sentiment.max_score
         + insider.max_score
     )
-    return PeterLynchEvidence(
+    evidence = PeterLynchEvidence(
         growth=growth,
         fundamentals=fundamentals,
         valuation=valuation,
@@ -229,54 +361,36 @@ def _compute_lynch_facts(data_bundle: dict[str, Any]) -> PeterLynchEvidence:
         insider_activity=insider,
         peg_ratio=peg,
         weighted_score=weighted,
-        market_cap=market_cap,
+        market_cap=state.get("market_cap"),
         total_score=total,
         max_score=max_total,
     )
+    return {"evidence": evidence}
 
 
-async def peter_lynch_node(
-    state: PersonaInputState, config: RunnableConfig
-) -> PersonaOutputState:
-    """Render the Peter Lynch verdict from state["data_bundle"]."""
+async def render_verdict_node(
+    state: PeterLynchState, config: RunnableConfig
+) -> dict[str, Any]:
     ticker = state.get("ticker", "")
+    as_of_date = state.get("as_of_date", "")
     query = state.get("query")
-    data_bundle = state.get("data_bundle") or {}
-
-    if not data_bundle or "error" in data_bundle:
-        fallback = PeterLynchSignal(
-            agent_id="peter_lynch",
-            signal="hold",
-            confidence=0.0,
-            reasoning="Insufficient data",
-            evidence=PeterLynchEvidence(
-                growth=ScoreDetail(score=0, max_score=10, details="no data"),
-                fundamentals=ScoreDetail(score=0, max_score=10, details="no data"),
-                valuation=ScoreDetail(score=0, max_score=10, details="no data"),
-                sentiment=ScoreDetail(score=0, max_score=10, details="no data"),
-                insider_activity=ScoreDetail(score=0, max_score=10, details="no data"),
-                peg_ratio=None,
-                weighted_score=0,
-                market_cap=None,
-                total_score=0,
-                max_score=50,
-            ),
+    evidence = state.get("evidence")
+    if evidence is None:
+        raise RuntimeError(
+            "render_verdict_node called without evidence — "
+            "compute_evidence_node must run first in v4 subgraphs"
         )
-        return {"persona_signals": [fallback.model_dump()]}
 
-    evidence = _compute_lynch_facts(data_bundle)
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=PeterLynchSignal
     )
     prompt = render_template(
         "personas/peter_lynch.jinja",
         ticker=ticker,
-        as_of_date=data_bundle.get("as_of_date", ""),
-        facts=evidence.model_dump(mode="json"),
+        as_of_date=as_of_date,
+        evidence=evidence,
+        market_cap=state.get("market_cap"),
         query=query,
-        persona_display_name="Peter Lynch",
-        persona_slug="peter_lynch",
-        signal_schema_name="PeterLynchSignal",
     )
     result = cast(
         PeterLynchSignal,
@@ -287,15 +401,58 @@ async def peter_lynch_node(
     return {"persona_signals": [result.model_dump()]}
 
 
-PERSONA_SPEC = register_persona(
-    PersonaSpec(
-        slug="peter_lynch",
-        display_name="Peter Lynch",
-        investing_style=(
-            "GARP — growth at a reasonable price; PEG ratio focus; invest in "
-            "what you know; ten-bagger hunt"
-        ),
-        node=peter_lynch_node,
-        signal_schema=PeterLynchSignal,
+# ── Data-collection sub-agent + subgraph builder ──────────────────────────────
+
+
+_MCP_TOOLS = [
+    "equity_fundamental_metrics",
+    "equity_fundamental_income",
+    "equity_fundamental_balance",
+    "equity_fundamental_cash",
+    "equity_estimates_forward_eps",
+    "equity_ownership_insider_trading",
+    "news_company",
+]
+
+
+async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateGraph:
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("collector")
+    mcp_tools = await get_tools(config, _MCP_TOOLS)
+    builder = (
+        MuffinAgentBuilder(primary, name="peter_lynch_data_collection")
+        .with_fallback_models(*fallbacks)
+        .with_state_schema(PeterLynchState)
+        .with_runtime_system_prompt_template(
+            "personas/peter_lynch_data_collection.jinja"
+        )
+        .with_response_format(PeterLynchRawData)
+        .with_model_call_limit(run_limit=8, exit_behavior="end")
     )
-)
+    for tool in mcp_tools:
+        builder = builder.with_tool(tool, run_limit=2)
+    return builder.build_react_agent()
+
+
+async def build_peter_lynch_agent(config: RunnableConfig) -> CompiledStateGraph:
+    data_agent = await _build_data_collection_agent(config)
+    graph = StateGraph(
+        PeterLynchState,
+        input_schema=PeterLynchInput,
+        output_schema=PeterLynchOutput,
+    )
+    graph.add_node(
+        "collect_data",
+        data_agent,
+        input_schema=data_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node("compute_evidence", compute_evidence_node)
+    graph.add_node("render_verdict", render_verdict_node, retry_policy=_LLM_RETRY)
+    graph.add_edge(START, "collect_data")
+    graph.add_edge("collect_data", "compute_evidence")
+    graph.add_edge("compute_evidence", "render_verdict")
+    graph.add_edge("render_verdict", END)
+    return graph.compile()
+
+

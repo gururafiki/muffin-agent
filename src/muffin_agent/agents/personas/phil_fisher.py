@@ -1,70 +1,205 @@
-"""Phil Fisher persona — qualitative growth + R&D + management.
+"""Phil Fisher persona — compiled subgraph (collect → compute → verdict).
 
-Weighted: 0.30 growth_quality + 0.25 mgmt + 0.20 margins + 0.15 valuation +
-0.05 insider + 0.05 sentiment.  Mirrors ai-hedge-fund's ``phil_fisher.py``.
+Qualitative growth + R&D + management. See ``warren_buffett.py`` for canonical
+v4 ref. Reference: ``ai-hedge-fund/src/agents/phil_fisher.py``.
 """
 
 from __future__ import annotations
 
 import logging
 import statistics
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
+from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
 from ...tools.scoring_helpers import score_insider_buy_ratio
 from ...tools.sentiment import aggregate_news_sentiment
-from ._base import (
-    PersonaInputState,
-    PersonaOutputState,
-    PersonaSpec,
-    register_persona,
-)
-from .schemas import AnalystSignal, ScoreDetail
+from ...utils.agent_builder import MuffinAgentBuilder
+from ..data_collection.utils import get_tools
+from .schemas import AnalystSignal
 
 logger = logging.getLogger(__name__)
+_LLM_RETRY = RetryPolicy(max_attempts=2)
+
+
+# ── Typed sub-evidence ────────────────────────────────────────────────────────
+
+
+class PhilFisherGrowthQuality(BaseModel):
+    revenue_cagr: float | None
+    eps_cagr: float | None
+    rd_intensity: float | None
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PhilFisherMarginsStability(BaseModel):
+    latest_operating_margin: float | None
+    latest_gross_margin: float | None
+    operating_margin_cv: float | None
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PhilFisherManagementEfficiency(BaseModel):
+    return_on_equity: float | None
+    debt_to_equity: float | None
+    fcf_positive_ratio: float | None
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PhilFisherValuation(BaseModel):
+    pe_ratio: float | None
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PhilFisherSentiment(BaseModel):
+    bullish_articles: int
+    bearish_articles: int
+    total_articles: int
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class PhilFisherInsiderActivity(BaseModel):
+    raw_insider_score: int
+    score: float
+    max_score: float
+    reasoning: str
 
 
 class PhilFisherEvidence(BaseModel):
-    """Persona-specific evidence — sub-scores, computed metrics."""
-
-    growth_quality: ScoreDetail
-    margins_stability: ScoreDetail
-    management_efficiency: ScoreDetail
-    valuation: ScoreDetail
-    sentiment: ScoreDetail
-    insider_activity: ScoreDetail
+    growth_quality: PhilFisherGrowthQuality
+    margins_stability: PhilFisherMarginsStability
+    management_efficiency: PhilFisherManagementEfficiency
+    valuation: PhilFisherValuation
+    sentiment: PhilFisherSentiment
+    insider_activity: PhilFisherInsiderActivity
     weighted_score: float
-    market_cap: float | None
+    market_cap: float | None = None
     total_score: float
     max_score: float
 
 
 class PhilFisherSignal(AnalystSignal):
-    """Persona structured signal with narrowed evidence type."""
-
     agent_id: Literal["phil_fisher"] = Field(default="phil_fisher")
     evidence: PhilFisherEvidence
 
 
-def _cagr(series: list[float]) -> float | None:
-    if len(series) < 2 or series[0] <= 0:
+# ── RawData ───────────────────────────────────────────────────────────────────
+
+
+class PhilFisherRawData(BaseModel):
+    """Fisher MCP extraction. Series oldest -> newest."""
+
+    revenue_series: list[float | None] = Field(default_factory=list)
+    eps_series: list[float | None] = Field(default_factory=list)
+    research_and_development_series: list[float | None] = Field(default_factory=list)
+    operating_margin_series: list[float | None] = Field(default_factory=list)
+    gross_margin_series: list[float | None] = Field(default_factory=list)
+    free_cash_flow_series: list[float | None] = Field(default_factory=list)
+    roe_latest: float | None = None
+    debt_to_equity_latest: float | None = None
+    pe_ratio_latest: float | None = None
+    insider_trades: list[dict[str, Any]] = Field(default_factory=list)
+    company_news: list[dict[str, Any]] = Field(default_factory=list)
+    market_cap: float | None = None
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+
+class PhilFisherInput(TypedDict, total=False):
+    ticker: str
+    as_of_date: str
+    query: str | None
+
+
+class PhilFisherOutput(TypedDict, total=False):
+    persona_signals: list[dict[str, Any]]
+
+
+class PhilFisherState(AgentState):
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
+    revenue_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    eps_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    research_and_development_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    operating_margin_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    gross_margin_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    free_cash_flow_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    roe_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    debt_to_equity_latest: Annotated[
+        float | None, OmitFromSchema(input=True, output=True)
+    ]
+    pe_ratio_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    insider_trades: Annotated[
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+    ]
+    company_news: Annotated[
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+    ]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    evidence: Annotated[
+        PhilFisherEvidence | None, OmitFromSchema(input=True, output=True)
+    ]
+    persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+
+
+# ── Composite scorers ─────────────────────────────────────────────────────────
+
+
+def _cagr(series: list[float | None]) -> float | None:
+    vals = [v for v in series if v is not None]
+    if len(vals) < 2 or vals[0] is None or vals[0] <= 0:
         return None
-    return (series[-1] / series[0]) ** (1 / (len(series) - 1)) - 1
+    if vals[-1] <= 0:
+        return None
+    return (vals[-1] / vals[0]) ** (1 / (len(vals) - 1)) - 1
 
 
-def _score_growth_quality(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    revenues = [v for v in line_items.get("revenue", []) if v is not None]
-    eps = [v for v in line_items.get("earnings_per_share", []) if v is not None]
-    rd = [v for v in line_items.get("research_and_development", []) if v is not None]
+def _score_fisher_growth(state: PhilFisherState) -> PhilFisherGrowthQuality:
+    revenues = [v for v in (state.get("revenue_series") or []) if v is not None]
+    eps = [v for v in (state.get("eps_series") or []) if v is not None]
+    rd = [
+        v for v in (state.get("research_and_development_series") or []) if v is not None
+    ]
     score = 0
     parts: list[str] = []
     rev_cagr = _cagr(revenues)
     eps_cagr = _cagr(eps)
+    rd_intensity: float | None = None
+
     if rev_cagr is not None:
         if rev_cagr > 0.20:
             score += 3
@@ -82,25 +217,36 @@ def _score_growth_quality(line_items: dict[str, list[float | None]]) -> ScoreDet
         elif eps_cagr > 0.03:
             score += 1
     if rd and revenues and revenues[-1]:
-        ratio = rd[-1] / revenues[-1]
-        if 0.03 <= ratio <= 0.15:
+        rd_intensity = rd[-1] / revenues[-1]
+        if 0.03 <= rd_intensity <= 0.15:
             score += 3
-            parts.append(f"R&D/rev {ratio:.1%} (Fisher zone)")
-        elif ratio > 0.15:
+            parts.append(f"R&D/rev {rd_intensity:.1%} (Fisher zone)")
+        elif rd_intensity > 0.15:
             score += 2
-        elif ratio > 0:
+        elif rd_intensity > 0:
             score += 1
     normalised = (score / 9) * 10
-    return ScoreDetail(
-        score=normalised, max_score=10, details="; ".join(parts) or "Limited data"
+    return PhilFisherGrowthQuality(
+        revenue_cagr=rev_cagr,
+        eps_cagr=eps_cagr,
+        rd_intensity=rd_intensity,
+        score=normalised,
+        max_score=10,
+        reasoning="; ".join(parts) or "Limited data",
     )
 
 
-def _score_margins_stability(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    op_margins = [v for v in line_items.get("operating_margin", []) if v is not None]
-    gross_margins = [v for v in line_items.get("gross_margin", []) if v is not None]
+def _score_fisher_margins(state: PhilFisherState) -> PhilFisherMarginsStability:
+    op_margins = [
+        v for v in (state.get("operating_margin_series") or []) if v is not None
+    ]
+    gross_margins = [
+        v for v in (state.get("gross_margin_series") or []) if v is not None
+    ]
     score = 0
     parts: list[str] = []
+    om_cv: float | None = None
+
     if op_margins:
         if op_margins[-1] is not None and op_margins[-1] > 0:
             score += 1
@@ -116,26 +262,33 @@ def _score_margins_stability(line_items: dict[str, list[float | None]]) -> Score
     if op_margins and len(op_margins) >= 3:
         mean = sum(op_margins) / len(op_margins)
         if mean > 0:
-            cv = statistics.pstdev(op_margins) / mean
-            if cv < 0.02:
+            om_cv = statistics.pstdev(op_margins) / mean
+            if om_cv < 0.02:
                 score += 2
-                parts.append(f"Highly stable op margin (CV {cv:.1%})")
-            elif cv < 0.05:
+                parts.append(f"Highly stable op margin (CV {om_cv:.1%})")
+            elif om_cv < 0.05:
                 score += 1
     normalised = (score / 6) * 10
-    return ScoreDetail(
-        score=normalised, max_score=10, details="; ".join(parts) or "Limited data"
+    return PhilFisherMarginsStability(
+        latest_operating_margin=op_margins[-1] if op_margins else None,
+        latest_gross_margin=gross_margins[-1] if gross_margins else None,
+        operating_margin_cv=om_cv,
+        score=normalised,
+        max_score=10,
+        reasoning="; ".join(parts) or "Limited data",
     )
 
 
-def _score_management_efficiency(
-    latest_metrics: dict[str, Any], line_items: dict[str, list[float | None]]
-) -> ScoreDetail:
-    roe = latest_metrics.get("return_on_equity")
-    de = latest_metrics.get("debt_to_equity")
-    fcf = [v for v in line_items.get("free_cash_flow", []) if v is not None]
+def _score_fisher_management(
+    state: PhilFisherState,
+) -> PhilFisherManagementEfficiency:
+    roe = state.get("roe_latest")
+    de = state.get("debt_to_equity_latest")
+    fcf = [v for v in (state.get("free_cash_flow_series") or []) if v is not None]
     score = 0
     parts: list[str] = []
+    fcf_pos_ratio: float | None = None
+
     if roe is not None:
         if roe > 0.20:
             score += 3
@@ -152,17 +305,23 @@ def _score_management_efficiency(
             score += 1
     if fcf:
         positives = sum(1 for v in fcf if v > 0)
-        if positives / len(fcf) >= 0.8:
+        fcf_pos_ratio = positives / len(fcf)
+        if fcf_pos_ratio >= 0.8:
             score += 1
             parts.append(f"FCF positive {positives}/{len(fcf)}")
     normalised = (score / 6) * 10
-    return ScoreDetail(
-        score=normalised, max_score=10, details="; ".join(parts) or "Limited data"
+    return PhilFisherManagementEfficiency(
+        return_on_equity=roe,
+        debt_to_equity=de,
+        fcf_positive_ratio=fcf_pos_ratio,
+        score=normalised,
+        max_score=10,
+        reasoning="; ".join(parts) or "Limited data",
     )
 
 
-def _score_valuation(latest_metrics: dict[str, Any]) -> ScoreDetail:
-    pe = latest_metrics.get("price_to_earnings_ratio")
+def _score_fisher_valuation(state: PhilFisherState) -> PhilFisherValuation:
+    pe = state.get("pe_ratio_latest")
     score = 0
     parts: list[str] = []
     if pe is not None:
@@ -172,50 +331,78 @@ def _score_valuation(latest_metrics: dict[str, Any]) -> ScoreDetail:
         elif pe < 30:
             score += 1
     normalised = (score / 4) * 10
-    return ScoreDetail(
-        score=normalised, max_score=10, details="; ".join(parts) or "Cannot value"
+    return PhilFisherValuation(
+        pe_ratio=pe,
+        score=normalised,
+        max_score=10,
+        reasoning="; ".join(parts) or "Cannot value",
     )
 
 
-def _score_sentiment(articles: list[dict[str, Any]]) -> ScoreDetail:
+def _score_fisher_sentiment(state: PhilFisherState) -> PhilFisherSentiment:
+    articles = state.get("company_news") or []
     agg = aggregate_news_sentiment(articles)
-    bullish = agg["bullish_articles"]
-    bearish = agg["bearish_articles"]
-    total = agg["total_articles"]
+    bullish = int(agg.get("bullish_articles", 0))
+    bearish = int(agg.get("bearish_articles", 0))
+    total = int(agg.get("total_articles", 0))
     if total == 0:
-        return ScoreDetail(score=5, max_score=10, details="No news — neutral")
+        return PhilFisherSentiment(
+            bullish_articles=0,
+            bearish_articles=0,
+            total_articles=0,
+            score=5,
+            max_score=10,
+            reasoning="No news — neutral",
+        )
     if bearish / max(total, 1) > 0.30:
-        return ScoreDetail(
-            score=3, max_score=10, details=f"Bearish news ({bearish}/{total})"
+        return PhilFisherSentiment(
+            bullish_articles=bullish,
+            bearish_articles=bearish,
+            total_articles=total,
+            score=3,
+            max_score=10,
+            reasoning=f"Bearish news ({bearish}/{total})",
         )
     if bullish > bearish:
-        return ScoreDetail(
-            score=8, max_score=10, details=f"Bullish news ({bullish}/{total})"
+        return PhilFisherSentiment(
+            bullish_articles=bullish,
+            bearish_articles=bearish,
+            total_articles=total,
+            score=8,
+            max_score=10,
+            reasoning=f"Bullish news ({bullish}/{total})",
         )
-    return ScoreDetail(score=6, max_score=10, details="Mixed news")
-
-
-def _score_insider(insider_trades: list[dict[str, Any]]) -> ScoreDetail:
-    inner = score_insider_buy_ratio(insider_trades)
-    return ScoreDetail(
-        score=(inner.score / 8) * 10, max_score=10, details=inner.details
+    return PhilFisherSentiment(
+        bullish_articles=bullish,
+        bearish_articles=bearish,
+        total_articles=total,
+        score=6,
+        max_score=10,
+        reasoning="Mixed news",
     )
 
 
-def _compute_fisher_facts(data_bundle: dict[str, Any]) -> PhilFisherEvidence:
-    line_items = data_bundle.get("line_items", {})
-    metrics = data_bundle.get("financial_metrics", [])
-    latest_metrics = metrics[0] if metrics else {}
-    insider_trades = data_bundle.get("insider_trades", [])
-    news = data_bundle.get("company_news", [])
-    market_cap = data_bundle.get("market_cap")
+def _score_fisher_insider(state: PhilFisherState) -> PhilFisherInsiderActivity:
+    inner = score_insider_buy_ratio(state.get("insider_trades") or [])
+    raw = int(inner.score)
+    return PhilFisherInsiderActivity(
+        raw_insider_score=raw,
+        score=(raw / 8) * 10,
+        max_score=10,
+        reasoning=inner.details,
+    )
 
-    growth = _score_growth_quality(line_items)
-    margins = _score_margins_stability(line_items)
-    mgmt = _score_management_efficiency(latest_metrics, line_items)
-    valuation = _score_valuation(latest_metrics)
-    sentiment = _score_sentiment(news)
-    insider = _score_insider(insider_trades)
+
+# ── Graph nodes ───────────────────────────────────────────────────────────────
+
+
+def compute_evidence_node(state: PhilFisherState) -> dict[str, Any]:
+    growth = _score_fisher_growth(state)
+    margins = _score_fisher_margins(state)
+    mgmt = _score_fisher_management(state)
+    valuation = _score_fisher_valuation(state)
+    sentiment = _score_fisher_sentiment(state)
+    insider = _score_fisher_insider(state)
     weighted = (
         0.30 * growth.score
         + 0.25 * mgmt.score
@@ -232,8 +419,7 @@ def _compute_fisher_facts(data_bundle: dict[str, Any]) -> PhilFisherEvidence:
         + sentiment.score
         + insider.score
     )
-    max_total = 60
-    return PhilFisherEvidence(
+    evidence = PhilFisherEvidence(
         growth_quality=growth,
         margins_stability=margins,
         management_efficiency=mgmt,
@@ -241,56 +427,36 @@ def _compute_fisher_facts(data_bundle: dict[str, Any]) -> PhilFisherEvidence:
         sentiment=sentiment,
         insider_activity=insider,
         weighted_score=weighted,
-        market_cap=market_cap,
+        market_cap=state.get("market_cap"),
         total_score=total,
-        max_score=max_total,
+        max_score=60,
     )
+    return {"evidence": evidence}
 
 
-async def phil_fisher_node(
-    state: PersonaInputState, config: RunnableConfig
-) -> PersonaOutputState:
-    """Render the Phil Fisher verdict from state["data_bundle"]."""
+async def render_verdict_node(
+    state: PhilFisherState, config: RunnableConfig
+) -> dict[str, Any]:
     ticker = state.get("ticker", "")
+    as_of_date = state.get("as_of_date", "")
     query = state.get("query")
-    data_bundle = state.get("data_bundle") or {}
-
-    if not data_bundle or "error" in data_bundle:
-        fallback = PhilFisherSignal(
-            agent_id="phil_fisher",
-            signal="hold",
-            confidence=0.0,
-            reasoning="Insufficient data",
-            evidence=PhilFisherEvidence(
-                growth_quality=ScoreDetail(score=0, max_score=10, details="no data"),
-                margins_stability=ScoreDetail(score=0, max_score=10, details="no data"),
-                management_efficiency=ScoreDetail(
-                    score=0, max_score=10, details="no data"
-                ),
-                valuation=ScoreDetail(score=0, max_score=10, details="no data"),
-                sentiment=ScoreDetail(score=0, max_score=10, details="no data"),
-                insider_activity=ScoreDetail(score=0, max_score=10, details="no data"),
-                weighted_score=0,
-                market_cap=None,
-                total_score=0,
-                max_score=60,
-            ),
+    evidence = state.get("evidence")
+    if evidence is None:
+        raise RuntimeError(
+            "render_verdict_node called without evidence — "
+            "compute_evidence_node must run first in v4 subgraphs"
         )
-        return {"persona_signals": [fallback.model_dump()]}
 
-    evidence = _compute_fisher_facts(data_bundle)
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=PhilFisherSignal
     )
     prompt = render_template(
         "personas/phil_fisher.jinja",
         ticker=ticker,
-        as_of_date=data_bundle.get("as_of_date", ""),
-        facts=evidence.model_dump(mode="json"),
+        as_of_date=as_of_date,
+        evidence=evidence,
+        market_cap=state.get("market_cap"),
         query=query,
-        persona_display_name="Phil Fisher",
-        persona_slug="phil_fisher",
-        signal_schema_name="PhilFisherSignal",
     )
     result = cast(
         PhilFisherSignal,
@@ -301,15 +467,59 @@ async def phil_fisher_node(
     return {"persona_signals": [result.model_dump()]}
 
 
-PERSONA_SPEC = register_persona(
-    PersonaSpec(
-        slug="phil_fisher",
-        display_name="Phil Fisher",
-        investing_style=(
-            "Qualitative growth + scuttlebutt; R&D 3-15% of rev; long-term "
-            "compounders; willing to pay up for quality"
-        ),
-        node=phil_fisher_node,
-        signal_schema=PhilFisherSignal,
+# ── Data-collection sub-agent + subgraph builder ──────────────────────────────
+
+
+_MCP_TOOLS = [
+    "equity_fundamental_metrics",
+    "equity_fundamental_income",
+    "equity_fundamental_balance",
+    "equity_fundamental_cash",
+    "equity_fundamental_ratios",
+    "equity_fundamental_revenue_per_segment",
+    "equity_ownership_insider_trading",
+    "news_company",
+]
+
+
+async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateGraph:
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("collector")
+    mcp_tools = await get_tools(config, _MCP_TOOLS)
+    builder = (
+        MuffinAgentBuilder(primary, name="phil_fisher_data_collection")
+        .with_fallback_models(*fallbacks)
+        .with_state_schema(PhilFisherState)
+        .with_runtime_system_prompt_template(
+            "personas/phil_fisher_data_collection.jinja"
+        )
+        .with_response_format(PhilFisherRawData)
+        .with_model_call_limit(run_limit=8, exit_behavior="end")
     )
-)
+    for tool in mcp_tools:
+        builder = builder.with_tool(tool, run_limit=2)
+    return builder.build_react_agent()
+
+
+async def build_phil_fisher_agent(config: RunnableConfig) -> CompiledStateGraph:
+    data_agent = await _build_data_collection_agent(config)
+    graph = StateGraph(
+        PhilFisherState,
+        input_schema=PhilFisherInput,
+        output_schema=PhilFisherOutput,
+    )
+    graph.add_node(
+        "collect_data",
+        data_agent,
+        input_schema=data_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node("compute_evidence", compute_evidence_node)
+    graph.add_node("render_verdict", render_verdict_node, retry_policy=_LLM_RETRY)
+    graph.add_edge(START, "collect_data")
+    graph.add_edge("collect_data", "compute_evidence")
+    graph.add_edge("compute_evidence", "render_verdict")
+    graph.add_edge("render_verdict", END)
+    return graph.compile()
+
+

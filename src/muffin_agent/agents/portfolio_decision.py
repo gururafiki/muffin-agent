@@ -32,10 +32,11 @@ Topology::
     END
 
 **Independent of trading_decision** — uses the persona council, not
-Bull/Bear/Judge/Trader.  Reuses ``persona_data_collection`` once per
-ticker (inside the council subgraph); the orchestrator does not need
-prices_history separately for position sizing because the council's
-data bundle already carries it.
+Bull/Bear/Judge/Trader.  In v4 each persona owns its own data fetch
+inside its subgraph, so the orchestrator pulls ``prices_history``
+separately via ``cached_invoke(equity_price_historical, …)`` — this
+shares cache hits with the technicals specialist and any persona that
+also fetched OHLCV during its data_collection step.
 
 The portfolio-level steps (sizing / reconciliation / execution) run
 once across all tickers after the per-ticker subgraphs complete.
@@ -43,26 +44,86 @@ once across all tickers after the per-ticker subgraphs complete.
 
 from __future__ import annotations
 
+import json
 import logging
 import operator
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.config import get_store
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Send
 from typing_extensions import TypedDict
 
+from ..middlewares.tool_result_cache import cached_invoke
 from ..portfolio.executor import apply_orders
 from ..portfolio.state import Portfolio, mark_to_market
+from .data_collection.utils import get_tools
 from .personas.council_graph import build_council_graph
 from .portfolio.portfolio_reconciler import portfolio_reconciler_node
 from .portfolio.position_sizing import position_sizing_node
 from .portfolio.ticker_decision import ticker_decision_node
 
 logger = logging.getLogger(__name__)
+
+_PRICE_LOOKBACK_DAYS = 365
+
+
+def _parse_ohlcv_response(raw: Any) -> list[dict[str, Any]]:
+    """Extract OHLCV bar dicts from an OpenBB ``equity_price_historical`` response."""
+    payload: Any = raw
+    if isinstance(raw, str):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+    if isinstance(payload, dict):
+        results = payload.get("results")
+        if isinstance(results, list):
+            return [r for r in results if isinstance(r, dict)]
+    if isinstance(payload, list):
+        return [r for r in payload if isinstance(r, dict)]
+    return []
+
+
+async def _fetch_prices_history(
+    ticker: str, config: RunnableConfig
+) -> list[dict[str, Any]]:
+    """Pull 1y daily OHLCV via ``cached_invoke`` for position sizing.
+
+    Uses the same args shape as ``specialists/technical_analysis.py``'s
+    ``fetch_ohlcv_node`` so cache hits dedupe across the specialist + the
+    portfolio-sizing fetch + any persona that fetched OHLCV during its
+    own ``collect_data`` step.
+    """
+    if not ticker:
+        return []
+    try:
+        store = get_store()
+        tools = await get_tools(config, ["equity_price_historical"])
+        if not tools:
+            return []
+        end_dt = datetime.now(UTC).date()
+        start_dt = end_dt - timedelta(days=_PRICE_LOOKBACK_DAYS)
+        raw = await cached_invoke(
+            tools[0],
+            {
+                "provider": "yfinance",
+                "symbol": ticker,
+                "start_date": start_dt.isoformat(),
+                "end_date": end_dt.isoformat(),
+                "interval": "1d",
+            },
+            store,
+        )
+    except Exception:
+        logger.exception("portfolio_decision fetch_prices failed for %s", ticker)
+        return []
+    return _parse_ohlcv_response(raw)
 
 
 def _merge_dicts(a: dict[str, Any] | None, b: dict[str, Any] | None) -> dict[str, Any]:
@@ -108,7 +169,9 @@ class PortfolioDecisionState(TypedDict, total=False):
     """``PortfolioValue.model_dump()`` after orders execute."""
 
 
-def _build_per_ticker_subgraph(*, store: BaseStore | None = None) -> CompiledStateGraph:
+async def _build_per_ticker_subgraph(
+    *, config: RunnableConfig | None = None, store: BaseStore | None = None
+) -> CompiledStateGraph:
     """Inner subgraph: council → ticker_decision per single ticker.
 
     Compiled once at graph-build time; reused across all tickers via
@@ -119,29 +182,35 @@ def _build_per_ticker_subgraph(*, store: BaseStore | None = None) -> CompiledSta
     class _PerTickerState(TypedDict, total=False):
         ticker: str
         query: str
-        data_bundle: dict[str, Any]
         persona_signals: Annotated[list[dict[str, Any]], operator.add]
         council_synthesis: dict[str, Any]
         ticker_decision: dict[str, Any]
         prices_history_for_ticker: list[dict[str, Any]]
 
-    council = build_council_graph(store=store)
+    council = await build_council_graph(config or {}, store=store)
 
     async def _run_council(
         state: _PerTickerState, config: RunnableConfig
     ) -> dict[str, Any]:
-        """Invoke the council graph and extract its outputs into our state."""
+        """Invoke the council graph + fetch OHLCV for position sizing.
+
+        In v4 the council no longer produces a shared ``PersonaDataBundle``
+        (each persona owns its own data fetch).  We still need 1y daily
+        OHLCV downstream so ``position_sizing_node`` can compute per-ticker
+        annualised volatility + the cross-ticker correlation matrix.
+        ``cached_invoke`` shares hits with the technicals specialist + any
+        persona that also fetched OHLCV during its data_collection step.
+        """
+        ticker = state.get("ticker", "")
         result = await council.ainvoke(
-            {"ticker": state.get("ticker", ""), "query": state.get("query")},
+            {"ticker": ticker, "query": state.get("query")},
             config,
         )
-        # Pull data bundle's price history out so position_sizing can use it
-        bundle = result.get("data_bundle") or {}
+        prices_history = await _fetch_prices_history(ticker, config)
         return {
             "persona_signals": result.get("persona_signals", []),
             "council_synthesis": result.get("council_synthesis", {}),
-            "data_bundle": bundle,
-            "prices_history_for_ticker": bundle.get("prices_1y") or [],
+            "prices_history_for_ticker": prices_history,
         }
 
     g: StateGraph = StateGraph(_PerTickerState)
@@ -153,20 +222,27 @@ def _build_per_ticker_subgraph(*, store: BaseStore | None = None) -> CompiledSta
     return g.compile()
 
 
-def build_portfolio_decision_graph(
+async def build_portfolio_decision_graph(
     *,
+    config: RunnableConfig | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
 ) -> CompiledStateGraph:
     """Build the multi-ticker paper-trading portfolio decision graph."""
-    per_ticker = _build_per_ticker_subgraph(store=store)
+    per_ticker = await _build_per_ticker_subgraph(config=config, store=store)
+
+    class _AnalyzeTickerInput(TypedDict, total=False):
+        """Send fan-out payload — one ticker + its inherited query."""
+
+        ticker: str
+        query: str
 
     async def _analyze_ticker(
-        state: dict[str, Any], config: RunnableConfig
+        state: _AnalyzeTickerInput, config: RunnableConfig
     ) -> dict[str, Any]:
         """Run the per-ticker subgraph and lift its outputs into parent state."""
         ticker = state.get("ticker", "")
-        result = await per_ticker.ainvoke(state, config)
+        result = await per_ticker.ainvoke(dict(state), config)
         return {
             "ticker_decisions": {ticker: result.get("ticker_decision") or {}},
             "prices_history": {ticker: result.get("prices_history_for_ticker") or []},

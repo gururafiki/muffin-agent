@@ -28,7 +28,7 @@ START
   ▼
 ┌────────────────────────────────────────────────────────────┐
 │  Per ticker:                                                │
-│    council_graph (data_collection → 13 personas → judge)   │
+│    council_graph (13 persona subgraphs in parallel → judge)│
 │    → ticker_decision_node (LLM consolidator)               │
 │  Writes {ticker: ticker_decision} via merge reducer        │
 └────────────────────────────────────────────────────────────┘

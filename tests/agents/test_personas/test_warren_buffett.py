@@ -10,8 +10,6 @@ Covers four layers:
 4. **`build_warren_buffett_agent`** — compiled subgraph e2e (mocked LLMs
    + MCP tools) with ``input_schema`` / ``output_schema`` assertions.
 
-Plus legacy-bridge tests (``warren_buffett_node`` + ``_compute_buffett_facts``)
-to ensure the council & CLI keep working through phases 2-4 of the refactor.
 """
 
 from __future__ import annotations
@@ -21,7 +19,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from muffin_agent.agents.personas import PERSONA_REGISTRY
 from muffin_agent.agents.personas.warren_buffett import (
     BuffettMetricsRow,
     WarrenBuffettBookValueGrowth,
@@ -30,11 +27,8 @@ from muffin_agent.agents.personas.warren_buffett import (
     WarrenBuffettManagement,
     WarrenBuffettMoat,
     WarrenBuffettPricingPower,
-    WarrenBuffettRawData,
     WarrenBuffettSignal,
     WarrenBuffettState,
-    _bundle_to_raw_data,
-    _compute_buffett_facts,
     _score_buffett_book_value_growth,
     _score_buffett_consistency,
     _score_buffett_fundamentals,
@@ -43,7 +37,6 @@ from muffin_agent.agents.personas.warren_buffett import (
     _score_buffett_pricing_power,
     compute_evidence_node,
     render_verdict_node,
-    warren_buffett_node,
 )
 
 # ── Test fixtures ─────────────────────────────────────────────────────────────
@@ -425,11 +418,10 @@ class TestRenderVerdictNode:
         assert sig["agent_id"] == "warren_buffett"
         assert mock_llm.ainvoke.await_count == 1
 
-    async def test_missing_evidence_returns_hold(self):
-        result = await render_verdict_node({"ticker": "ZX", "evidence": None}, {})
-        sig = result["persona_signals"][0]
-        assert sig["signal"] == "hold"
-        assert sig["confidence"] == 0.0
+    async def test_missing_evidence_raises(self):
+        """v4 contract: compute_evidence_node must run before render_verdict."""
+        with pytest.raises(RuntimeError, match="evidence"):
+            await render_verdict_node({"ticker": "ZX", "evidence": None}, {})
 
     async def test_prompt_includes_evidence_fields(self):
         state = _strong_state()
@@ -512,98 +504,6 @@ class TestBuildWarrenBuffettAgent:
         # Internal scratch must NOT appear in output schema either
         assert "metrics_history" not in output_props
         assert "evidence" not in output_props
-
-
-# ── Layer 5: Legacy bridge (data_bundle → v4 evidence) ────────────────────────
-
-
-@pytest.mark.unit
-class TestLegacyBridge:
-    def test_bundle_to_raw_data(self):
-        raw = _bundle_to_raw_data(_strong_bundle())
-        assert isinstance(raw, WarrenBuffettRawData)
-        assert len(raw.metrics_history) == 8
-        assert raw.metrics_history[0].return_on_equity == pytest.approx(0.25)
-        assert raw.market_cap == pytest.approx(100_000_000_000.0)
-        assert raw.latest_issuance_or_purchase_of_equity_shares == pytest.approx(-120)
-        assert raw.latest_dividends_and_other_cash_distributions == pytest.approx(-85)
-
-    def test_compute_buffett_facts_uses_same_path(self):
-        """Legacy ``_compute_buffett_facts`` and v4 ``compute_evidence_node`` agree."""
-        bundle = _strong_bundle()
-        legacy_evidence = _compute_buffett_facts(bundle)
-
-        # Build the equivalent state directly and run the v4 path
-        raw = _bundle_to_raw_data(bundle)
-        v4_state = {**raw.model_dump(), "metrics_history": raw.metrics_history}
-        v4_evidence = compute_evidence_node(v4_state)["evidence"]
-
-        assert legacy_evidence.total_score == v4_evidence.total_score
-        assert legacy_evidence.max_score == v4_evidence.max_score
-        assert (
-            legacy_evidence.fundamentals.total_score
-            == v4_evidence.fundamentals.total_score
-        )
-
-    def test_compute_facts_with_realistic_bundle(self):
-        """Legacy bridge runs cleanly + produces non-zero score on quality bundle."""
-        evidence = _compute_buffett_facts(_strong_bundle())
-        assert evidence.total_score >= 0.6 * evidence.max_score
-        assert evidence.intrinsic_value is not None
-
-
-# ── Registry ──────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-class TestPersonaRegistration:
-    def test_buffett_in_registry(self):
-        assert "warren_buffett" in PERSONA_REGISTRY
-        spec = PERSONA_REGISTRY["warren_buffett"]
-        assert spec.display_name == "Warren Buffett"
-        assert spec.signal_schema is WarrenBuffettSignal
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-class TestWarrenBuffettLegacyNode:
-    async def test_data_bundle_missing_returns_hold_fallback(self):
-        result = await warren_buffett_node({"ticker": "ZAB"}, {})
-        assert "persona_signals" in result
-        sig = result["persona_signals"][0]
-        assert sig["agent_id"] == "warren_buffett"
-        assert sig["signal"] == "hold"
-        assert sig["confidence"] == 0.0
-
-    async def test_data_bundle_error_returns_hold_fallback(self):
-        result = await warren_buffett_node(
-            {"ticker": "ZAB", "data_bundle": {"error": "MCP timeout"}}, {}
-        )
-        sig = result["persona_signals"][0]
-        assert sig["signal"] == "hold"
-
-    async def test_happy_path_calls_llm_via_legacy_bridge(self):
-        bundle = _strong_bundle()
-        fake_signal = WarrenBuffettSignal(
-            agent_id="warren_buffett",
-            signal="strong_buy",
-            confidence=0.92,
-            reasoning="Wonderful business, ample MoS.",
-            evidence=_compute_buffett_facts(bundle),
-        )
-        mock_llm = AsyncMock()
-        mock_llm.ainvoke = AsyncMock(return_value=fake_signal)
-        with patch(
-            "muffin_agent.agents.personas.warren_buffett.ModelConfiguration.get_chat_model_for_role",
-            return_value=mock_llm,
-        ):
-            result = await warren_buffett_node(
-                {"ticker": "ZAB", "data_bundle": bundle}, {}
-            )
-        sig = result["persona_signals"][0]
-        assert sig["signal"] == "strong_buy"
-        assert sig["confidence"] == pytest.approx(0.92)
-        assert mock_llm.ainvoke.await_count == 1
 
 
 # ── State schema sanity ────────────────────────────────────────────────────────

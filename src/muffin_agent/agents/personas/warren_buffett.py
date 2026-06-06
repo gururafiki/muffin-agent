@@ -52,12 +52,6 @@ from ...tools.scoring_helpers import (
 )
 from ...utils.agent_builder import MuffinAgentBuilder
 from ..data_collection.utils import get_tools
-from ._base import (
-    PersonaInputState,
-    PersonaOutputState,
-    PersonaSpec,
-    register_persona,
-)
 from .schemas import AnalystSignal
 
 logger = logging.getLogger(__name__)
@@ -176,8 +170,7 @@ class WarrenBuffettEvidence(BaseModel):
     margin_of_safety_pct: float | None = Field(
         default=None,
         description=(
-            "(intrinsic_value - market_cap) / market_cap, "
-            "in percent (decimal x 100)."
+            "(intrinsic_value - market_cap) / market_cap, in percent (decimal x 100)."
         ),
     )
 
@@ -454,8 +447,7 @@ def _score_buffett_consistency(
             earnings_growth_pct=None,
             strictly_growing=False,
             reasoning=(
-                f"Insufficient earnings history "
-                f"(need 4+ periods, got {len(series)})."
+                f"Insufficient earnings history (need 4+ periods, got {len(series)})."
             ),
         )
     strictly_growing = all(series[i + 1] > series[i] for i in range(len(series) - 1))
@@ -715,8 +707,7 @@ def _score_buffett_book_value_growth(
             score=0,
             max_score=5,
             reasoning=(
-                f"Insufficient BVPS history "
-                f"({len(bvps_chronological)} valid periods)."
+                f"Insufficient BVPS history ({len(bvps_chronological)} valid periods)."
             ),
         )
 
@@ -924,7 +915,10 @@ async def render_verdict_node(
     query = state.get("query")
     evidence = state.get("evidence")
     if evidence is None:
-        return dict(_hold_fallback(ticker, "Evidence missing — defaulting to hold."))
+        raise RuntimeError(
+            "render_verdict_node called without evidence — "
+            "compute_evidence_node must run first in v4 subgraphs"
+        )
 
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=WarrenBuffettSignal
@@ -1012,205 +1006,3 @@ async def build_warren_buffett_agent(config: RunnableConfig) -> CompiledStateGra
     return graph.compile()
 
 
-# ── Legacy bridge — keeps council/CLI working until Phase 5 of the refactor ───
-
-
-def _bundle_to_raw_data(data_bundle: dict[str, Any]) -> WarrenBuffettRawData:
-    """Convert a legacy ``PersonaDataBundle`` dict into ``WarrenBuffettRawData``.
-
-    Used by the legacy ``warren_buffett_node`` bridge to feed the v4
-    compute/render path with data from the old shared data-collection step.
-    """
-    metrics = data_bundle.get("financial_metrics", [])
-    line_items = data_bundle.get("line_items", {})
-
-    metrics_history = [
-        BuffettMetricsRow(
-            return_on_equity=m.get("return_on_equity"),
-            debt_to_equity=m.get("debt_to_equity"),
-            operating_margin=m.get("operating_margin"),
-            current_ratio=m.get("current_ratio"),
-            asset_turnover=m.get("asset_turnover"),
-        )
-        for m in metrics
-    ]
-
-    issuance_series = line_items.get("issuance_or_purchase_of_equity_shares") or []
-    dividends_series = line_items.get("dividends_and_other_cash_distributions") or []
-
-    return WarrenBuffettRawData(
-        metrics_history=metrics_history,
-        net_income_series=line_items.get("net_income", []),
-        revenue_series=line_items.get("revenue", []),
-        gross_margin_series=line_items.get("gross_margin", []),
-        shareholders_equity_series=line_items.get("shareholders_equity", []),
-        outstanding_shares_series=line_items.get("outstanding_shares", []),
-        depreciation_amortization_series=line_items.get(
-            "depreciation_and_amortization", []
-        ),
-        capital_expenditure_series=line_items.get("capital_expenditure", []),
-        latest_issuance_or_purchase_of_equity_shares=(
-            issuance_series[-1] if issuance_series else None
-        ),
-        latest_dividends_and_other_cash_distributions=(
-            dividends_series[-1] if dividends_series else None
-        ),
-        market_cap=data_bundle.get("market_cap"),
-    )
-
-
-def _compute_buffett_facts(data_bundle: dict[str, Any]) -> WarrenBuffettEvidence:
-    """Legacy bridge: ``PersonaDataBundle`` → ``WarrenBuffettEvidence`` (v4 shape).
-
-    Reuses :func:`compute_evidence_node` internally so the legacy and v4
-    paths produce IDENTICAL evidence for the same data.  Kept so
-    ``test_all_personas.py::test_fact_computer_runs_on_realistic_bundle``
-    and other callers depending on this entry point keep working.
-    """
-    raw = _bundle_to_raw_data(data_bundle)
-    state_dict: dict[str, Any] = {
-        **raw.model_dump(),
-        # model_dump() converts BuffettMetricsRow → dict; restore the typed list
-        "metrics_history": raw.metrics_history,
-    }
-    return cast(
-        WarrenBuffettEvidence,
-        compute_evidence_node(cast(WarrenBuffettState, state_dict))["evidence"],
-    )
-
-
-def _empty_evidence() -> WarrenBuffettEvidence:
-    """Construct a zero-scored evidence object (for hold-fallback signals)."""
-    return WarrenBuffettEvidence(
-        fundamentals=WarrenBuffettFundamentals(
-            roe_score=0,
-            roe_value=None,
-            debt_to_equity_score=0,
-            debt_to_equity_value=None,
-            operating_margin_score=0,
-            operating_margin_value=None,
-            current_ratio_score=0,
-            current_ratio_value=None,
-            total_score=0,
-            max_score=10,
-            reasoning="No data.",
-        ),
-        consistency=WarrenBuffettConsistency(
-            score=0,
-            max_score=3,
-            periods_analysed=0,
-            earnings_growth_pct=None,
-            strictly_growing=False,
-            reasoning="No data.",
-        ),
-        moat=WarrenBuffettMoat(
-            roe_consistency_pct=None,
-            roe_high_count=0,
-            roe_periods=0,
-            avg_operating_margin=None,
-            operating_margins_improving=False,
-            asset_turnover_above_one=False,
-            performance_stability=None,
-            score=0,
-            max_score=5,
-            reasoning="No data.",
-        ),
-        pricing_power=WarrenBuffettPricingPower(
-            avg_gross_margin=None,
-            recent_avg_gross_margin=None,
-            older_avg_gross_margin=None,
-            margin_direction="n/a",
-            score=0,
-            max_score=5,
-            reasoning="No data.",
-        ),
-        book_value_growth=WarrenBuffettBookValueGrowth(
-            bvps_latest=None,
-            bvps_oldest=None,
-            bvps_cagr_pct=None,
-            growing_period_ratio=None,
-            score=0,
-            max_score=5,
-            reasoning="No data.",
-        ),
-        management_quality=WarrenBuffettManagement(
-            net_buybacks_latest=None,
-            dividends_latest=None,
-            score=0,
-            max_score=2,
-            reasoning="No data.",
-        ),
-        owner_earnings=None,
-        intrinsic_value=None,
-        market_cap=None,
-        margin_of_safety_pct=None,
-        total_score=0,
-        max_score=30,
-    )
-
-
-def _hold_fallback(ticker: str, reason: str) -> PersonaOutputState:
-    """Default ``hold`` signal when data is missing — no LLM call."""
-    signal = WarrenBuffettSignal(
-        agent_id="warren_buffett",
-        signal="hold",
-        confidence=0.0,
-        reasoning=reason,
-        evidence=_empty_evidence(),
-    )
-    return {"persona_signals": [signal.model_dump()]}
-
-
-async def warren_buffett_node(
-    state: PersonaInputState, config: RunnableConfig
-) -> PersonaOutputState:
-    """Legacy bridge — kept registered in ``PERSONA_REGISTRY`` until Phase 5.
-
-    Reads ``state["data_bundle"]`` (the legacy shared collection format),
-    converts it to RawData state fields, then runs the v4 compute_evidence
-    and render_verdict path.  After Phase 5 rewrites the council to use
-    :func:`build_warren_buffett_agent` directly, this bridge is dead code
-    and gets deleted in Phase 7.
-    """
-    ticker = state.get("ticker", "")
-    query = state.get("query")
-    data_bundle = state.get("data_bundle") or {}
-
-    if not data_bundle or "error" in data_bundle:
-        logger.warning(
-            "warren_buffett_node: data_bundle missing or errored (%s)",
-            data_bundle.get("error") if isinstance(data_bundle, dict) else "n/a",
-        )
-        return _hold_fallback(ticker, "Insufficient data — defaulting to hold.")
-
-    raw = _bundle_to_raw_data(data_bundle)
-    bridge_state: dict[str, Any] = {
-        "ticker": ticker,
-        "as_of_date": data_bundle.get("as_of_date", ""),
-        "query": query,
-        **raw.model_dump(),
-        # model_dump() converts BuffettMetricsRow → dict; restore the typed list
-        "metrics_history": raw.metrics_history,
-    }
-    typed_state = cast(WarrenBuffettState, bridge_state)
-    bridge_state.update(compute_evidence_node(typed_state))
-    return cast(
-        PersonaOutputState, await render_verdict_node(typed_state, config)
-    )
-
-
-# ── Registry entry (legacy — Phase 5 drops the registry mechanism entirely) ───
-
-
-PERSONA_SPEC = register_persona(
-    PersonaSpec(
-        slug="warren_buffett",
-        display_name="Warren Buffett",
-        investing_style=(
-            "Quality compounders at fair prices; 3-stage owner-earnings DCF; "
-            "margin of safety ≥ 20%; circle of competence; durable moats"
-        ),
-        node=warren_buffett_node,
-        signal_schema=WarrenBuffettSignal,
-    )
-)

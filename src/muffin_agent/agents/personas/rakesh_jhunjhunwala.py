@@ -1,63 +1,194 @@
-"""Rakesh Jhunjhunwala persona — EM growth + quality-tier DCF.
+"""Rakesh Jhunjhunwala persona — compiled subgraph (collect → compute → verdict).
 
-Five sub-scores (max 24): profitability (8), growth (7), balance sheet (4),
-cash flow (3), management actions (2).  Quality-tier DCF uses discount
-rates 12–18% based on overall quality (the 'Big Bull's signature).
+EM growth + quality-tier DCF (12/15/18% discount based on quality).
+See ``warren_buffett.py`` for canonical v4 ref.
+Reference: ``ai-hedge-fund/src/agents/rakesh_jhunjhunwala.py``.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
+from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
 from ...tools.scoring_helpers import compute_intrinsic_value_dcf
-from ._base import (
-    PersonaInputState,
-    PersonaOutputState,
-    PersonaSpec,
-    register_persona,
-)
-from .schemas import AnalystSignal, ScoreDetail
+from ...utils.agent_builder import MuffinAgentBuilder
+from ..data_collection.utils import get_tools
+from .schemas import AnalystSignal
 
 logger = logging.getLogger(__name__)
+_LLM_RETRY = RetryPolicy(max_attempts=2)
+
+
+# ── Typed sub-evidence ────────────────────────────────────────────────────────
+
+
+class RakeshJhunjhunwalaProfitability(BaseModel):
+    return_on_equity: float | None
+    operating_margin: float | None
+    eps_cagr: float | None
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class RakeshJhunjhunwalaGrowth(BaseModel):
+    revenue_cagr: float | None
+    net_income_cagr: float | None
+    consistent_ni: bool
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class RakeshJhunjhunwalaBalanceSheet(BaseModel):
+    debt_to_assets: float | None
+    current_ratio: float | None
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class RakeshJhunjhunwalaCashFlow(BaseModel):
+    fcf_positive_latest: bool
+    pays_dividends: bool
+    score: int
+    max_score: int
+    reasoning: str
+
+
+class RakeshJhunjhunwalaManagementActions(BaseModel):
+    latest_issuance: float | None
+    has_buybacks: bool
+    score: int
+    max_score: int
+    reasoning: str
 
 
 class RakeshJhunjhunwalaEvidence(BaseModel):
-    """Persona-specific evidence — sub-scores, computed metrics."""
-
-    profitability: ScoreDetail
-    growth: ScoreDetail
-    balance_sheet: ScoreDetail
-    cash_flow: ScoreDetail
-    management_actions: ScoreDetail
+    profitability: RakeshJhunjhunwalaProfitability
+    growth: RakeshJhunjhunwalaGrowth
+    balance_sheet: RakeshJhunjhunwalaBalanceSheet
+    cash_flow: RakeshJhunjhunwalaCashFlow
+    management_actions: RakeshJhunjhunwalaManagementActions
     quality_tier: Literal["high", "medium", "low"]
     discount_rate: float
-    intrinsic_value: float | None
-    margin_of_safety: float | None
-    market_cap: float | None
+    intrinsic_value: float | None = None
+    margin_of_safety_pct: float | None = None
+    market_cap: float | None = None
     total_score: float
     max_score: float
 
 
 class RakeshJhunjhunwalaSignal(AnalystSignal):
-    """Persona structured signal with narrowed evidence type."""
-
     agent_id: Literal["rakesh_jhunjhunwala"] = Field(default="rakesh_jhunjhunwala")
     evidence: RakeshJhunjhunwalaEvidence
 
 
-def _score_profitability(
-    latest_metrics: dict[str, Any], line_items: dict[str, list[float | None]]
-) -> ScoreDetail:
-    roe = latest_metrics.get("return_on_equity")
-    op_margin = latest_metrics.get("operating_margin")
-    eps = [v for v in line_items.get("earnings_per_share", []) if v is not None]
+# ── RawData ───────────────────────────────────────────────────────────────────
+
+
+class RakeshJhunjhunwalaRawData(BaseModel):
+    revenue_series: list[float | None] = Field(default_factory=list)
+    net_income_series: list[float | None] = Field(default_factory=list)
+    eps_series: list[float | None] = Field(default_factory=list)
+    free_cash_flow_series: list[float | None] = Field(default_factory=list)
+    dividends_series: list[float | None] = Field(default_factory=list)
+    issuance_or_purchase_series: list[float | None] = Field(default_factory=list)
+    total_assets_series: list[float | None] = Field(default_factory=list)
+    total_liabilities_series: list[float | None] = Field(default_factory=list)
+    current_assets_series: list[float | None] = Field(default_factory=list)
+    current_liabilities_series: list[float | None] = Field(default_factory=list)
+    roe_latest: float | None = None
+    operating_margin_latest: float | None = None
+    market_cap: float | None = None
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+
+class RakeshJhunjhunwalaInput(TypedDict, total=False):
+    ticker: str
+    as_of_date: str
+    query: str | None
+
+
+class RakeshJhunjhunwalaOutput(TypedDict, total=False):
+    persona_signals: list[dict[str, Any]]
+
+
+class RakeshJhunjhunwalaState(AgentState):
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
+    revenue_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    net_income_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    eps_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    free_cash_flow_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    dividends_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    issuance_or_purchase_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    total_assets_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    total_liabilities_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    current_assets_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    current_liabilities_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    roe_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    operating_margin_latest: Annotated[
+        float | None, OmitFromSchema(input=True, output=True)
+    ]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    evidence: Annotated[
+        RakeshJhunjhunwalaEvidence | None, OmitFromSchema(input=True, output=True)
+    ]
+    persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+
+
+# ── Composite scorers ─────────────────────────────────────────────────────────
+
+
+def _cagr(series: list[float | None]) -> float | None:
+    vals = [v for v in series if v is not None]
+    if len(vals) < 2 or vals[0] is None or vals[0] <= 0 or vals[-1] <= 0:
+        return None
+    return (vals[-1] / vals[0]) ** (1 / (len(vals) - 1)) - 1
+
+
+def _score_jhunjhunwala_profitability(
+    state: RakeshJhunjhunwalaState,
+) -> RakeshJhunjhunwalaProfitability:
+    roe = state.get("roe_latest")
+    op_margin = state.get("operating_margin_latest")
+    eps_cagr = _cagr(state.get("eps_series") or [])
     score = 0
     parts: list[str] = []
     if roe is not None:
@@ -73,62 +204,85 @@ def _score_profitability(
             score += 2
         elif op_margin > 0.15:
             score += 1
-    if len(eps) >= 2 and eps[0] > 0 and eps[-1] > 0:
-        cagr = (eps[-1] / eps[0]) ** (1 / (len(eps) - 1)) - 1
-        if cagr > 0.20:
+    if eps_cagr is not None:
+        if eps_cagr > 0.20:
             score += 3
-            parts.append(f"EPS CAGR {cagr:.1%}")
-        elif cagr > 0.15:
+            parts.append(f"EPS CAGR {eps_cagr:.1%}")
+        elif eps_cagr > 0.15:
             score += 2
-        elif cagr > 0.10:
+        elif eps_cagr > 0.10:
             score += 1
-    return ScoreDetail(
-        score=min(score, 8), max_score=8, details="; ".join(parts) or "Limited"
+    return RakeshJhunjhunwalaProfitability(
+        return_on_equity=roe,
+        operating_margin=op_margin,
+        eps_cagr=eps_cagr,
+        score=min(score, 8),
+        max_score=8,
+        reasoning="; ".join(parts) or "Limited",
     )
 
 
-def _score_growth(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    revenues = [v for v in line_items.get("revenue", []) if v is not None]
-    net_income = [v for v in line_items.get("net_income", []) if v is not None]
+def _score_jhunjhunwala_growth(
+    state: RakeshJhunjhunwalaState,
+) -> RakeshJhunjhunwalaGrowth:
+    rev_cagr = _cagr(state.get("revenue_series") or [])
+    ni_cagr = _cagr(state.get("net_income_series") or [])
+    net_income = [v for v in (state.get("net_income_series") or []) if v is not None]
     score = 0
     parts: list[str] = []
-    if len(revenues) >= 2 and revenues[0] > 0:
-        cagr = (revenues[-1] / revenues[0]) ** (1 / (len(revenues) - 1)) - 1
-        if cagr > 0.20:
+    if rev_cagr is not None:
+        if rev_cagr > 0.20:
             score += 3
-            parts.append(f"Rev CAGR {cagr:.1%}")
-        elif cagr > 0.15:
+            parts.append(f"Rev CAGR {rev_cagr:.1%}")
+        elif rev_cagr > 0.15:
             score += 2
-        elif cagr > 0.10:
+        elif rev_cagr > 0.10:
             score += 1
-    if len(net_income) >= 2 and net_income[0] > 0 and net_income[-1] > 0:
-        cagr = (net_income[-1] / net_income[0]) ** (1 / (len(net_income) - 1)) - 1
-        if cagr > 0.25:
+    if ni_cagr is not None:
+        if ni_cagr > 0.25:
             score += 3
-            parts.append(f"NI CAGR {cagr:.1%}")
-        elif cagr > 0.20:
+            parts.append(f"NI CAGR {ni_cagr:.1%}")
+        elif ni_cagr > 0.20:
             score += 2
-        elif cagr > 0.15:
+        elif ni_cagr > 0.15:
             score += 1
+    consistent_ni = False
+    if len(net_income) >= 2:
         if all(
             net_income[i] >= net_income[i - 1] * 0.8 for i in range(1, len(net_income))
         ):
             score += 1
+            consistent_ni = True
             parts.append("Consistent NI")
-    return ScoreDetail(
-        score=min(score, 7), max_score=7, details="; ".join(parts) or "Limited"
+    return RakeshJhunjhunwalaGrowth(
+        revenue_cagr=rev_cagr,
+        net_income_cagr=ni_cagr,
+        consistent_ni=consistent_ni,
+        score=min(score, 7),
+        max_score=7,
+        reasoning="; ".join(parts) or "Limited",
     )
 
 
-def _score_balance_sheet(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    total_assets = [v for v in line_items.get("total_assets", []) if v is not None]
-    total_liab = [v for v in line_items.get("total_liabilities", []) if v is not None]
-    current_assets = [v for v in line_items.get("current_assets", []) if v is not None]
+def _score_jhunjhunwala_balance(
+    state: RakeshJhunjhunwalaState,
+) -> RakeshJhunjhunwalaBalanceSheet:
+    total_assets = [
+        v for v in (state.get("total_assets_series") or []) if v is not None
+    ]
+    total_liab = [
+        v for v in (state.get("total_liabilities_series") or []) if v is not None
+    ]
+    current_assets = [
+        v for v in (state.get("current_assets_series") or []) if v is not None
+    ]
     current_liab = [
-        v for v in line_items.get("current_liabilities", []) if v is not None
+        v for v in (state.get("current_liabilities_series") or []) if v is not None
     ]
     score = 0
     parts: list[str] = []
+    de: float | None = None
+    cr: float | None = None
     if total_assets and total_liab and total_assets[-1] > 0:
         de = total_liab[-1] / total_assets[-1]
         if de < 0.5:
@@ -143,53 +297,69 @@ def _score_balance_sheet(line_items: dict[str, list[float | None]]) -> ScoreDeta
             parts.append(f"Current ratio {cr:.2f}")
         elif cr > 1.5:
             score += 1
-    return ScoreDetail(
-        score=min(score, 4), max_score=4, details="; ".join(parts) or "Limited"
+    return RakeshJhunjhunwalaBalanceSheet(
+        debt_to_assets=de,
+        current_ratio=cr,
+        score=min(score, 4),
+        max_score=4,
+        reasoning="; ".join(parts) or "Limited",
     )
 
 
-def _score_cash_flow(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    fcf = [v for v in line_items.get("free_cash_flow", []) if v is not None]
-    dividends = [
-        v
-        for v in line_items.get("dividends_and_other_cash_distributions", [])
-        if v is not None
-    ]
+def _score_jhunjhunwala_cash_flow(
+    state: RakeshJhunjhunwalaState,
+) -> RakeshJhunjhunwalaCashFlow:
+    fcf = [v for v in (state.get("free_cash_flow_series") or []) if v is not None]
+    dividends = [v for v in (state.get("dividends_series") or []) if v is not None]
     score = 0
     parts: list[str] = []
-    if fcf and fcf[-1] is not None and fcf[-1] > 0:
+    fcf_positive = bool(fcf and fcf[-1] is not None and fcf[-1] > 0)
+    if fcf_positive:
         score += 2
         parts.append("Positive FCF")
-    if dividends and any(d < 0 for d in dividends):
+    pays_dividends = bool(dividends and any(d < 0 for d in dividends))
+    if pays_dividends:
         score += 1
         parts.append("Pays dividends")
-    return ScoreDetail(
-        score=min(score, 3), max_score=3, details="; ".join(parts) or "Limited"
+    return RakeshJhunjhunwalaCashFlow(
+        fcf_positive_latest=fcf_positive,
+        pays_dividends=pays_dividends,
+        score=min(score, 3),
+        max_score=3,
+        reasoning="; ".join(parts) or "Limited",
     )
 
 
-def _score_management_actions(line_items: dict[str, list[float | None]]) -> ScoreDetail:
+def _score_jhunjhunwala_management(
+    state: RakeshJhunjhunwalaState,
+) -> RakeshJhunjhunwalaManagementActions:
     issuance = [
-        v
-        for v in line_items.get("issuance_or_purchase_of_equity_shares", [])
-        if v is not None
+        v for v in (state.get("issuance_or_purchase_series") or []) if v is not None
     ]
     score = 0
     parts: list[str] = []
+    has_buybacks = False
+    latest: float | None = None
     if issuance and issuance[-1] is not None:
-        if issuance[-1] < 0:
+        latest = issuance[-1]
+        if latest < 0:
             score += 2
+            has_buybacks = True
             parts.append("Buybacks")
-        elif issuance[-1] == 0:
+        elif latest == 0:
             score += 1
             parts.append("No dilution")
-    return ScoreDetail(
-        score=min(score, 2), max_score=2, details="; ".join(parts) or "Limited"
+    return RakeshJhunjhunwalaManagementActions(
+        latest_issuance=latest,
+        has_buybacks=has_buybacks,
+        score=min(score, 2),
+        max_score=2,
+        reasoning="; ".join(parts) or "Limited",
     )
 
 
 def _quality_tier(
-    profitability: float, growth: float, balance: float
+    profitability: int, growth: int, balance: int
 ) -> Literal["high", "medium", "low"]:
     if profitability >= 6 and balance >= 3:
         return "high"
@@ -198,35 +368,32 @@ def _quality_tier(
     return "low"
 
 
-def _compute_jhunjhunwala_facts(
-    data_bundle: dict[str, Any],
-) -> RakeshJhunjhunwalaEvidence:
-    line_items = data_bundle.get("line_items", {})
-    metrics = data_bundle.get("financial_metrics", [])
-    latest = metrics[0] if metrics else {}
-    market_cap = data_bundle.get("market_cap")
-    net_income_series = [v for v in line_items.get("net_income", []) if v is not None]
-    net_income_latest = net_income_series[-1] if net_income_series else None
+# ── Graph nodes ───────────────────────────────────────────────────────────────
 
-    profitability = _score_profitability(latest, line_items)
-    growth = _score_growth(line_items)
-    balance = _score_balance_sheet(line_items)
-    cash_flow = _score_cash_flow(line_items)
-    mgmt = _score_management_actions(line_items)
+
+def compute_evidence_node(state: RakeshJhunjhunwalaState) -> dict[str, Any]:
+    profitability = _score_jhunjhunwala_profitability(state)
+    growth = _score_jhunjhunwala_growth(state)
+    balance = _score_jhunjhunwala_balance(state)
+    cash_flow = _score_jhunjhunwala_cash_flow(state)
+    mgmt = _score_jhunjhunwala_management(state)
     tier = _quality_tier(profitability.score, growth.score, balance.score)
     discount_rates: dict[str, float] = {"high": 0.12, "medium": 0.15, "low": 0.18}
     discount = discount_rates[tier]
-    intrinsic = None
-    if net_income_latest and net_income_latest > 0:
+    ni_series = [v for v in (state.get("net_income_series") or []) if v is not None]
+    ni_latest = ni_series[-1] if ni_series else None
+    intrinsic: float | None = None
+    if ni_latest is not None and ni_latest > 0:
         intrinsic = compute_intrinsic_value_dcf(
-            base_cash_flow=net_income_latest,
+            base_cash_flow=ni_latest,
             growth_rate=0.12,
             discount_rate=discount,
             terminal_growth_rate=0.04,
             years=5,
         )
-    mos = (
-        (intrinsic - market_cap) / market_cap
+    market_cap = state.get("market_cap")
+    mos_pct: float | None = (
+        (intrinsic - market_cap) / market_cap * 100
         if intrinsic is not None and market_cap and market_cap > 0
         else None
     )
@@ -237,8 +404,7 @@ def _compute_jhunjhunwala_facts(
         + cash_flow.score
         + mgmt.score
     )
-    max_total = 8 + 7 + 4 + 3 + 2
-    return RakeshJhunjhunwalaEvidence(
+    evidence = RakeshJhunjhunwalaEvidence(
         profitability=profitability,
         growth=growth,
         balance_sheet=balance,
@@ -247,76 +413,101 @@ def _compute_jhunjhunwala_facts(
         quality_tier=tier,
         discount_rate=discount,
         intrinsic_value=intrinsic,
-        margin_of_safety=mos,
+        margin_of_safety_pct=mos_pct,
         market_cap=market_cap,
         total_score=total,
-        max_score=max_total,
+        max_score=24,
     )
+    return {"evidence": evidence}
 
 
-async def rakesh_jhunjhunwala_node(
-    state: PersonaInputState, config: RunnableConfig
-) -> PersonaOutputState:
-    """Render the Rakesh Jhunjhunwala verdict from state["data_bundle"]."""
+async def render_verdict_node(
+    state: RakeshJhunjhunwalaState, config: RunnableConfig
+) -> dict[str, Any]:
     ticker = state.get("ticker", "")
+    as_of_date = state.get("as_of_date", "")
     query = state.get("query")
-    data_bundle = state.get("data_bundle") or {}
-
-    if not data_bundle or "error" in data_bundle:
-        fallback = RakeshJhunjhunwalaSignal(
-            agent_id="rakesh_jhunjhunwala",
-            signal="hold",
-            confidence=0.0,
-            reasoning="Insufficient data",
-            evidence=RakeshJhunjhunwalaEvidence(
-                profitability=ScoreDetail(score=0, max_score=8, details="no data"),
-                growth=ScoreDetail(score=0, max_score=7, details="no data"),
-                balance_sheet=ScoreDetail(score=0, max_score=4, details="no data"),
-                cash_flow=ScoreDetail(score=0, max_score=3, details="no data"),
-                management_actions=ScoreDetail(score=0, max_score=2, details="no data"),
-                quality_tier="low",
-                discount_rate=0.18,
-                intrinsic_value=None,
-                margin_of_safety=None,
-                market_cap=None,
-                total_score=0,
-                max_score=24,
-            ),
+    evidence = state.get("evidence")
+    if evidence is None:
+        raise RuntimeError(
+            "render_verdict_node called without evidence — "
+            "compute_evidence_node must run first in v4 subgraphs"
         )
-        return {"persona_signals": [fallback.model_dump()]}
 
-    evidence = _compute_jhunjhunwala_facts(data_bundle)
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=RakeshJhunjhunwalaSignal
     )
     prompt = render_template(
         "personas/rakesh_jhunjhunwala.jinja",
         ticker=ticker,
-        as_of_date=data_bundle.get("as_of_date", ""),
-        facts=evidence.model_dump(mode="json"),
+        as_of_date=as_of_date,
+        evidence=evidence,
+        market_cap=state.get("market_cap"),
         query=query,
-        persona_display_name="Rakesh Jhunjhunwala",
-        persona_slug="rakesh_jhunjhunwala",
-        signal_schema_name="RakeshJhunjhunwalaSignal",
     )
     result = cast(
         RakeshJhunjhunwalaSignal,
         await llm.ainvoke(
-            [SystemMessage(prompt), HumanMessage("Render your Jhunjhunwala verdict.")]
+            [
+                SystemMessage(prompt),
+                HumanMessage("Render your Jhunjhunwala verdict now."),
+            ]
         ),
     )
     return {"persona_signals": [result.model_dump()]}
 
 
-PERSONA_SPEC = register_persona(
-    PersonaSpec(
-        slug="rakesh_jhunjhunwala",
-        display_name="Rakesh Jhunjhunwala",
-        investing_style=(
-            "EM growth + quality-tier DCF (12/15/18% discount based on quality); "
-            "30% MoS target; buybacks signal management conviction"
-        ),
-        node=rakesh_jhunjhunwala_node,
-        signal_schema=RakeshJhunjhunwalaSignal,
+# ── Data-collection sub-agent + subgraph builder ──────────────────────────────
+
+
+_MCP_TOOLS = [
+    "equity_fundamental_metrics",
+    "equity_fundamental_income",
+    "equity_fundamental_balance",
+    "equity_fundamental_cash",
+    "equity_fundamental_dividends",
+    "equity_historical_market_cap",
+]
+
+
+async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateGraph:
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("collector")
+    mcp_tools = await get_tools(config, _MCP_TOOLS)
+    builder = (
+        MuffinAgentBuilder(primary, name="rakesh_jhunjhunwala_data_collection")
+        .with_fallback_models(*fallbacks)
+        .with_state_schema(RakeshJhunjhunwalaState)
+        .with_runtime_system_prompt_template(
+            "personas/rakesh_jhunjhunwala_data_collection.jinja"
+        )
+        .with_response_format(RakeshJhunjhunwalaRawData)
+        .with_model_call_limit(run_limit=8, exit_behavior="end")
     )
-)
+    for tool in mcp_tools:
+        builder = builder.with_tool(tool, run_limit=2)
+    return builder.build_react_agent()
+
+
+async def build_rakesh_jhunjhunwala_agent(config: RunnableConfig) -> CompiledStateGraph:
+    data_agent = await _build_data_collection_agent(config)
+    graph = StateGraph(
+        RakeshJhunjhunwalaState,
+        input_schema=RakeshJhunjhunwalaInput,
+        output_schema=RakeshJhunjhunwalaOutput,
+    )
+    graph.add_node(
+        "collect_data",
+        data_agent,
+        input_schema=data_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node("compute_evidence", compute_evidence_node)
+    graph.add_node("render_verdict", render_verdict_node, retry_policy=_LLM_RETRY)
+    graph.add_edge(START, "collect_data")
+    graph.add_edge("collect_data", "compute_evidence")
+    graph.add_edge("compute_evidence", "render_verdict")
+    graph.add_edge("render_verdict", END)
+    return graph.compile()
+
+

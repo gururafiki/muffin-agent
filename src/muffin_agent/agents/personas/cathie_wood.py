@@ -1,41 +1,86 @@
-"""Cathie Wood persona — disruptive innovation, exponential growth.
+"""Cathie Wood persona — compiled subgraph (collect → compute → verdict).
 
-High-growth DCF (20% growth, 15% disc, 25× terminal) + R&D intensity +
-revenue acceleration scoring.  Mirrors ai-hedge-fund's ``cathie_wood.py``.
+Disruptive innovation lens: revenue acceleration + R&D intensity + high-growth
+DCF (20% / 15% / 25x terminal). See ``warren_buffett.py`` for the canonical
+v4 reference implementation.
+
+Reference (upstream): ``ai-hedge-fund/src/agents/cathie_wood.py``.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
+from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...prompts import render_template
 from ...tools.scoring_helpers import compute_intrinsic_value_exit_multiple
-from ._base import (
-    PersonaInputState,
-    PersonaOutputState,
-    PersonaSpec,
-    register_persona,
-)
-from .schemas import AnalystSignal, ScoreDetail
+from ...utils.agent_builder import MuffinAgentBuilder
+from ..data_collection.utils import get_tools
+from .schemas import AnalystSignal
 
 logger = logging.getLogger(__name__)
 
+_LLM_RETRY = RetryPolicy(max_attempts=2)
+
+
+# ── Typed sub-evidence ────────────────────────────────────────────────────────
+
+
+class CathieWoodDisruptivePotential(BaseModel):
+    """Revenue acceleration + gross-margin expansion + R&D intensity."""
+
+    latest_revenue_growth: float | None
+    gross_margin_change: float | None
+    latest_gross_margin: float | None
+    rd_intensity: float | None
+    raw_score: int
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class CathieWoodInnovationGrowth(BaseModel):
+    """R&D growth + FCF consistency + operating leverage + capex intensity."""
+
+    rd_growth_pct: float | None
+    positive_fcf_periods: int
+    fcf_total_periods: int
+    op_margin_latest: float | None
+    capex_intensity: float | None
+    raw_score: int
+    score: float
+    max_score: float
+    reasoning: str
+
+
+class CathieWoodValuation(BaseModel):
+    """High-growth exit-multiple DCF + margin of safety."""
+
+    score: int
+    max_score: int
+    reasoning: str
+
 
 class CathieWoodEvidence(BaseModel):
-    """Wood-specific evidence."""
+    """Wood-specific precomputed evidence (v4 typed shape)."""
 
-    disruptive_potential: ScoreDetail
-    innovation_growth: ScoreDetail
-    valuation: ScoreDetail
-    intrinsic_value: float | None
-    margin_of_safety: float | None
-    market_cap: float | None
+    disruptive_potential: CathieWoodDisruptivePotential
+    innovation_growth: CathieWoodInnovationGrowth
+    valuation: CathieWoodValuation
+    intrinsic_value: float | None = None
+    margin_of_safety_pct: float | None = None
+    market_cap: float | None = None
     total_score: float
     max_score: float
 
@@ -47,19 +92,109 @@ class CathieWoodSignal(AnalystSignal):
     evidence: CathieWoodEvidence
 
 
-def _score_disruptive_potential(
-    line_items: dict[str, list[float | None]],
-) -> ScoreDetail:
-    """Score Wood's disruptive-potential dimension (max 5, normalised from 12)."""
-    revenues = [v for v in line_items.get("revenue", []) if v is not None]
-    gross_margins = [v for v in line_items.get("gross_margin", []) if v is not None]
-    op_exp = [v for v in line_items.get("operating_expense", []) if v is not None]
-    rd = [v for v in line_items.get("research_and_development", []) if v is not None]
+# ── RawData ───────────────────────────────────────────────────────────────────
+
+
+class CathieWoodRawData(BaseModel):
+    """Structured MCP extraction. Time series are oldest -> newest."""
+
+    revenue_series: list[float | None] = Field(default_factory=list)
+    gross_margin_series: list[float | None] = Field(default_factory=list)
+    operating_expense_series: list[float | None] = Field(default_factory=list)
+    operating_margin_series: list[float | None] = Field(default_factory=list)
+    research_and_development_series: list[float | None] = Field(default_factory=list)
+    free_cash_flow_series: list[float | None] = Field(default_factory=list)
+    capital_expenditure_series: list[float | None] = Field(
+        default_factory=list,
+        description="Capex as POSITIVE absolute values, oldest -> newest.",
+    )
+    dividends_series: list[float | None] = Field(
+        default_factory=list,
+        description=(
+            "dividends_and_other_cash_distributions, SIGNED "
+            "(negative = cash outflow), oldest -> newest."
+        ),
+    )
+    market_cap: float | None = None
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+
+class CathieWoodInput(TypedDict, total=False):
+    """Public input contract."""
+
+    ticker: str
+    as_of_date: str
+    query: str | None
+
+
+class CathieWoodOutput(TypedDict, total=False):
+    """Public output contract."""
+
+    persona_signals: list[dict[str, Any]]
+
+
+class CathieWoodState(AgentState):
+    """Cathie Wood persona subgraph state."""
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
+    revenue_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    gross_margin_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    operating_expense_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    operating_margin_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    research_and_development_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    free_cash_flow_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    capital_expenditure_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    dividends_series: Annotated[
+        list[float | None] | None, OmitFromSchema(input=True, output=True)
+    ]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    evidence: Annotated[
+        CathieWoodEvidence | None, OmitFromSchema(input=True, output=True)
+    ]
+    persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+
+
+# ── Composite scorers ─────────────────────────────────────────────────────────
+
+
+def _score_wood_disruptive_potential(
+    state: CathieWoodState,
+) -> CathieWoodDisruptivePotential:
+    """Revenue acceleration + margin expansion + R&D intensity (raw max 12, norm 5)."""
+    revenues = [v for v in (state.get("revenue_series") or []) if v is not None]
+    gross_margins = [
+        v for v in (state.get("gross_margin_series") or []) if v is not None
+    ]
+    op_exp = [v for v in (state.get("operating_expense_series") or []) if v is not None]
+    rd = [
+        v for v in (state.get("research_and_development_series") or []) if v is not None
+    ]
 
     score = 0
     parts: list[str] = []
+    latest_growth: float | None = None
+    margin_change: float | None = None
+    latest_gross_margin = gross_margins[-1] if gross_margins else None
+    rd_intensity: float | None = None
 
-    # Revenue growth: oldest→newest. Acceleration = recent growth > older growth.
     if len(revenues) >= 3:
         growth_rates = []
         for i in range(1, len(revenues)):
@@ -69,18 +204,20 @@ def _score_disruptive_potential(
         if len(growth_rates) >= 2 and growth_rates[-1] > growth_rates[0]:
             score += 2
             parts.append(
-                f"Revenue acceleration ({growth_rates[0]:.1%} → {growth_rates[-1]:.1%})"
+                f"Revenue acceleration "
+                f"({growth_rates[0]:.1%} -> {growth_rates[-1]:.1%})"
             )
-        latest_growth = growth_rates[-1] if growth_rates else 0
-        if latest_growth > 1.0:
-            score += 3
-            parts.append(f"Exceptional revenue growth {latest_growth:.1%}")
-        elif latest_growth > 0.5:
-            score += 2
-            parts.append(f"Strong revenue growth {latest_growth:.1%}")
-        elif latest_growth > 0.2:
-            score += 1
-            parts.append(f"Moderate revenue growth {latest_growth:.1%}")
+        latest_growth = growth_rates[-1] if growth_rates else None
+        if latest_growth is not None:
+            if latest_growth > 1.0:
+                score += 3
+                parts.append(f"Exceptional revenue growth {latest_growth:.1%}")
+            elif latest_growth > 0.5:
+                score += 2
+                parts.append(f"Strong revenue growth {latest_growth:.1%}")
+            elif latest_growth > 0.2:
+                score += 1
+                parts.append(f"Moderate revenue growth {latest_growth:.1%}")
 
     if len(gross_margins) >= 2:
         margin_change = gross_margins[-1] - gross_margins[0]
@@ -101,8 +238,8 @@ def _score_disruptive_potential(
             score += 2
             parts.append("Positive operating leverage")
 
-    if rd and revenues:
-        rd_intensity = rd[-1] / revenues[-1] if revenues[-1] else 0
+    if rd and revenues and revenues[-1]:
+        rd_intensity = rd[-1] / revenues[-1]
         if rd_intensity > 0.15:
             score += 3
             parts.append(f"High R&D intensity {rd_intensity:.1%}")
@@ -115,29 +252,39 @@ def _score_disruptive_potential(
 
     max_raw = 12
     normalized = (score / max_raw) * 5
-    return ScoreDetail(
+    return CathieWoodDisruptivePotential(
+        latest_revenue_growth=latest_growth,
+        gross_margin_change=margin_change,
+        latest_gross_margin=latest_gross_margin,
+        rd_intensity=rd_intensity,
+        raw_score=score,
         score=normalized,
         max_score=5,
-        details="; ".join(parts) if parts else "Insufficient data",
-        metrics={"raw_score": score},
+        reasoning="; ".join(parts) if parts else "Insufficient data",
     )
 
 
-def _score_innovation_growth(line_items: dict[str, list[float | None]]) -> ScoreDetail:
-    """Score Wood's innovation-growth dimension (max 5, normalised from 15)."""
-    rd = [v for v in line_items.get("research_and_development", []) if v is not None]
-    revenues = [v for v in line_items.get("revenue", []) if v is not None]
-    fcf = [v for v in line_items.get("free_cash_flow", []) if v is not None]
-    op_margins = [v for v in line_items.get("operating_margin", []) if v is not None]
-    capex = [abs(v) for v in line_items.get("capital_expenditure", []) if v is not None]
-    dividends = [
-        v
-        for v in line_items.get("dividends_and_other_cash_distributions", [])
-        if v is not None
+def _score_wood_innovation_growth(
+    state: CathieWoodState,
+) -> CathieWoodInnovationGrowth:
+    """R&D growth + FCF + op margin + capex (raw max 15, norm 5)."""
+    rd = [
+        v for v in (state.get("research_and_development_series") or []) if v is not None
     ]
+    revenues = [v for v in (state.get("revenue_series") or []) if v is not None]
+    fcf = [v for v in (state.get("free_cash_flow_series") or []) if v is not None]
+    op_margins = [
+        v for v in (state.get("operating_margin_series") or []) if v is not None
+    ]
+    capex = [
+        abs(v) for v in (state.get("capital_expenditure_series") or []) if v is not None
+    ]
+    dividends = [v for v in (state.get("dividends_series") or []) if v is not None]
 
     score = 0
     parts: list[str] = []
+    rd_growth: float | None = None
+    capex_intensity: float | None = None
 
     if len(rd) >= 2 and rd[0] != 0:
         rd_growth = (rd[-1] - rd[0]) / abs(rd[0])
@@ -154,12 +301,10 @@ def _score_innovation_growth(line_items: dict[str, list[float | None]]) -> Score
                 score += 2
                 parts.append("Increasing R&D intensity")
 
+    positive_fcf = 0
     if len(fcf) >= 2:
         positive_fcf = sum(1 for f in fcf if f > 0)
-        if fcf[0] != 0:
-            fcf_growth = (fcf[-1] - fcf[0]) / abs(fcf[0])
-        else:
-            fcf_growth = 0
+        fcf_growth = (fcf[-1] - fcf[0]) / abs(fcf[0]) if fcf[0] != 0 else 0
         if fcf_growth > 0.3 and positive_fcf == len(fcf):
             score += 3
             parts.append("Strong consistent FCF growth")
@@ -183,10 +328,7 @@ def _score_innovation_growth(line_items: dict[str, list[float | None]]) -> Score
 
     if capex and revenues and revenues[-1] and capex[-1] != 0:
         capex_intensity = capex[-1] / revenues[-1]
-        if capex[0] != 0:
-            capex_growth = (capex[-1] - capex[0]) / abs(capex[0])
-        else:
-            capex_growth = 0
+        capex_growth = (capex[-1] - capex[0]) / abs(capex[0]) if capex[0] != 0 else 0
         if capex_intensity > 0.10 and capex_growth > 0.2:
             score += 2
             parts.append("Heavy growth investment")
@@ -195,7 +337,6 @@ def _score_innovation_growth(line_items: dict[str, list[float | None]]) -> Score
             parts.append("Moderate growth investment")
 
     if dividends and fcf and fcf[-1] != 0:
-        # dividends are negative outflows; we look at the magnitude
         payout = abs(dividends[-1] / fcf[-1])
         if payout < 0.2:
             score += 2
@@ -205,27 +346,32 @@ def _score_innovation_growth(line_items: dict[str, list[float | None]]) -> Score
 
     max_raw = 15
     normalized = (score / max_raw) * 5
-    return ScoreDetail(
+    return CathieWoodInnovationGrowth(
+        rd_growth_pct=rd_growth * 100 if rd_growth is not None else None,
+        positive_fcf_periods=positive_fcf,
+        fcf_total_periods=len(fcf),
+        op_margin_latest=op_margins[-1] if op_margins else None,
+        capex_intensity=capex_intensity,
+        raw_score=score,
         score=normalized,
         max_score=5,
-        details="; ".join(parts) if parts else "Insufficient data",
-        metrics={"raw_score": score},
+        reasoning="; ".join(parts) if parts else "Insufficient data",
     )
 
 
-def _score_valuation(
+def _score_wood_valuation(
     fcf_latest: float | None, market_cap: float | None
-) -> tuple[ScoreDetail, float | None, float | None]:
-    """High-growth DCF + MoS (max 5, max from raw 4 normalised).
+) -> tuple[CathieWoodValuation, float | None, float | None]:
+    """High-growth exit-multiple DCF + MoS (max 5).
 
-    Returns ``(ScoreDetail, intrinsic_value, margin_of_safety)``.
+    Returns (CathieWoodValuation, intrinsic_value, margin_of_safety_pct).
     """
     if not fcf_latest or fcf_latest <= 0 or not market_cap or market_cap <= 0:
         return (
-            ScoreDetail(
+            CathieWoodValuation(
                 score=0,
                 max_score=5,
-                details="Cannot compute DCF (need positive FCF + market cap)",
+                reasoning="Cannot compute DCF (need positive FCF + market cap).",
             ),
             None,
             None,
@@ -239,11 +385,7 @@ def _score_valuation(
     )
     if iv is None:
         return (
-            ScoreDetail(
-                score=0,
-                max_score=5,
-                details="DCF inputs invalid",
-            ),
+            CathieWoodValuation(score=0, max_score=5, reasoning="DCF inputs invalid."),
             None,
             None,
         )
@@ -258,77 +400,64 @@ def _score_valuation(
         parts.append("MoS > 20% — modest undervaluation")
     elif mos < -0.5:
         parts.append("Severe overvaluation")
-    return ScoreDetail(score=score, max_score=5, details="; ".join(parts)), iv, mos
+    return (
+        CathieWoodValuation(score=score, max_score=5, reasoning="; ".join(parts)),
+        iv,
+        mos * 100,
+    )
 
 
-def _compute_wood_facts(data_bundle: dict[str, Any]) -> CathieWoodEvidence:
-    """Compute Cathie Wood evidence from a PersonaDataBundle dict."""
-    line_items = data_bundle.get("line_items", {})
-    market_cap = data_bundle.get("market_cap")
-    fcf_series = line_items.get("free_cash_flow", [])
-    fcf_latest = fcf_series[-1] if fcf_series else None
+# ── Graph nodes ───────────────────────────────────────────────────────────────
 
-    disruptive = _score_disruptive_potential(line_items)
-    innovation = _score_innovation_growth(line_items)
-    valuation, iv, mos = _score_valuation(fcf_latest, market_cap)
+
+def compute_evidence_node(state: CathieWoodState) -> dict[str, Any]:
+    """Deterministic Wood evidence assembly."""
+    disruptive = _score_wood_disruptive_potential(state)
+    innovation = _score_wood_innovation_growth(state)
+    fcf = state.get("free_cash_flow_series") or []
+    fcf_latest = fcf[-1] if fcf else None
+    valuation, iv, mos_pct = _score_wood_valuation(fcf_latest, state.get("market_cap"))
 
     total = disruptive.score + innovation.score + valuation.score
     max_total = disruptive.max_score + innovation.max_score + valuation.max_score
-    return CathieWoodEvidence(
+
+    evidence = CathieWoodEvidence(
         disruptive_potential=disruptive,
         innovation_growth=innovation,
         valuation=valuation,
         intrinsic_value=iv,
-        margin_of_safety=mos,
-        market_cap=market_cap,
+        margin_of_safety_pct=mos_pct,
+        market_cap=state.get("market_cap"),
         total_score=total,
         max_score=max_total,
     )
+    return {"evidence": evidence}
 
 
-async def cathie_wood_node(
-    state: PersonaInputState, config: RunnableConfig
-) -> PersonaOutputState:
-    """Render the Cathie Wood verdict."""
+async def render_verdict_node(
+    state: CathieWoodState, config: RunnableConfig
+) -> dict[str, Any]:
+    """Single LLM call — render CathieWoodSignal."""
     ticker = state.get("ticker", "")
+    as_of_date = state.get("as_of_date", "")
     query = state.get("query")
-    data_bundle = state.get("data_bundle") or {}
-
-    if not data_bundle or "error" in data_bundle:
-        logger.warning("cathie_wood_node: data_bundle missing or errored")
-        fallback = CathieWoodSignal(
-            agent_id="cathie_wood",
-            signal="hold",
-            confidence=0.0,
-            reasoning="Insufficient data — defaulting to hold",
-            evidence=CathieWoodEvidence(
-                disruptive_potential=ScoreDetail(
-                    score=0, max_score=5, details="no data"
-                ),
-                innovation_growth=ScoreDetail(score=0, max_score=5, details="no data"),
-                valuation=ScoreDetail(score=0, max_score=5, details="no data"),
-                intrinsic_value=None,
-                margin_of_safety=None,
-                market_cap=None,
-                total_score=0,
-                max_score=15,
-            ),
+    evidence = state.get("evidence")
+    if evidence is None:
+        raise RuntimeError(
+            "render_verdict_node called without evidence — "
+            "compute_evidence_node must run first in v4 subgraphs"
         )
-        return {"persona_signals": [fallback.model_dump()]}
 
-    evidence = _compute_wood_facts(data_bundle)
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=CathieWoodSignal
     )
     prompt = render_template(
         "personas/cathie_wood.jinja",
         ticker=ticker,
-        as_of_date=data_bundle.get("as_of_date", ""),
-        facts=evidence.model_dump(mode="json"),
+        as_of_date=as_of_date,
+        evidence=evidence,
+        market_cap=state.get("market_cap"),
         query=query,
-        persona_display_name="Cathie Wood",
-        persona_slug="cathie_wood",
-        signal_schema_name="CathieWoodSignal",
     )
     result = cast(
         CathieWoodSignal,
@@ -342,15 +471,60 @@ async def cathie_wood_node(
     return {"persona_signals": [result.model_dump()]}
 
 
-PERSONA_SPEC = register_persona(
-    PersonaSpec(
-        slug="cathie_wood",
-        display_name="Cathie Wood",
-        investing_style=(
-            "Disruptive innovation, exponential growth, R&D intensity ≥15%, "
-            "high-growth DCF (20%/15%/25× terminal), 5-year exponential thesis"
-        ),
-        node=cathie_wood_node,
-        signal_schema=CathieWoodSignal,
+# ── Data-collection sub-agent + subgraph builder ──────────────────────────────
+
+
+_MCP_TOOLS = [
+    "equity_fundamental_metrics",
+    "equity_fundamental_income",
+    "equity_fundamental_balance",
+    "equity_fundamental_cash",
+    "equity_fundamental_revenue_per_segment",
+    "equity_historical_market_cap",
+]
+
+
+async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateGraph:
+    """Compiled ReAct sub-agent that fetches MCP data -> CathieWoodRawData."""
+    cfg = ModelConfiguration.from_runnable_config(config)
+    primary, *fallbacks = cfg.get_llm_for_role("collector")
+    mcp_tools = await get_tools(config, _MCP_TOOLS)
+
+    builder = (
+        MuffinAgentBuilder(primary, name="cathie_wood_data_collection")
+        .with_fallback_models(*fallbacks)
+        .with_state_schema(CathieWoodState)
+        .with_runtime_system_prompt_template(
+            "personas/cathie_wood_data_collection.jinja"
+        )
+        .with_response_format(CathieWoodRawData)
+        .with_model_call_limit(run_limit=8, exit_behavior="end")
     )
-)
+    for tool in mcp_tools:
+        builder = builder.with_tool(tool, run_limit=2)
+    return builder.build_react_agent()
+
+
+async def build_cathie_wood_agent(config: RunnableConfig) -> CompiledStateGraph:
+    """Build the full 3-node Cathie Wood subgraph."""
+    data_agent = await _build_data_collection_agent(config)
+    graph = StateGraph(
+        CathieWoodState,
+        input_schema=CathieWoodInput,
+        output_schema=CathieWoodOutput,
+    )
+    graph.add_node(
+        "collect_data",
+        data_agent,
+        input_schema=data_agent.input_schema,
+        retry_policy=_LLM_RETRY,
+    )
+    graph.add_node("compute_evidence", compute_evidence_node)
+    graph.add_node("render_verdict", render_verdict_node, retry_policy=_LLM_RETRY)
+    graph.add_edge(START, "collect_data")
+    graph.add_edge("collect_data", "compute_evidence")
+    graph.add_edge("compute_evidence", "render_verdict")
+    graph.add_edge("render_verdict", END)
+    return graph.compile()
+
+
