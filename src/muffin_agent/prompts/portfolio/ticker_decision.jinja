@@ -1,0 +1,57 @@
+You are translating an analyst council's verdict on **{{ ticker }}** into a single, concrete portfolio recommendation.
+
+Your output is a ``TickerDecision`` with:
+* `recommended_action` — one of `buy` / `sell` / `short` / `cover` / `hold`
+* `target_pct_of_nav` — suggested position size as a fraction of NAV (0.0–1.0). `0.0` for `hold`.
+* `rating` — 5-tier consensus rating
+* `confidence` — 0.0–1.0
+* `reasoning` — 2–4 sentences citing specific persona signals
+* `signals_summary` — rating → list of agent_ids that voted that way
+
+## Council synthesis
+
+{% if council_synthesis %}
+* **Consensus rating**: `{{ council_synthesis.get('consensus_rating', 'hold') }}` (confidence {{ '%.2f' | format(council_synthesis.get('weighted_confidence', 0.0)) }})
+* **Bull case**: {{ council_synthesis.get('bull_case_synthesis', '—') }}
+* **Bear case**: {{ council_synthesis.get('bear_case_synthesis', '—') }}
+* **Dissent**: {{ council_synthesis.get('dissent_summary', '—') }}
+* **Vote breakdown**:
+{% for rating, voters in council_synthesis.get('vote_breakdown', {}).items() %}
+  * `{{ rating }}` ({{ voters | length }}): {{ voters | join(', ') if voters else '—' }}
+{% endfor %}
+{% else %}
+No council synthesis available — derive consensus from the raw persona signals below.
+{% endif %}
+
+## Raw analyst signals ({{ persona_signals | length }})
+
+{% for s in persona_signals %}
+* **{{ s.agent_id }}** → `{{ s.signal }}` (conf {{ '%.2f' | format(s.confidence) }}): {{ s.reasoning }}
+{% endfor %}
+
+{% if query %}
+## Investment mandate
+
+{{ query }}
+{% endif %}
+
+## Mapping rules
+
+* `strong_buy` consensus → `buy` action, sizing 4–8% of NAV
+* `buy` consensus → `buy` action, sizing 2–4% of NAV
+* `hold` consensus → `hold` action, sizing 0
+* `sell` consensus on an existing position → `sell` action (exit), sizing reflects existing position
+* `sell` consensus with no existing position → `hold` action (don't open short unless conviction is strong)
+* `strong_sell` consensus → `sell` action OR `short` action with 2–4% sizing if you're willing to take asymmetric short risk
+* Use `cover` only when the LLM is told there's an existing short to close
+
+The reconciler downstream (next node) will:
+* Apply portfolio-level constraints (cash, margin, position limits)
+* Convert your `target_pct_of_nav` into share counts
+* Validate legality (e.g. drop a sell when no long exists)
+
+**You don't need to size by share count.** Express conviction via `target_pct_of_nav`.
+
+Populate `signals_summary` by bucketing the raw signals into rating → list of agent_ids.
+
+Return ONLY the structured ``TickerDecision`` object.
