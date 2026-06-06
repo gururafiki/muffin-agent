@@ -3,7 +3,8 @@
   "graphs": {
     "stock_evaluation": "./src/muffin_agent/graph.py:graph",
     "criteria_analysis": "./src/muffin_agent/agents/criteria_analysis/graph.py:graph",
-    "research": "./src/muffin_agent/agents/research/graph.py:graph"
+    "research": "./src/muffin_agent/agents/research/graph.py:graph",
+    "council": "./src/muffin_agent/agents/personas/council_graph.py:graph"
   },
   "env": ".env",
   "python_version": "3.13"

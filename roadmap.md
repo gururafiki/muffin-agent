@@ -339,3 +339,34 @@ A 42.8-min stock_evaluation run identified seven compounding root causes (slow f
 ### DX
 - [ ] Add Claude Code skills for Spec driven development
 - [x] Check Claude Code development via mobile app
+
+
+## Persona Council + Paper-Trading + Backtester (ai-hedge-fund port)
+
+Ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).  Plan: [`docs/personas.md`](docs/personas.md), [`docs/paper-trading.md`](docs/paper-trading.md), [`docs/backtester.md`](docs/backtester.md).
+
+### Council
+- [x] Phase 1 foundations — `AnalystSignal`, `PersonaDataBundle`, shared scoring helpers (`tools/scoring_helpers.py`), technical-indicator + sentiment tools, registry scaffolding
+- [x] Phase 2 — 13 personas (Buffett, Graham, Wood, Munger, Ackman, Burry, Pabrai, Taleb, Lynch, Fisher, Jhunjhunwala, Druckenmiller, Damodaran) + council graph (`build_council_graph`) + LLM-mediated judge synthesis + `muffin persona` / `muffin council` CLI + LangGraph registration as `"council"`
+- [x] Phase 3 — Technical-analysis + sentiment-analysis specialists (deterministic, no LLM) + `SPECIALIST_REGISTRY` + `muffin technicals` / `muffin sentiment` CLI
+
+### Paper trading
+- [x] Phase 4.1 — Portfolio state model (Pydantic-immutable Portfolio / Position / RealizedGain / PortfolioValue) + pure-function mutation helpers (`apply_long_buy`, `apply_long_sell`, `apply_short_open`, `apply_short_cover`, `mark_to_market`)
+- [x] Phase 4.2 — Position sizing node (`position_sizing_node`): deterministic volatility-bucket × correlation-multiplier per-ticker dollar budget
+- [x] Phase 4.3 — Per-ticker decision (`ticker_decision_node`) + portfolio reconciler (`portfolio_reconciler_node`: hybrid deterministic + LLM with pre-fill-hold optimisation)
+- [x] Phase 4.4 — Trade executor (`portfolio.executor.apply_orders`) with partial-fill semantics
+- [x] Phase 4.5 — Multi-ticker `build_portfolio_decision_graph` (Send × N → council subgraph → ticker_decision → barrier → position_sizing → reconciler → execute) + `muffin trade` CLI + portfolio JSON persistence under `~/.muffin/portfolios/`
+
+### Backtester
+- [x] Phase 5.1 — `OutcomesFetcher` Protocol promoted to `utils/outcomes.py` (shared shim)
+- [x] Phase 5.2 — `BacktestEngine` with two modes (`full` / `signals`), monthly default (`ME`), pluggable `prices_provider` + `benchmark_provider`
+- [x] Phase 5.3 — Metrics (`compute_sharpe`, `compute_sortino`, `compute_max_drawdown`, `compute_total_return`, `compute_benchmark_comparison`), pure-Python (no scipy)
+- [ ] Phase 5.4 — `muffin backtest` CLI is a configuration stub today; wire an MCP-backed default `prices_provider` so the CLI runs end-to-end
+- [ ] Harden as-of-date enforcement on OpenBB MCP tools so `mode="full"` is reproducible (today the engine soft-prompts the LLM to ignore future data; some endpoints don't enforce server-side)
+
+### Open items
+- [ ] News sentiment LLM-per-article specialist (deferred — used only when OpenBB news lacks sentiment scoring)
+- [ ] Growth-analysis specialist (deferred — significant overlap with `agents/investment/company_analysis.py`)
+- [ ] Wire personas into `investment_analysis.py` as an opt-in stage (currently they're independent + pluggable via `PERSONA_REGISTRY`)
+- [ ] Council debate mode using `multi_agent` conference framework (sequential deliberation alternative to parallel vote)
+- [ ] Consider using [skills](https://docs.langchain.com/oss/python/deepagents/skills) per each persona with python scripts to compute necessary scores instead of having scoring functions as utils manually invoked from nodes.

@@ -415,16 +415,16 @@ def _score_buffett_fundamentals(
     om = score_operating_margin(latest.operating_margin)
     cr = score_current_ratio(latest.current_ratio)
     return WarrenBuffettFundamentals(
-        roe_score=roe.score,
+        roe_score=int(roe.score),
         roe_value=latest.return_on_equity,
-        debt_to_equity_score=de.score,
+        debt_to_equity_score=int(de.score),
         debt_to_equity_value=latest.debt_to_equity,
-        operating_margin_score=om.score,
+        operating_margin_score=int(om.score),
         operating_margin_value=latest.operating_margin,
-        current_ratio_score=cr.score,
+        current_ratio_score=int(cr.score),
         current_ratio_value=latest.current_ratio,
-        total_score=roe.score + de.score + om.score + cr.score,
-        max_score=roe.max_score + de.max_score + om.max_score + cr.max_score,
+        total_score=int(roe.score + de.score + om.score + cr.score),
+        max_score=int(roe.max_score + de.max_score + om.max_score + cr.max_score),
         reasoning="; ".join([roe.details, de.details, om.details, cr.details]),
     )
 
@@ -924,7 +924,7 @@ async def render_verdict_node(
     query = state.get("query")
     evidence = state.get("evidence")
     if evidence is None:
-        return _hold_fallback(ticker, "Evidence missing — defaulting to hold.")
+        return dict(_hold_fallback(ticker, "Evidence missing — defaulting to hold."))
 
     llm = ModelConfiguration.get_chat_model_for_role(
         config, "reasoner", schema=WarrenBuffettSignal
@@ -1073,7 +1073,10 @@ def _compute_buffett_facts(data_bundle: dict[str, Any]) -> WarrenBuffettEvidence
         # model_dump() converts BuffettMetricsRow → dict; restore the typed list
         "metrics_history": raw.metrics_history,
     }
-    return cast(WarrenBuffettEvidence, compute_evidence_node(state_dict)["evidence"])
+    return cast(
+        WarrenBuffettEvidence,
+        compute_evidence_node(cast(WarrenBuffettState, state_dict))["evidence"],
+    )
 
 
 def _empty_evidence() -> WarrenBuffettEvidence:
@@ -1189,8 +1192,11 @@ async def warren_buffett_node(
         # model_dump() converts BuffettMetricsRow → dict; restore the typed list
         "metrics_history": raw.metrics_history,
     }
-    bridge_state.update(compute_evidence_node(bridge_state))
-    return await render_verdict_node(bridge_state, config)
+    typed_state = cast(WarrenBuffettState, bridge_state)
+    bridge_state.update(compute_evidence_node(typed_state))
+    return cast(
+        PersonaOutputState, await render_verdict_node(typed_state, config)
+    )
 
 
 # ── Registry entry (legacy — Phase 5 drops the registry mechanism entirely) ───

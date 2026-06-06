@@ -455,6 +455,83 @@ Required: `docker compose up -d openbb-mcp firecrawl-mcp searxng` (the four anal
 
 The CLI ships with `InMemoryStore`, so reflection memory persists only within a single Python process today. Wire `PostgresStore` (or run on LangGraph Platform) for cross-session persistence — see [docs/trading-decision.md](docs/trading-decision.md) for the recipe.
 
+### Persona Council (`agents/personas/`)
+
+13 famous-investor persona agents (Buffett, Graham, Wood, Munger, Ackman, Burry, Pabrai, Taleb, Lynch, Fisher, Jhunjhunwala, Druckenmiller, Damodaran) ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) and re-platformed onto muffin's idioms.  Each persona is a **single-LLM-call node** that precomputes deterministic facts in Python (via [`tools/scoring_helpers.py`](src/muffin_agent/tools/scoring_helpers.py)) then makes one structured-output LLM call.  Outputs use the 5-tier `InvestmentSignal` (`strong_sell` … `strong_buy`) shared with `trading_decision` and `criteria_analysis`.
+
+The council graph runs all 13 personas in parallel after a single shared data-collection step, then synthesises into one consensus rating via an LLM-mediated judge:
+
+```
+START → persona_data_collection → Send×13 → council_judge → END
+```
+
+Two **specialist** signal agents — `technicals` (5-strategy ensemble) and `sentiment` (insider + news, 30/70 weighted) — emit the same `AnalystSignal` contract via fully deterministic scoring (no LLM).  Both registered in `SPECIALIST_REGISTRY` parallel to `PERSONA_REGISTRY`.
+
+**CLI**:
+
+```bash
+# Single persona
+muffin persona warren_buffett AAPL
+
+# Full 13-persona council + synthesis
+muffin council AAPL -q "Long-only quality bias"
+
+# Specialists (deterministic, no LLM)
+muffin technicals AAPL
+muffin sentiment AAPL
+```
+
+Full guide: [docs/personas.md](docs/personas.md).
+
+### Paper-Trading Pipeline (`agents/portfolio_decision.py`)
+
+Multi-ticker paper-trading graph that fans out the persona council per ticker, computes deterministic position limits (volatility × correlation), reconciles into concrete share-count orders, then applies them to a Pydantic-immutable `Portfolio` snapshot.
+
+```
+START → Send×N tickers
+     → [council × per-ticker → ticker_decision_node]
+     → position_sizing_node            (deterministic)
+     → portfolio_reconciler_node       (hybrid det + LLM, pre-fills hold)
+     → execute_orders                  (portfolio.executor.apply_orders)
+     → END
+```
+
+**Independent of `trading_decision`** — uses the persona council, not Bull/Bear/Judge/Trader.  Reuses muffin's framework features (`MuffinAgentBuilder`, `ModelConfiguration`, `Send` fan-out, state reducers).
+
+Portfolios are JSON dumps under `~/.muffin/portfolios/<name>.json`.
+
+**CLI**:
+
+```bash
+# Dry-run on a fresh portfolio
+muffin trade AAPL,MSFT,NVDA --initial-cash 100000
+
+# Persist new state
+muffin trade AAPL,MSFT --portfolio my-port --apply
+```
+
+Full guide: [docs/paper-trading.md](docs/paper-trading.md).
+
+### Backtester (`backtesting/`)
+
+Walk-forward backtester for the persona council + paper-trading pipeline.  Two modes — `full` (entire portfolio pipeline per rebalance, expensive) and `signals` (council only, cheap — useful for prompt iteration).  Monthly rebalance default, Sharpe / Sortino / max-drawdown / SPY-benchmark metrics.
+
+Programmatic API today (the `muffin backtest` CLI is a configuration stub — wiring an MCP-backed default `prices_provider` is a roadmap item):
+
+```python
+from muffin_agent.backtesting import BacktestEngine, synthetic_price_provider
+
+engine = BacktestEngine(
+    start="2024-01-01", end="2024-12-31",
+    tickers=["AAPL", "MSFT"],
+    initial_cash=100_000, mode="signals", rebalance_freq="ME",
+)
+results = await engine.run(prices_provider=...)
+print(results.metrics, results.to_dataframe())
+```
+
+Full guide: [docs/backtester.md](docs/backtester.md).
+
 ### Middleware
 
 Agents are composed via `MuffinAgentBuilder`, which wires universal middleware for every agent and opt-in middleware per capability. The builder is fully typed: `with_system_prompt` accepts `str | SystemMessage`, `with_permission` accepts a real `FilesystemPermission` (deep-agent only), and the tool / subagent / middleware signatures forward exactly the types expected by `create_deep_agent` and `create_agent`.
@@ -730,6 +807,27 @@ muffin decide AAPL --query "long-term hold candidate"
 muffin decide AAPL --narrative "Recent earnings call mentioned X..." --user alice
 muffin decide AAPL --decision-date 2026-05-23 --invest-rounds 1 --risk-rounds 1
 muffin decide AAPL --no-reflection
+
+# Persona council (ported from ai-hedge-fund). 13 famous-investor personas
+# evaluate the same ticker via precomputed deterministic facts + a single
+# LLM call each, then a judge synthesises a 5-tier consensus rating.
+muffin persona warren_buffett AAPL
+muffin council AAPL -q "Long-only quality bias, 5-year horizon"
+
+# Specialist signal agents — deterministic, no LLM (cheap, fast)
+muffin technicals AAPL    # 5-strategy technical ensemble
+muffin sentiment AAPL     # 30/70 weighted insider + news sentiment
+
+# Multi-ticker paper-trading: council per ticker → position sizing
+# (vol × correlation) → reconciler → executor. Portfolio state under
+# ~/.muffin/portfolios/<name>.json
+muffin trade AAPL,MSFT,NVDA --initial-cash 100000             # dry-run
+muffin trade AAPL,MSFT --portfolio my-port --apply            # persist
+muffin trade AAPL,MSFT -q "Long-only quality bias"
+
+# Walk-forward backtester (programmatic API today; CLI is a config stub)
+muffin backtest AAPL,MSFT --start 2024-01-01 --end 2024-12-31 \
+  --mode signals --freq ME --benchmark SPY
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"

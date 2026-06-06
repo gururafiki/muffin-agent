@@ -831,6 +831,481 @@ def screen(
     asyncio.run(_run_screen(query, max_tickers, user))
 
 
+# ── Persona council CLI ──────────────────────────────────────────────────────
+
+
+async def _run_persona(slug: str, ticker: str, query: str | None, user: str) -> None:
+    """Run a single persona's verdict on a ticker and print the signal."""
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
+
+    from muffin_agent.agents.personas import build_single_persona_graph
+    from muffin_agent.utils.observability import setup_tracing
+
+    session_id = f"persona-{slug}-{ticker}"
+    callbacks = setup_tracing(session_id=session_id)
+    store = InMemoryStore()
+    graph = build_single_persona_graph(slug, store=store)
+
+    result = await graph.ainvoke(
+        {"ticker": ticker, "query": query},
+        config=RunnableConfig(
+            callbacks=callbacks,
+            configurable={"thread_id": session_id, "user_id": user},
+        ),
+    )
+
+    signals = result.get("persona_signals") or []
+    if not signals:
+        typer.echo(f"No signal returned for {slug} / {ticker}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(signals[0], indent=2, default=str))
+
+
+@app.command()
+def persona(
+    slug: Annotated[
+        str,
+        typer.Argument(
+            help="Persona slug (e.g. warren_buffett, ben_graham, cathie_wood)"
+        ),
+    ],
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / framing"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Render a single persona's verdict on a ticker.
+
+    Runs the shared data-collection step then a single persona node.  Outputs
+    the persona's structured signal (rating, confidence, reasoning, evidence).
+
+    Available personas: warren_buffett, ben_graham, cathie_wood, charlie_munger,
+    bill_ackman, michael_burry, mohnish_pabrai, nassim_taleb, peter_lynch,
+    phil_fisher, rakesh_jhunjhunwala, stanley_druckenmiller, aswath_damodaran.
+    """
+    asyncio.run(_run_persona(slug, ticker, query, user))
+
+
+async def _run_council(ticker: str, query: str | None, user: str) -> None:
+    """Run the full 13-persona council on a ticker and print the synthesis."""
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
+
+    from muffin_agent.agents.personas import build_council_graph
+    from muffin_agent.utils.observability import setup_tracing
+
+    session_id = f"council-{ticker}"
+    callbacks = setup_tracing(session_id=session_id)
+    store = InMemoryStore()
+    graph = build_council_graph(
+        checkpointer=_get_checkpointer(),
+        store=store,
+    )
+
+    result = await graph.ainvoke(
+        {"ticker": ticker, "query": query},
+        config=RunnableConfig(
+            callbacks=callbacks,
+            configurable={"thread_id": session_id, "user_id": user},
+        ),
+    )
+
+    output = {
+        "ticker": ticker,
+        "council_synthesis": result.get("council_synthesis", {}),
+        "persona_signals": result.get("persona_signals", []),
+    }
+    typer.echo(json.dumps(output, indent=2, default=str))
+
+
+@app.command()
+def council(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / framing"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the 13-persona investor council and print the synthesised verdict.
+
+    Runs the shared data-collection step once, fans out to all 13 personas in
+    parallel, then synthesises into a single ``CouncilSynthesisOutput`` with
+    a 5-tier consensus rating, vote breakdown, dissent summary, and key
+    uncertainties.
+    """
+    asyncio.run(_run_council(ticker, query, user))
+
+
+# ── Specialist signal CLI (technicals / sentiment) ──────────────────────────
+
+
+async def _run_specialist(slug: str, ticker: str, query: str | None, user: str) -> None:
+    """Run a single specialist's signal on a ticker and print the result."""
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
+
+    from muffin_agent.agents.specialists import build_single_specialist_graph
+    from muffin_agent.utils.observability import setup_tracing
+
+    session_id = f"specialist-{slug}-{ticker}"
+    callbacks = setup_tracing(session_id=session_id)
+    store = InMemoryStore()
+    graph = build_single_specialist_graph(slug, store=store)
+
+    result = await graph.ainvoke(
+        {"ticker": ticker, "query": query},
+        config=RunnableConfig(
+            callbacks=callbacks,
+            configurable={"thread_id": session_id, "user_id": user},
+        ),
+    )
+
+    signals = result.get("persona_signals") or []
+    if not signals:
+        typer.echo(f"No signal returned for {slug} / {ticker}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(signals[0], indent=2, default=str))
+
+
+@app.command()
+def technicals(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / framing"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the technical-analysis specialist (5-strategy ensemble).
+
+    Computes trend / mean-reversion / momentum / volatility-regime /
+    stat-arb signals over the 1-year OHLCV series, then a weighted
+    ensemble.  Fully deterministic — no LLM call.  Output is a
+    ``TechnicalSignal`` with 5-tier rating and per-strategy evidence.
+    """
+    asyncio.run(_run_specialist("technicals", ticker, query, user))
+
+
+@app.command()
+def sentiment(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / framing"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the sentiment-analysis specialist (insider + news aggregation).
+
+    Computes a 30/70 weighted combination of insider-trade direction and
+    company news sentiment over the trailing 12 months.  Fully
+    deterministic — no LLM call.  Output is a ``SentimentSignal`` with
+    5-tier rating and insider/news breakdown.
+    """
+    asyncio.run(_run_specialist("sentiment", ticker, query, user))
+
+
+# ── Paper-trading CLI (multi-ticker portfolio decision) ─────────────────────
+
+
+def _portfolio_path(name: str):
+    """Resolve the on-disk path for a named portfolio."""
+    from pathlib import Path
+
+    return Path.home() / ".muffin" / "portfolios" / f"{name}.json"
+
+
+def _load_portfolio_or_new(name: str, initial_cash: float):
+    """Load a saved portfolio JSON, or construct a fresh one."""
+    import json
+
+    from muffin_agent.portfolio.state import Portfolio, new_portfolio
+
+    path = _portfolio_path(name)
+    if path.exists():
+        data = json.loads(path.read_text())
+        return Portfolio.model_validate(data)
+    return new_portfolio(initial_cash=initial_cash)
+
+
+def _save_portfolio(name: str, portfolio) -> object:
+    """Persist a portfolio to ``~/.muffin/portfolios/<name>.json``."""
+    path = _portfolio_path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(portfolio.model_dump_json(indent=2))
+    return path
+
+
+async def _run_trade(
+    tickers: list[str],
+    portfolio_name: str,
+    initial_cash: float,
+    apply_changes: bool,
+    user: str,
+) -> None:
+    """Run the paper-trading portfolio decision graph + print orders."""
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+    from langgraph.store.memory import InMemoryStore
+
+    from muffin_agent.agents.portfolio_decision import (
+        build_portfolio_decision_graph,
+    )
+    from muffin_agent.portfolio.state import Portfolio
+    from muffin_agent.utils.observability import setup_tracing
+
+    session_id = f"trade-{'-'.join(tickers)}"
+    callbacks = setup_tracing(session_id=session_id)
+    store = InMemoryStore()
+    graph = build_portfolio_decision_graph(
+        checkpointer=_get_checkpointer(),
+        store=store,
+    )
+
+    portfolio = _load_portfolio_or_new(portfolio_name, initial_cash)
+
+    # Caller-supplied current_prices are optional here; the council's data
+    # bundle carries prices_1y which the position-sizer / executor can
+    # back-derive (last close).  For a robust default, pass an empty dict
+    # and let the graph fall back to the per-ticker data bundles.
+    result = await graph.ainvoke(
+        {
+            "tickers": tickers,
+            "portfolio": portfolio.model_dump(),
+            "current_prices": {},
+        },
+        config=RunnableConfig(
+            callbacks=callbacks,
+            configurable={"thread_id": session_id, "user_id": user},
+        ),
+    )
+
+    output = {
+        "portfolio_notes": result.get("portfolio_notes", ""),
+        "position_limits": result.get("position_limits", {}),
+        "ticker_decisions": result.get("ticker_decisions", {}),
+        "orders": result.get("orders", []),
+        "executed_trades": result.get("executed_trades", []),
+        "portfolio_value": result.get("portfolio_value", {}),
+    }
+    typer.echo(json.dumps(output, indent=2, default=str))
+
+    if apply_changes:
+        new_portfolio_dump = result.get("portfolio") or {}
+        if new_portfolio_dump:
+            saved_path = _save_portfolio(
+                portfolio_name, Portfolio.model_validate(new_portfolio_dump)
+            )
+            typer.echo(f"\nPortfolio saved to {saved_path}", err=True)
+
+
+@app.command()
+def trade(
+    tickers: Annotated[
+        str,
+        typer.Argument(
+            help=("Comma-separated list of tickers to decide on, e.g. 'AAPL,MSFT,NVDA'")
+        ),
+    ],
+    portfolio_name: Annotated[
+        str,
+        typer.Option(
+            "--portfolio",
+            help="Portfolio name (loaded from ~/.muffin/portfolios/<name>.json)",
+        ),
+    ] = "default",
+    initial_cash: Annotated[
+        float,
+        typer.Option(
+            "--initial-cash",
+            help="Starting cash if the portfolio file does not exist yet",
+        ),
+    ] = 100_000.0,
+    apply_changes: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Write the new portfolio state back to disk after execution",
+        ),
+    ] = False,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the multi-ticker paper-trading portfolio decision graph.
+
+    Fans out the persona council per ticker, computes position limits
+    (volatility × correlation), reconciles into concrete share-count
+    orders, then applies them to the portfolio.
+
+    Default mode is dry-run — pass ``--apply`` to persist the new
+    portfolio snapshot to ``~/.muffin/portfolios/<name>.json``.
+    """
+    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
+    asyncio.run(
+        _run_trade(ticker_list, portfolio_name, initial_cash, apply_changes, user)
+    )
+
+
+# ── Backtester CLI ───────────────────────────────────────────────────────────
+
+
+async def _run_backtest(
+    tickers: list[str],
+    start: str,
+    end: str,
+    mode: str,
+    rebalance_freq: str,
+    initial_cash: float,
+    benchmark: str,
+    user: str,
+) -> None:
+    """Run the walk-forward backtester and print summary metrics."""
+    import json
+
+    from langchain_core.runnables import RunnableConfig
+
+    from muffin_agent.backtesting import BacktestEngine
+    from muffin_agent.utils.observability import setup_tracing
+
+    session_id = f"backtest-{'-'.join(tickers)}-{start}-{end}"
+    callbacks = setup_tracing(session_id=session_id)
+
+    engine = BacktestEngine(
+        start=start,
+        end=end,
+        tickers=tickers,
+        initial_cash=initial_cash,
+        mode=mode,  # type: ignore[arg-type]
+        rebalance_freq=rebalance_freq,
+        benchmark=benchmark,
+    )
+
+    # In Phase 5 the prices_provider is wired to a real MCP-backed
+    # implementation in a follow-up; the CLI currently requires the user
+    # to supply one programmatically.  Document this limitation here.
+    typer.echo(
+        "ERROR: Backtest CLI requires a `prices_provider` callable.\n"
+        "Today this is wired via Python code only; an MCP-backed default\n"
+        "is a roadmap item.  See docs/backtester.md for details.",
+        err=True,
+    )
+    typer.echo(
+        f"Backtest configured: {len(tickers)} tickers from {start} → {end} "
+        f"({rebalance_freq} rebalance, mode={mode}, "
+        f"cash=${initial_cash:,.0f}, benchmark={benchmark})",
+        err=True,
+    )
+    # Avoid unused-import warnings for stubs:
+    _ = callbacks, session_id, engine, RunnableConfig, json, user
+    raise typer.Exit(code=1)
+
+
+@app.command()
+def backtest(
+    tickers: Annotated[
+        str,
+        typer.Argument(help="Comma-separated list of tickers (e.g. 'AAPL,MSFT,NVDA')"),
+    ],
+    start: Annotated[
+        str,
+        typer.Option("--start", help="Start date YYYY-MM-DD"),
+    ],
+    end: Annotated[
+        str,
+        typer.Option("--end", help="End date YYYY-MM-DD"),
+    ],
+    mode: Annotated[
+        str,
+        typer.Option(
+            "--mode",
+            help=(
+                "Backtest mode: 'full' (entire portfolio pipeline per "
+                "rebalance) or 'signals' (council only, no execution)"
+            ),
+        ),
+    ] = "signals",
+    rebalance_freq: Annotated[
+        str,
+        typer.Option(
+            "--freq",
+            help="Pandas offset alias (ME=monthly default, W=weekly, QE=quarterly)",
+        ),
+    ] = "ME",
+    initial_cash: Annotated[
+        float,
+        typer.Option("--initial-cash", help="Starting cash for the backtest"),
+    ] = 100_000.0,
+    benchmark: Annotated[
+        str,
+        typer.Option("--benchmark", help="Benchmark ticker for alpha comparison"),
+    ] = "SPY",
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the walk-forward backtester (Phase 5).
+
+    Today this command is a configuration stub — wiring the
+    ``prices_provider`` to a real MCP-backed default is a roadmap item.
+    The :class:`muffin_agent.backtesting.BacktestEngine` is usable
+    programmatically with any caller-supplied prices/benchmark provider.
+    """
+    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
+    asyncio.run(
+        _run_backtest(
+            ticker_list, start, end, mode, rebalance_freq, initial_cash, benchmark, user
+        )
+    )
+
+
 async def _stream_criteria(
     ticker: str,
     query: str | None,
