@@ -455,17 +455,19 @@ Required: `docker compose up -d openbb-mcp firecrawl-mcp searxng` (the four anal
 
 The CLI ships with `InMemoryStore`, so reflection memory persists only within a single Python process today. Wire `PostgresStore` (or run on LangGraph Platform) for cross-session persistence — see [docs/trading-decision.md](docs/trading-decision.md) for the recipe.
 
-### Persona Council (`agents/personas/`)
+### Persona Council (`agents/personas_council/`)
 
-13 famous-investor persona agents (Buffett, Graham, Wood, Munger, Ackman, Burry, Pabrai, Taleb, Lynch, Fisher, Jhunjhunwala, Druckenmiller, Damodaran) ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) and re-platformed onto muffin's idioms.  Each persona is a **single-LLM-call node** that precomputes deterministic facts in Python (via [`tools/scoring_helpers.py`](src/muffin_agent/tools/scoring_helpers.py)) then makes one structured-output LLM call.  Outputs use the 5-tier `InvestmentSignal` (`strong_sell` … `strong_buy`) shared with `trading_decision` and `criteria_analysis`.
+13 famous-investor persona agents (Buffett, Graham, Wood, Munger, Ackman, Burry, Pabrai, Taleb, Lynch, Fisher, Jhunjhunwala, Druckenmiller, Damodaran) ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) and re-platformed onto muffin's idioms.  Each persona is a **compiled 3-node subgraph** — `collect_data` (a ReAct sub-agent that fetches its own data via curated OpenBB MCP tools) → `compute_evidence` (deterministic Python scoring via [`agents/personas_council/tools/scoring_helpers.py`](src/muffin_agent/agents/personas_council/tools/scoring_helpers.py)) → `render_verdict` (one structured-output LLM call).  Outputs use the 5-tier `InvestmentSignal` (`strong_sell` … `strong_buy`) shared with `trading_decision` and `criteria_analysis`.
 
-The council graph runs all 13 personas in parallel after a single shared data-collection step, then synthesises into one consensus rating via an LLM-mediated judge:
+The council fans out all 13 personas in parallel — each owns its own MCP data fetch (no shared collection step; calls dedupe through the shared tool-result cache) — then synthesises one consensus rating via an LLM-mediated judge:
 
 ```
-START → persona_data_collection → Send×13 → council_judge → END
+START → [13 personas in parallel] → council_judge → END
 ```
 
-Two **specialist** signal agents — `technicals` (5-strategy ensemble) and `sentiment` (insider + news, 30/70 weighted) — emit the same `AnalystSignal` contract via fully deterministic scoring (no LLM).  Both registered in `SPECIALIST_REGISTRY` parallel to `PERSONA_REGISTRY`.
+It is registered in `langgraph.json` as the `"council"` async graph **factory** (`council_graph.py:build_council_graph`), so LangGraph Platform injects the managed checkpointer / store.
+
+Six **specialist** signal agents emit the same `AnalystSignal` contract: `technicals` (5-strategy ensemble) and `sentiment` (insider + news, 30/70) are fully deterministic; `fundamentals`, `growth`, and `valuation` use a ReAct step only to extract OpenBB fields, then score deterministically; `news_sentiment` is the one LLM specialist (per-headline classification).  Enable them in the council with `--include-specialists` — personas and specialists are wired directly into the graph (no central registry).
 
 **CLI**:
 
@@ -473,24 +475,28 @@ Two **specialist** signal agents — `technicals` (5-strategy ensemble) and `sen
 # Single persona
 muffin persona warren_buffett AAPL
 
-# Full 13-persona council + synthesis
+# Full 13-persona council + synthesis (add --include-specialists for the 6 specialists)
 muffin council AAPL -q "Long-only quality bias"
 
-# Specialists (deterministic, no LLM)
+# Specialists (technicals/sentiment deterministic; news-sentiment uses an LLM)
 muffin technicals AAPL
 muffin sentiment AAPL
+muffin fundamentals-signal AAPL   # bare `fundamentals` is the raw data-collection command
+muffin growth AAPL
+muffin valuation AAPL
+muffin news-sentiment AAPL
 ```
 
 Full guide: [docs/personas.md](docs/personas.md).
 
-### Paper-Trading Pipeline (`agents/portfolio_decision.py`)
+### Paper-Trading Pipeline (`agents/personas_council/portfolio/portfolio_decision.py`)
 
 Multi-ticker paper-trading graph that fans out the persona council per ticker, computes deterministic position limits (volatility × correlation), reconciles into concrete share-count orders, then applies them to a Pydantic-immutable `Portfolio` snapshot.
 
 ```
 START → Send×N tickers
      → [council × per-ticker → ticker_decision_node]
-     → position_sizing_node            (deterministic)
+     → risk_management_node            (deterministic)
      → portfolio_reconciler_node       (hybrid det + LLM, pre-fills hold)
      → execute_orders                  (portfolio.executor.apply_orders)
      → END
@@ -512,14 +518,14 @@ muffin trade AAPL,MSFT --portfolio my-port --apply
 
 Full guide: [docs/paper-trading.md](docs/paper-trading.md).
 
-### Backtester (`backtesting/`)
+### Backtester (`agents/personas_council/backtesting/`)
 
 Walk-forward backtester for the persona council + paper-trading pipeline.  Two modes — `full` (entire portfolio pipeline per rebalance, expensive) and `signals` (council only, cheap — useful for prompt iteration).  Monthly rebalance default, Sharpe / Sortino / max-drawdown / SPY-benchmark metrics.
 
 Programmatic API today (the `muffin backtest` CLI is a configuration stub — wiring an MCP-backed default `prices_provider` is a roadmap item):
 
 ```python
-from muffin_agent.backtesting import BacktestEngine, synthetic_price_provider
+from muffin_agent.agents.personas_council.backtesting import BacktestEngine, synthetic_price_provider
 
 engine = BacktestEngine(
     start="2024-01-01", end="2024-12-31",

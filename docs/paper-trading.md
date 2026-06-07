@@ -35,7 +35,7 @@ START
   │
   │  (barrier: ticker_decisions accumulated across workers)
   ▼
-[position_sizing_node]      ← deterministic vol × correlation
+[risk_management_node]      ← deterministic vol × correlation
   ↓
 [portfolio_reconciler_node] ← hybrid deterministic + LLM
   ↓
@@ -48,12 +48,12 @@ END
 
 The inner subgraph (compiled once, reused via `Send`) runs the full council + a per-ticker consolidator:
 
-* [`council_graph`](../src/muffin_agent/agents/personas/council_graph.py) — 13 personas + judge synthesis
-* [`ticker_decision_node`](../src/muffin_agent/agents/portfolio/ticker_decision.py) — LLM picks a per-ticker `recommended_action` + `target_pct_of_nav`
+* [`council_graph`](../src/muffin_agent/agents/personas_council/council_graph.py) — 13 personas + judge synthesis
+* [`ticker_decision_node`](../src/muffin_agent/agents/personas_council/portfolio/ticker_decision.py) — LLM picks a per-ticker `recommended_action` + `target_pct_of_nav`
 
 ### Position sizing (deterministic, no LLM)
 
-[`position_sizing_node`](../src/muffin_agent/agents/portfolio/position_sizing.py) ports ai-hedge-fund's `risk_manager.py` exactly:
+[`risk_management_node`](../src/muffin_agent/agents/personas_council/portfolio/risk_manager.py) ports ai-hedge-fund's `risk_manager.py` exactly:
 
 * **Volatility bucket** → base limit pct  
   `<15%` → 25% / `15-30%` → 20%→12.5% / `30-50%` → 15%→5% / `≥50%` → 10%
@@ -64,18 +64,18 @@ The inner subgraph (compiled once, reused via `Send`) runs the full council + a 
 
 ### Portfolio reconciler (hybrid)
 
-[`portfolio_reconciler_node`](../src/muffin_agent/agents/portfolio/portfolio_reconciler.py):
+[`portfolio_reconciler_node`](../src/muffin_agent/agents/personas_council/portfolio/portfolio_reconciler.py):
 
 1. **Deterministic pre-pass** — compute `allowed_actions` per ticker (max buy / sell / short / cover shares within constraints).  Pre-fill `hold` for any ticker with no valid non-hold action (saves the LLM compute).
 2. **LLM call** (skipped entirely when all tickers are pre-filled) — with a compact representation of decisions + allowed actions + current prices.  Returns concrete share-count orders.
 
 ### Trade execution
 
-[`portfolio.executor.apply_orders`](../src/muffin_agent/portfolio/executor.py) is a pure function that applies orders to the portfolio and returns `(new_portfolio, executed_trades)`.  Defensively validates legality — illegal orders are silently dropped with `skipped=True` in the trade log.
+[`portfolio.executor.apply_orders`](../src/muffin_agent/agents/personas_council/portfolio/executor.py) is a pure function that applies orders to the portfolio and returns `(new_portfolio, executed_trades)`.  Defensively validates legality — illegal orders are silently dropped with `skipped=True` in the trade log.
 
 ## Portfolio state
 
-[`portfolio.state.Portfolio`](../src/muffin_agent/portfolio/state.py) is a Pydantic-immutable snapshot:
+[`portfolio.state.Portfolio`](../src/muffin_agent/agents/personas_council/portfolio/state.py) is a Pydantic-immutable snapshot:
 
 ```python
 class Portfolio(BaseModel):
@@ -93,7 +93,7 @@ Mutation helpers are **pure functions** returning `(new_portfolio, executed_qty)
 * `apply_short_open(portfolio, ticker, qty, price)` — locks `qty × price × margin_requirement` as margin
 * `apply_short_cover(portfolio, ticker, qty, price)` — releases proportional margin
 
-`mark_to_market(portfolio, prices)` returns a [`PortfolioValue`](../src/muffin_agent/portfolio/state.py) with cash / long_value / short_exposure / realised_gains_total / NAV / margin_used.
+`mark_to_market(portfolio, prices)` returns a [`PortfolioValue`](../src/muffin_agent/agents/personas_council/portfolio/state.py) with cash / long_value / short_exposure / realised_gains_total / NAV / margin_used.
 
 ## Persistence
 

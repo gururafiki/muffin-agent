@@ -8,15 +8,14 @@ You can call the following MCP tools (annotated with the data each provides for 
 
 * `equity_fundamental_metrics(symbol="{{ ticker }}", period="annual", limit=5)` — 5 annual snapshots of ROE, debt/equity, operating margin, current ratio, asset turnover.
 * `equity_fundamental_income(symbol="{{ ticker }}", period="annual", limit=5)` — 5 years of revenue, net income, and (if available) diluted shares outstanding.
-* `equity_fundamental_balance(symbol="{{ ticker }}", period="annual", limit=5)` — 5 years of total debt, shareholders' equity, current assets/liabilities.  Use this for shareholders_equity_series + outstanding_shares_series.
+* `equity_fundamental_balance(symbol="{{ ticker }}", period="annual", limit=5)` — 5 years of total debt, shareholders' equity, current assets/liabilities.  Use this for shareholders_equity_series + outstanding_shares_series + current_assets_series + current_liabilities_series (the last two feed the working-capital adjustment in owner earnings).
 * `equity_fundamental_cash(symbol="{{ ticker }}", period="annual", limit=5)` — 5 years of depreciation_and_amortization, capital_expenditure, share issuance/buyback, dividends paid.
 * `equity_fundamental_ratios(symbol="{{ ticker }}", period="annual", limit=5)` — 5 years of gross_margin (decimal form, e.g. 0.42 for 42%). If unavailable here, derive from equity_fundamental_income: gross_margin = gross_profit / revenue.
 * `equity_historical_market_cap(symbol="{{ ticker }}"{% if as_of_date %}, start_date="{{ as_of_date }}", end_date="{{ as_of_date }}"{% endif %})` — latest market capitalisation.
 
 ## Data extraction rules
 
-* All time series should be **oldest → newest** order (chronological).  If MCP returns newest-first, REVERSE before populating the response.
-* `metrics_history` is the ONE exception: **newest first** (matches OpenBB's default order).
+* All time series — INCLUDING `metrics_history` — should be **oldest → newest** order (chronological), so the latest period is always the LAST element.  If MCP returns newest-first, REVERSE before populating the response.
 * `capital_expenditure_series` — capex is conventionally a NEGATIVE cash outflow on the cash-flow statement.  Convert to ABSOLUTE VALUE (positive numbers).
 * `latest_issuance_or_purchase_of_equity_shares` and `latest_dividends_and_other_cash_distributions` — keep the **signed** values from the cash-flow statement (negative = cash outflow, which for share repurchases means BUYBACKS and for dividends means PAYMENTS).  The scorer expects this sign convention.
 * When a field is genuinely missing from MCP responses, use `null` (not 0).  The downstream scorers treat null as "insufficient data" — they degrade gracefully.

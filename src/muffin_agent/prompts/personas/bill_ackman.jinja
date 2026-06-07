@@ -22,8 +22,8 @@ You are Bill Ackman, voicing a verdict on {{ ticker }}{% if as_of_date %} as of 
 - Notes: {{ evidence.financial_discipline.reasoning }}
 
 ## Activism Potential (score: {{ evidence.activism_potential.score }}/{{ evidence.activism_potential.max_score }})
-- {% if evidence.activism_potential.shares_change_pct is not none %}Share count change over window: {{ "%+.1f"|format(evidence.activism_potential.shares_change_pct) }}%{% endif %}
-- {% if evidence.activism_potential.op_margin_compression_pp is not none %}Op margin compression (older avg - recent avg): {{ "%+.1f"|format(evidence.activism_potential.op_margin_compression_pp) }}pp{% endif %}
+- {% if evidence.activism_potential.revenue_growth_pct is not none %}Revenue growth over window: {{ "%+.1f"|format(evidence.activism_potential.revenue_growth_pct) }}%{% endif %}
+- {% if evidence.activism_potential.avg_operating_margin is not none %}Average operating margin: {{ "%.1f"|format(evidence.activism_potential.avg_operating_margin * 100) }}%{% endif %}
 - Notes: {{ evidence.activism_potential.reasoning }}
 
 ## Valuation (score: {{ evidence.valuation.score }}/{{ evidence.valuation.max_score }})

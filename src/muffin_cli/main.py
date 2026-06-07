@@ -843,7 +843,7 @@ async def _run_persona(slug: str, ticker: str, query: str | None, user: str) -> 
 
     # v4: import the persona's build factory directly. Adding a new persona =
     # add an entry to PERSONA_BUILDERS (see agents/personas/council_graph.py).
-    from muffin_agent.agents.personas.council_graph import PERSONA_BUILDERS
+    from muffin_agent.agents.personas_council.council_graph import PERSONA_BUILDERS
     from muffin_agent.utils.observability import setup_tracing
 
     builders_by_slug = dict(PERSONA_BUILDERS)
@@ -915,7 +915,7 @@ async def _run_council(ticker: str, query: str | None, user: str) -> None:
     from langchain_core.runnables import RunnableConfig
     from langgraph.store.memory import InMemoryStore
 
-    from muffin_agent.agents.personas import build_council_graph
+    from muffin_agent.agents.personas_council import build_council_graph
     from muffin_agent.utils.observability import setup_tracing
 
     session_id = f"council-{ticker}"
@@ -971,42 +971,57 @@ def council(
 
 
 async def _run_specialist(slug: str, ticker: str, query: str | None, user: str) -> None:
-    """Run a single specialist's signal on a ticker and print the result."""
+    """Run a single specialist's signal on a ticker and print the result.
+
+    Handles both the fully-deterministic sync specialists (technicals,
+    sentiment) and the metric-heavy async specialists that take ``config``
+    (fundamentals, growth, valuation, news_sentiment — persona-style).
+    """
     import json
 
     from langchain_core.runnables import RunnableConfig
-    from langgraph.store.memory import InMemoryStore  # noqa: F401
 
-    from muffin_agent.agents.specialists.sentiment_analysis import (
+    from muffin_agent.agents.personas_council.specialists import (
+        build_fundamentals_analysis_agent,
+        build_growth_analysis_agent,
+        build_news_sentiment_analysis_agent,
         build_sentiment_analysis_agent,
-    )
-    from muffin_agent.agents.specialists.technical_analysis import (
         build_technical_analysis_agent,
+        build_valuation_analysis_agent,
     )
     from muffin_agent.utils.observability import setup_tracing
 
-    builders = {
+    sync_builders = {
         "technicals": build_technical_analysis_agent,
         "sentiment": build_sentiment_analysis_agent,
     }
-    if slug not in builders:
+    async_builders = {
+        "fundamentals": build_fundamentals_analysis_agent,
+        "growth": build_growth_analysis_agent,
+        "valuation": build_valuation_analysis_agent,
+        "news_sentiment": build_news_sentiment_analysis_agent,
+    }
+    if slug not in sync_builders and slug not in async_builders:
+        available = sorted([*sync_builders, *async_builders])
         typer.echo(
-            f"Unknown specialist slug {slug!r}. Available: {sorted(builders)}",
+            f"Unknown specialist slug {slug!r}. Available: {available}",
             err=True,
         )
         raise typer.Exit(code=1)
 
     session_id = f"specialist-{slug}-{ticker}"
     callbacks = setup_tracing(session_id=session_id)
-    graph = builders[slug]()
-
-    result = await graph.ainvoke(
-        {"ticker": ticker, "query": query},
-        config=RunnableConfig(
-            callbacks=callbacks,
-            configurable={"thread_id": session_id, "user_id": user},
-        ),
+    config = RunnableConfig(
+        callbacks=callbacks,
+        configurable={"thread_id": session_id, "user_id": user},
     )
+
+    if slug in sync_builders:
+        graph = sync_builders[slug]()
+    else:
+        graph = await async_builders[slug](config)
+
+    result = await graph.ainvoke({"ticker": ticker, "query": query}, config=config)
 
     signals = result.get("persona_signals") or []
     if not signals:
@@ -1067,6 +1082,106 @@ def sentiment(
     asyncio.run(_run_specialist("sentiment", ticker, query, user))
 
 
+@app.command(name="fundamentals-signal")
+def fundamentals_signal(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / framing"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the fundamentals specialist (profitability / growth / health / ratios).
+
+    A ReAct step extracts the latest financial-metrics snapshot; scoring is
+    deterministic (majority vote across four dimensions).  Output is a
+    ``FundamentalsSignal`` with a 5-tier rating.  (Named ``fundamentals-signal``
+    to avoid clashing with the ``fundamentals`` data-collection command.)
+    """
+    asyncio.run(_run_specialist("fundamentals", ticker, query, user))
+
+
+@app.command()
+def growth(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / framing"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the growth specialist (growth / valuation / margins / insider / health).
+
+    A ReAct step extracts multi-year growth + margin history; scoring is a
+    deterministic weighted blend.  Output is a ``GrowthSignal`` (5-tier).
+    """
+    asyncio.run(_run_specialist("growth", ticker, query, user))
+
+
+@app.command()
+def valuation(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / framing"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the valuation specialist (DCF / owner earnings / EV-EBITDA / RIM).
+
+    A ReAct step extracts the line items + metrics; scoring is a deterministic
+    weighted intrinsic-value gap vs market cap.  Output is a ``ValuationSignal``
+    (5-tier).
+    """
+    asyncio.run(_run_specialist("valuation", ticker, query, user))
+
+
+@app.command(name="news-sentiment")
+def news_sentiment(
+    ticker: Annotated[str, typer.Argument(help="Stock ticker symbol (e.g. AAPL)")],
+    query: Annotated[
+        str | None,
+        typer.Option("--query", "-q", help="Investment mandate / framing"),
+    ] = None,
+    user: Annotated[
+        str,
+        typer.Option(
+            "--user",
+            help="User id for per-user long-term memory namespace "
+            "(defaults to $USER or 'default-user')",
+        ),
+    ] = os.environ.get("USER", "default-user"),
+) -> None:
+    """Run the news-sentiment specialist (LLM headline classification).
+
+    The one LLM specialist: a ReAct step fetches recent company news and
+    classifies each headline's sentiment; aggregation is deterministic.
+    Output is a ``NewsSentimentSignal`` (5-tier).
+    """
+    asyncio.run(_run_specialist("news_sentiment", ticker, query, user))
+
+
 # ── Paper-trading CLI (multi-ticker portfolio decision) ─────────────────────
 
 
@@ -1081,7 +1196,10 @@ def _load_portfolio_or_new(name: str, initial_cash: float):
     """Load a saved portfolio JSON, or construct a fresh one."""
     import json
 
-    from muffin_agent.portfolio.state import Portfolio, new_portfolio
+    from muffin_agent.agents.personas_council.portfolio.state import (
+        Portfolio,
+        new_portfolio,
+    )
 
     path = _portfolio_path(name)
     if path.exists():
@@ -1111,10 +1229,10 @@ async def _run_trade(
     from langchain_core.runnables import RunnableConfig
     from langgraph.store.memory import InMemoryStore
 
-    from muffin_agent.agents.portfolio_decision import (
+    from muffin_agent.agents.personas_council.portfolio.portfolio_decision import (
         build_portfolio_decision_graph,
     )
-    from muffin_agent.portfolio.state import Portfolio
+    from muffin_agent.agents.personas_council.portfolio.state import Portfolio
     from muffin_agent.utils.observability import setup_tracing
 
     session_id = f"trade-{'-'.join(tickers)}"
@@ -1234,7 +1352,7 @@ async def _run_backtest(
 
     from langchain_core.runnables import RunnableConfig
 
-    from muffin_agent.backtesting import BacktestEngine
+    from muffin_agent.agents.personas_council.backtesting import BacktestEngine
     from muffin_agent.utils.observability import setup_tracing
 
     session_id = f"backtest-{'-'.join(tickers)}-{start}-{end}"
@@ -1321,8 +1439,8 @@ def backtest(
 
     Today this command is a configuration stub — wiring the
     ``prices_provider`` to a real MCP-backed default is a roadmap item.
-    The :class:`muffin_agent.backtesting.BacktestEngine` is usable
-    programmatically with any caller-supplied prices/benchmark provider.
+    The ``BacktestEngine`` (``muffin_agent.agents.personas_council.backtesting``)
+    is usable programmatically with any caller-supplied prices/benchmark provider.
     """
     ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
     asyncio.run(

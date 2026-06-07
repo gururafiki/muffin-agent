@@ -88,6 +88,6 @@ Default to **hold** rather than buy when in doubt — "It is far easier to do no
 Return:
 - `agent_id`: `"warren_buffett"` (literal)
 - `signal`: one of `strong_sell` / `sell` / `hold` / `buy` / `strong_buy`
-- `confidence`: 0.0–1.0 (90+ for high-conviction alignment, 60–80 for solid signals, <60 for genuinely uncertain calls; halve if owner_earnings / intrinsic_value are null)
+- `confidence`: 0.0–1.0 (0.9+ for high-conviction alignment, 0.6–0.8 for solid signals, <0.6 for genuinely uncertain calls; halve if owner_earnings / intrinsic_value are null)
 - `reasoning`: ≤ 120 words in Buffett's plain-English voice — cite the dominant evidence factor, the intrinsic value vs market cap comparison, and the verdict justification
 - `evidence`: pass the evidence object through verbatim

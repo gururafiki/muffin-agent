@@ -75,12 +75,12 @@ lint.select = [
 lint.ignore = []
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "UP"]
-# Persona modules are heavy on small typed Pydantic sub-evidence models
-# and persona-specific scorer/node functions whose names + Pydantic field
-# types are fully self-documenting.  Module-level docstrings explain the
-# v4 subgraph architecture; class/function docstrings would be noise.
-"src/muffin_agent/agents/personas/*.py" = ["D101", "D103"]
-"src/muffin_agent/agents/specialists/*.py" = ["D101", "D103"]
+# Persona / specialist modules are heavy on small typed Pydantic sub-evidence
+# models and persona-specific scorer/node functions whose names + Pydantic
+# field types are fully self-documenting.  Module-level docstrings explain the
+# subgraph architecture; class/function docstrings would be noise.
+"src/muffin_agent/agents/personas_council/personas/*.py" = ["D101", "D103"]
+"src/muffin_agent/agents/personas_council/specialists/*.py" = ["D101", "D103"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 

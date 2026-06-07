@@ -6,7 +6,7 @@ Walk-forward backtester for the persona council + paper-trading pipeline.  Two m
 
 | Mode | What runs per rebalance | Cost | Use when |
 |---|---|---|---|
-| `full` | Entire [`portfolio_decision_graph`](../src/muffin_agent/agents/portfolio_decision.py) (council × N tickers + sizing + reconciler + execution) | High | Validating end-to-end strategy returns |
+| `full` | Entire [`portfolio_decision_graph`](../src/muffin_agent/agents/personas_council/portfolio/portfolio_decision.py) (council × N tickers + sizing + reconciler + execution) | High | Validating end-to-end strategy returns |
 | `signals` | Council per ticker only (no sizing / execution) | Low | Iterating on persona prompts; pure signal-quality measurement |
 
 ## Programmatic API
@@ -14,7 +14,7 @@ Walk-forward backtester for the persona council + paper-trading pipeline.  Two m
 The CLI is a configuration stub today (see "Known limitations" below).  Use the engine programmatically with a caller-supplied `prices_provider`:
 
 ```python
-from muffin_agent.backtesting import BacktestEngine, synthetic_price_provider
+from muffin_agent.agents.personas_council.backtesting import BacktestEngine, synthetic_price_provider
 
 engine = BacktestEngine(
     start="2024-01-01",
@@ -46,7 +46,7 @@ print(results.to_dataframe())
 
 ## Metrics
 
-[`metrics.py`](../src/muffin_agent/backtesting/metrics.py) is pure-Python (statistics stdlib + math; no scipy):
+[`metrics.py`](../src/muffin_agent/agents/personas_council/backtesting/metrics.py) is pure-Python (statistics stdlib + math; no scipy):
 
 * `compute_sharpe(returns, risk_free_rate, frequency)` — annualised
 * `compute_sortino(returns, risk_free_rate, frequency)` — downside-deviation variant
