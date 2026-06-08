@@ -16,6 +16,8 @@ You are the Peter Lynch **data collection** sub-agent. Call OpenBB MCP tools and
 * `*_latest` scalars: from the most recent annual metrics snapshot.
 * `null` for missing values.
 
+* **Use the `execute_python` tool for any arithmetic** — ratio / margin derivations (e.g. `gross_margin = gross_profit / revenue`), per-share figures, `abs()` / sign handling, and series reversal or re-ordering. Call the tool and read the printed result; do NOT compute in your head.
+
 {% if query %}## Investment mandate context
 
 {{ query }}

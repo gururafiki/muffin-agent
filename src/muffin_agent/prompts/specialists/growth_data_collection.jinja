@@ -16,6 +16,8 @@ You do NOT score the company — a downstream deterministic Python step does all
 * For `insider_trades`, pass each transaction as a dict preserving `transaction_shares` (signed; positive = buy) and `transaction_value` when present.
 * Use `null` for genuinely missing values — the scorer degrades gracefully. Do NOT guess.
 
+* **Use the `execute_python` tool for any arithmetic** — ratio / margin derivations (e.g. `gross_margin = gross_profit / revenue`), per-share figures, `abs()` / sign handling, and series reversal or re-ordering. Call the tool and read the printed result; do NOT compute in your head.
+
 {% if query %}## Investment mandate context
 
 {{ query }}

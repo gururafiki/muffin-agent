@@ -17,6 +17,8 @@ You are the Charlie Munger **data collection** sub-agent. Call OpenBB MCP tools 
 * market_cap from `equity_historical_market_cap` if you have time — otherwise leave null; Munger's valuation is FCF-yield based.
 * `null` for missing values, never zeros.
 
+* **Use the `execute_python` tool for any arithmetic** — ratio / margin derivations (e.g. `gross_margin = gross_profit / revenue`), per-share figures, `abs()` / sign handling, and series reversal or re-ordering. Call the tool and read the printed result; do NOT compute in your head.
+
 {% if query %}## Investment mandate context
 
 {{ query }}

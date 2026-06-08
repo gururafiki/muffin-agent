@@ -21,6 +21,7 @@ from typing_extensions import TypedDict
 
 from ....model_config import ModelConfiguration
 from ....prompts import render_template
+from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
 from ..schemas import AnalystSignal
@@ -313,24 +314,15 @@ async def render_verdict_node(
         market_cap=state.get("market_cap"),
         query=query,
     )
-    try:
-        result = cast(
-            AswathDamodaranSignal,
-            await llm.ainvoke(
-                [
-                    SystemMessage(prompt),
-                    HumanMessage("Render your Damodaran verdict now."),
-                ]
-            ),
-        )
-    except Exception:  # noqa: BLE001 — degrade to hold instead of aborting the council
-        logger.exception("aswath_damodaran verdict LLM call failed; defaulting to hold")
-        result = AswathDamodaranSignal(
-            signal="hold",
-            confidence=0.0,
-            reasoning="LLM unavailable — defaulting to hold.",
-            evidence=evidence,
-        )
+    result = cast(
+        AswathDamodaranSignal,
+        await llm.ainvoke(
+            [
+                SystemMessage(prompt),
+                HumanMessage("Render your Damodaran verdict now."),
+            ]
+        ),
+    )
     return {"persona_signals": [result.model_dump()]}
 
 
@@ -363,6 +355,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
     )
     for tool in mcp_tools:
         builder = builder.with_tool(tool, run_limit=2)
+    builder = builder.with_tool(execute_python, is_cacheable=False)
     return builder.build_react_agent()
 
 

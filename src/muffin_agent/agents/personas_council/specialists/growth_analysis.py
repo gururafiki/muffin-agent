@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from ....model_config import ModelConfiguration
+from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
 from ..schemas import AnalystSignal, InvestmentSignal
@@ -200,6 +201,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
     )
     for tool in mcp_tools:
         builder = builder.with_tool(tool, run_limit=2)
+    builder = builder.with_tool(execute_python, is_cacheable=False)
     return builder.build_react_agent()
 
 

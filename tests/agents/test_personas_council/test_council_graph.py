@@ -76,6 +76,22 @@ class TestCouncilGraphWiring:
         ):
             assert slug in nodes
 
+    async def test_include_specialists_via_configurable(self):
+        # The langgraph factory only receives `config`, so the flag must also be
+        # readable from config["configurable"]["include_specialists"].
+        mock_client = AsyncMock()
+        mock_client.get_tools = AsyncMock(return_value=[])
+        with patch(
+            "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
+            return_value=mock_client,
+        ):
+            graph = await build_council_graph(
+                {"configurable": {"include_specialists": True}}
+            )
+        nodes = list(graph.get_graph().nodes)
+        assert "technicals" in nodes
+        assert "news_sentiment" in nodes
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio

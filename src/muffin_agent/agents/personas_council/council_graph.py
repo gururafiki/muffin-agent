@@ -124,11 +124,17 @@ async def build_council_graph(
         include_specialists: When True, also wires the six specialist
             subgraphs (``technicals``, ``sentiment``, ``fundamentals``,
             ``growth``, ``valuation``, ``news_sentiment``) into the fan-in.
+            Also honoured via ``config["configurable"]["include_specialists"]``
+            so the langgraph-deployed factory (which only receives ``config``)
+            and per-request clients can toggle specialists without a kwarg.
 
     Returns:
         Compiled state graph ready for ``ainvoke``.
     """
     effective_config: RunnableConfig = config or {}
+    include_specialists = include_specialists or bool(
+        effective_config.get("configurable", {}).get("include_specialists", False)
+    )
 
     graph: StateGraph = StateGraph(CouncilState)
 

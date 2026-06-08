@@ -518,26 +518,6 @@ muffin trade AAPL,MSFT --portfolio my-port --apply
 
 Full guide: [docs/paper-trading.md](docs/paper-trading.md).
 
-### Backtester (`agents/personas_council/backtesting/`)
-
-Walk-forward backtester for the persona council + paper-trading pipeline.  Two modes — `full` (entire portfolio pipeline per rebalance, expensive) and `signals` (council only, cheap — useful for prompt iteration).  Monthly rebalance default, Sharpe / Sortino / max-drawdown / SPY-benchmark metrics.
-
-Programmatic API today (the `muffin backtest` CLI is a configuration stub — wiring an MCP-backed default `prices_provider` is a roadmap item):
-
-```python
-from muffin_agent.agents.personas_council.backtesting import BacktestEngine, synthetic_price_provider
-
-engine = BacktestEngine(
-    start="2024-01-01", end="2024-12-31",
-    tickers=["AAPL", "MSFT"],
-    initial_cash=100_000, mode="signals", rebalance_freq="ME",
-)
-results = await engine.run(prices_provider=...)
-print(results.metrics, results.to_dataframe())
-```
-
-Full guide: [docs/backtester.md](docs/backtester.md).
-
 ### Middleware
 
 Agents are composed via `MuffinAgentBuilder`, which wires universal middleware for every agent and opt-in middleware per capability. The builder is fully typed: `with_system_prompt` accepts `str | SystemMessage`, `with_permission` accepts a real `FilesystemPermission` (deep-agent only), and the tool / subagent / middleware signatures forward exactly the types expected by `create_deep_agent` and `create_agent`.
@@ -830,10 +810,6 @@ muffin sentiment AAPL     # 30/70 weighted insider + news sentiment
 muffin trade AAPL,MSFT,NVDA --initial-cash 100000             # dry-run
 muffin trade AAPL,MSFT --portfolio my-port --apply            # persist
 muffin trade AAPL,MSFT -q "Long-only quality bias"
-
-# Walk-forward backtester (programmatic API today; CLI is a config stub)
-muffin backtest AAPL,MSFT --start 2024-01-01 --end 2024-12-31 \
-  --mode signals --freq ME --benchmark SPY
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"

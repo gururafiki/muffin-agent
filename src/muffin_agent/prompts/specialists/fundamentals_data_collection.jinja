@@ -13,6 +13,8 @@ You do NOT score the company or render a verdict — a downstream deterministic 
 * Use **decimal form** for ratios/margins/growth (0.18 for 18%, not 18.0). Match OpenBB's native shape.
 * Leave a field `null` when genuinely unavailable — the scorer treats null as "insufficient data" and degrades gracefully. Do NOT guess.
 
+* **Use the `execute_python` tool for any arithmetic** — ratio / margin derivations (e.g. `gross_margin = gross_profit / revenue`), per-share figures, `abs()` / sign handling, and series reversal or re-ordering. Call the tool and read the printed result; do NOT compute in your head.
+
 {% if query %}## Investment mandate context
 
 {{ query }}

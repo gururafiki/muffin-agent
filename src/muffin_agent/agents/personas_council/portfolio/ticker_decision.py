@@ -100,27 +100,13 @@ async def ticker_decision_node(
         persona_signals=persona_signals,
         council_synthesis=council,
     )
-    try:
-        result = cast(
-            TickerDecision,
-            await llm.ainvoke(
-                [
-                    SystemMessage(prompt),
-                    HumanMessage("Render the ticker decision now."),
-                ]
-            ),
-        )
-    except Exception:  # noqa: BLE001 — degrade to hold instead of aborting the run
-        logger.exception(
-            "ticker_decision LLM call failed for %s; defaulting to hold", ticker
-        )
-        result = TickerDecision(
-            ticker=ticker,
-            recommended_action="hold",
-            target_pct_of_nav=0.0,
-            rating="hold",
-            confidence=0.0,
-            reasoning="LLM unavailable — defaulting to hold.",
-            signals_summary={},
-        )
+    result = cast(
+        TickerDecision,
+        await llm.ainvoke(
+            [
+                SystemMessage(prompt),
+                HumanMessage("Render the ticker decision now."),
+            ]
+        ),
+    )
     return {"ticker_decision": result.model_dump()}

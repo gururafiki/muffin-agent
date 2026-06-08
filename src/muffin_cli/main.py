@@ -908,7 +908,9 @@ def persona(
     asyncio.run(_run_persona(slug, ticker, query, user))
 
 
-async def _run_council(ticker: str, query: str | None, user: str) -> None:
+async def _run_council(
+    ticker: str, query: str | None, user: str, include_specialists: bool = False
+) -> None:
     """Run the full 13-persona council on a ticker and print the synthesis."""
     import json
 
@@ -929,6 +931,7 @@ async def _run_council(ticker: str, query: str | None, user: str) -> None:
         config,
         checkpointer=_get_checkpointer(),
         store=store,
+        include_specialists=include_specialists,
     )
 
     result = await graph.ainvoke({"ticker": ticker, "query": query}, config=config)
@@ -956,15 +959,24 @@ def council(
             "(defaults to $USER or 'default-user')",
         ),
     ] = os.environ.get("USER", "default-user"),
+    include_specialists: Annotated[
+        bool,
+        typer.Option(
+            "--include-specialists",
+            help="Also run the 6 specialist agents (technicals / sentiment / "
+            "fundamentals / growth / valuation / news_sentiment)",
+        ),
+    ] = False,
 ) -> None:
     """Run the 13-persona investor council and print the synthesised verdict.
 
-    Runs the shared data-collection step once, fans out to all 13 personas in
-    parallel, then synthesises into a single ``CouncilSynthesisOutput`` with
-    a 5-tier consensus rating, vote breakdown, dissent summary, and key
-    uncertainties.
+    Fans out to all 13 personas in parallel — each fetches its own data via
+    curated OpenBB MCP tools — then synthesises into a single
+    ``CouncilSynthesisOutput`` with a 5-tier consensus rating, vote breakdown,
+    dissent summary, and key uncertainties.  Pass ``--include-specialists`` to
+    add the six specialist signal agents to the fan-in.
     """
-    asyncio.run(_run_council(ticker, query, user))
+    asyncio.run(_run_council(ticker, query, user, include_specialists))
 
 
 # ── Specialist signal CLI (technicals / sentiment) ──────────────────────────
@@ -1331,122 +1343,6 @@ def trade(
     ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
     asyncio.run(
         _run_trade(ticker_list, portfolio_name, initial_cash, apply_changes, user)
-    )
-
-
-# ── Backtester CLI ───────────────────────────────────────────────────────────
-
-
-async def _run_backtest(
-    tickers: list[str],
-    start: str,
-    end: str,
-    mode: str,
-    rebalance_freq: str,
-    initial_cash: float,
-    benchmark: str,
-    user: str,
-) -> None:
-    """Run the walk-forward backtester and print summary metrics."""
-    import json
-
-    from langchain_core.runnables import RunnableConfig
-
-    from muffin_agent.agents.personas_council.backtesting import BacktestEngine
-    from muffin_agent.utils.observability import setup_tracing
-
-    session_id = f"backtest-{'-'.join(tickers)}-{start}-{end}"
-    callbacks = setup_tracing(session_id=session_id)
-
-    engine = BacktestEngine(
-        start=start,
-        end=end,
-        tickers=tickers,
-        initial_cash=initial_cash,
-        mode=mode,  # type: ignore[arg-type]
-        rebalance_freq=rebalance_freq,
-        benchmark=benchmark,
-    )
-
-    # In Phase 5 the prices_provider is wired to a real MCP-backed
-    # implementation in a follow-up; the CLI currently requires the user
-    # to supply one programmatically.  Document this limitation here.
-    typer.echo(
-        "ERROR: Backtest CLI requires a `prices_provider` callable.\n"
-        "Today this is wired via Python code only; an MCP-backed default\n"
-        "is a roadmap item.  See docs/backtester.md for details.",
-        err=True,
-    )
-    typer.echo(
-        f"Backtest configured: {len(tickers)} tickers from {start} → {end} "
-        f"({rebalance_freq} rebalance, mode={mode}, "
-        f"cash=${initial_cash:,.0f}, benchmark={benchmark})",
-        err=True,
-    )
-    # Avoid unused-import warnings for stubs:
-    _ = callbacks, session_id, engine, RunnableConfig, json, user
-    raise typer.Exit(code=1)
-
-
-@app.command()
-def backtest(
-    tickers: Annotated[
-        str,
-        typer.Argument(help="Comma-separated list of tickers (e.g. 'AAPL,MSFT,NVDA')"),
-    ],
-    start: Annotated[
-        str,
-        typer.Option("--start", help="Start date YYYY-MM-DD"),
-    ],
-    end: Annotated[
-        str,
-        typer.Option("--end", help="End date YYYY-MM-DD"),
-    ],
-    mode: Annotated[
-        str,
-        typer.Option(
-            "--mode",
-            help=(
-                "Backtest mode: 'full' (entire portfolio pipeline per "
-                "rebalance) or 'signals' (council only, no execution)"
-            ),
-        ),
-    ] = "signals",
-    rebalance_freq: Annotated[
-        str,
-        typer.Option(
-            "--freq",
-            help="Pandas offset alias (ME=monthly default, W=weekly, QE=quarterly)",
-        ),
-    ] = "ME",
-    initial_cash: Annotated[
-        float,
-        typer.Option("--initial-cash", help="Starting cash for the backtest"),
-    ] = 100_000.0,
-    benchmark: Annotated[
-        str,
-        typer.Option("--benchmark", help="Benchmark ticker for alpha comparison"),
-    ] = "SPY",
-    user: Annotated[
-        str,
-        typer.Option(
-            "--user",
-            help="User id for per-user long-term memory namespace",
-        ),
-    ] = os.environ.get("USER", "default-user"),
-) -> None:
-    """Run the walk-forward backtester (Phase 5).
-
-    Today this command is a configuration stub — wiring the
-    ``prices_provider`` to a real MCP-backed default is a roadmap item.
-    The ``BacktestEngine`` (``muffin_agent.agents.personas_council.backtesting``)
-    is usable programmatically with any caller-supplied prices/benchmark provider.
-    """
-    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
-    asyncio.run(
-        _run_backtest(
-            ticker_list, start, end, mode, rebalance_freq, initial_cash, benchmark, user
-        )
     )
 
 

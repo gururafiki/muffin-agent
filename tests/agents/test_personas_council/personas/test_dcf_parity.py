@@ -1,15 +1,12 @@
-"""Persona valuation-parity, ordering, and graceful-fallback tests (W1–W3)."""
+"""Persona valuation-parity + metrics-ordering tests."""
 
 from __future__ import annotations
-
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from muffin_agent.agents.personas_council.personas import aswath_damodaran as dam
 from muffin_agent.agents.personas_council.personas import bill_ackman as ack
 from muffin_agent.agents.personas_council.personas import rakesh_jhunjhunwala as rak
-from muffin_agent.agents.personas_council.personas import warren_buffett as buf
 from muffin_agent.agents.personas_council.personas.warren_buffett import (
     BuffettMetricsRow,
     compute_evidence_node,
@@ -145,35 +142,3 @@ class TestDamodaranRelativePE:
         state = {"ticker": "X", "pe_ratio_history": [20, 18]}
         ev = dam.compute_evidence_node(state)["evidence"]
         assert ev.relative_valuation.score == 0
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-class TestGracefulFallback:
-    """render_verdict_node degrades to a hold signal when the LLM raises."""
-
-    async def test_buffett_verdict_fallback(self):
-        # Produce evidence first (deterministic), then fail the LLM call.
-        state = {
-            "ticker": "X",
-            "metrics_history": [
-                BuffettMetricsRow(return_on_equity=0.2) for _ in range(5)
-            ],
-            "net_income_series": [50, 60, 70, 80, 90],
-            "revenue_series": [100, 110, 120, 130, 140],
-            "market_cap": 500,
-        }
-        state.update(compute_evidence_node(state))
-
-        failing_llm = AsyncMock()
-        failing_llm.ainvoke = AsyncMock(side_effect=RuntimeError("provider down"))
-        with patch.object(
-            buf.ModelConfiguration,
-            "get_chat_model_for_role",
-            return_value=failing_llm,
-        ):
-            out = await buf.render_verdict_node(state, {})  # type: ignore[arg-type]
-        sig = out["persona_signals"][0]
-        assert sig["signal"] == "hold"
-        assert sig["confidence"] == 0.0
-        assert sig["agent_id"] == "warren_buffett"

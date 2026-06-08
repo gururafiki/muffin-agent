@@ -219,27 +219,15 @@ async def portfolio_reconciler_node(
         llm_inputs=llm_inputs,
         pre_filled_orders=[o.model_dump() for o in pre_filled_orders],
     )
-    try:
-        result = cast(
-            PortfolioReconciliationOutput,
-            await llm.ainvoke(
-                [
-                    SystemMessage(prompt),
-                    HumanMessage("Produce the reconciled order list now."),
-                ]
-            ),
-        )
-    except Exception:  # noqa: BLE001 — degrade to all-hold rather than abort the run
-        logger.exception(
-            "portfolio_reconciler LLM call failed; defaulting non-prefilled "
-            "tickers to hold"
-        )
-        result = PortfolioReconciliationOutput(
-            orders=[],
-            portfolio_notes=(
-                "LLM unavailable — all non-prefilled tickers default to hold."
-            ),
-        )
+    result = cast(
+        PortfolioReconciliationOutput,
+        await llm.ainvoke(
+            [
+                SystemMessage(prompt),
+                HumanMessage("Produce the reconciled order list now."),
+            ]
+        ),
+    )
 
     # Merge pre-filled holds with LLM-produced orders; ensure every
     # ticker in decisions has exactly one order.
