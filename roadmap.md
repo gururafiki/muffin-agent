@@ -342,9 +342,9 @@ A 42.8-min stock_evaluation run identified seven compounding root causes (slow f
 - [x] Check Claude Code development via mobile app
 
 
-## Persona Council + Paper-Trading (ai-hedge-fund port)
+## Persona Council (ai-hedge-fund port)
 
-Ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).  Plan: [`docs/personas.md`](docs/personas.md), [`docs/paper-trading.md`](docs/paper-trading.md).
+Ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).  Guide: [`docs/personas.md`](docs/personas.md).
 
 ### Council
 - [x] Phase 1 foundations — `AnalystSignal`, `PersonaDataBundle`, shared scoring helpers (`agents/personas_council/tools/scoring_helpers.py`), technical-indicator + sentiment tools, registry scaffolding
@@ -354,17 +354,9 @@ Ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).  Plan: [`
 - [x] Phase 3c — Restored persona valuation/DCF parity with ai-hedge-fund: history-derived growth + exit-multiple terminals (Buffett / Ackman / Rakesh), relative-median P/E + base-FCFF terminal (Damodaran), full Buffett owner earnings (median maintenance capex + ΔWC); discrete fixes (Munger ≥5% buyback gate, Pabrai FCF trend, Taleb population stats, Buffett confidence-anchor prompt, `metrics_history` oldest→newest)
 - [x] Phase 3d — Consolidated the whole port into `agents/personas_council/` (personas / specialists / tools / portfolio); council registered as the async **factory** `council_graph.py:build_council_graph` (config-driven `include_specialists`); collectors that derive ratios get `execute_python`; **removed** the graceful LLM-failure `hold` fallbacks (prefer fail-loud + retries over a hidden empty result)
 
-### Paper trading
-- [x] Phase 4.1 — Portfolio state model (Pydantic-immutable Portfolio / Position / RealizedGain / PortfolioValue) + pure-function mutation helpers (`apply_long_buy`, `apply_long_sell`, `apply_short_open`, `apply_short_cover`, `mark_to_market`)
-- [x] Phase 4.2 — Position sizing node (`risk_management_node`): deterministic volatility-bucket × correlation-multiplier per-ticker dollar budget
-- [x] Phase 4.3 — Per-ticker decision (`ticker_decision_node`) + portfolio reconciler (`portfolio_reconciler_node`: hybrid deterministic + LLM with pre-fill-hold optimisation)
-- [x] Phase 4.4 — Trade executor (`portfolio.executor.apply_orders`) with partial-fill semantics
-- [x] Phase 4.5 — Multi-ticker `build_portfolio_decision_graph` (Send × N → council subgraph → ticker_decision → barrier → risk_management → reconciler → execute) + `muffin trade` CLI + portfolio JSON persistence under `~/.muffin/portfolios/`
-
-### Backtester
-- [x] `OutcomesFetcher` Protocol promoted to `utils/outcomes.py` (shared shim) — retained.
-- **Removed** the council-specific `BacktestEngine` (ai-hedge-fund port: `full`/`signals` modes, `ME` rebalance, pure-Python Sharpe/Sortino/max-drawdown/SPY metrics). It was a stub (no MCP-backed default `prices_provider`) and tied to the council only. The implementation is in git history if needed as a reference.
-- [ ] Build a **generic** walk-forward backtester usable by *all* pipelines (council, `trading_decision`, `investment`), not council-specific. Reuse the removed engine's mode/metrics design. Harden as-of-date enforcement on OpenBB MCP tools (server-side `curr_date` cap) so historical runs are reproducible (the prior engine only soft-prompted the LLM to ignore future data).
+### Paper-trading + backtester (removed → deferred to a generic module)
+- **Removed** the council-specific paper-trading layer (`personas_council/portfolio/`: Portfolio book + executor, `risk_management_node`, `ticker_decision_node`, `portfolio_reconciler_node`, the `build_portfolio_decision_graph` graph) + the `muffin trade` CLI, **and** the council-specific `BacktestEngine`. Both were ai-hedge-fund-derived and council-coupled; upstream the Portfolio book + `TradeExecutor` were backtester infra and the decision logic (vol×corr sizing, order-legality reconciliation) is generic, not council-specific. The `OutcomesFetcher` shim (`utils/outcomes.py`) is retained.
+- [ ] Build a **generic, pipeline-agnostic portfolio-management + paper-trading + backtester** module usable by council / `trading_decision` / `investment`: Pydantic Portfolio book + executor (partial-fill, margin), vol×corr position sizing, order-legality reconciliation, and a walk-forward backtester (`full`/`signals` modes, Sharpe/Sortino/max-drawdown/SPY metrics). Harden as-of-date enforcement on OpenBB MCP tools (server-side `curr_date` cap) for reproducible historical runs. Reference impls (the removed council paper-trading layer + ai-hedge-fund `BacktestEngine`) are in git history.
 
 ### Open items
 - [x] News sentiment LLM-per-article specialist — ported (Phase 3b, `news_sentiment`)
@@ -372,5 +364,6 @@ Ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).  Plan: [`
 - [ ] Port Nassim Taleb's `analyze_black_swan_sentinel` (negative-news ratio + volume-spike crisis signal) — deferred; needs company-news collection added to the Taleb data step (volume/price-dislocation half already implicit in the verdict via tail-risk + vol-regime evidence)
 - [ ] Damodaran terminal value uses upstream's base-FCFF anchor (understates IV) for parity; revisit whether to switch to the textbook `terminal_basis="final_cf"` as the default
 - [ ] Wire personas into `investment_analysis.py` as an opt-in stage (currently they're independent + pluggable via `PERSONA_BUILDERS`)
+- [ ] **Validate collector code-execution + tool-result-cache need.** Run real councils and evaluate the quality/correctness of collector arithmetic (gross_margin / BVPS derivations, series ordering). Decide whether the `execute_python` tool now on the persona + fundamentals/growth/valuation collectors is justified (vs. moving those derivations into the deterministic compute nodes), and whether to add the tool-result-cache workflow via `.with_sandbox()` (cache tools + `tool_result_cache.jinja` partial + offload backend) so collectors can discover sibling-cached data and process large/offloaded outputs in code — matching the `equity_price` collector pattern.
 - [ ] Council debate mode using `multi_agent` conference framework (sequential deliberation alternative to parallel vote)
 - [ ] Consider using [skills](https://docs.langchain.com/oss/python/deepagents/skills) per each persona with python scripts to compute necessary scores instead of having scoring functions as utils manually invoked from nodes.

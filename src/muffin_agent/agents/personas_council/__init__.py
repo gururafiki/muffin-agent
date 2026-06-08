@@ -1,12 +1,9 @@
-"""Persona council (ai-hedge-fund port) — verdict ensemble + paper-trading.
+"""Persona council (ai-hedge-fund port) — investor-verdict ensemble.
 
-Consolidated package: 13 investor personas (``personas/``) + 6 specialists
-(``specialists/``) feeding an LLM-mediated judge form the council
-(``council_graph``); a deterministic paper-trading pipeline (``portfolio/``)
-consumes it. Deterministic scoring lives in the package-local ``tools/``.
-
-Public exports cover the council surface; import the ``portfolio`` submodules
-directly for the paper-trading layer.
+13 investor personas (``personas/``) + 6 specialists (``specialists/``) each
+produce an ``AnalystSignal``; an LLM-mediated judge (``council_graph`` +
+``judge``) synthesises them into one consensus verdict. Deterministic scoring
+lives in the package-local ``tools/``.
 """
 
 from __future__ import annotations

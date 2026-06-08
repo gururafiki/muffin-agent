@@ -141,8 +141,6 @@ for slug, builder in PERSONA_BUILDERS:
     parent_graph.add_edge(slug, "my_aggregator_node")
 ```
 
-This is how the [paper-trading pipeline](paper-trading.md) reuses the council per ticker.
-
 ## Specialists
 
 Six specialists ([`agents/personas_council/specialists/`](../src/muffin_agent/agents/personas_council/specialists/)) emit the same `AnalystSignal` contract (5-tier rating). All scoring is **deterministic** — the four metric-heavy ones use an LLM only to *extract* OpenBB fields into a typed `RawData`, never to judge. They mirror ai-hedge-fund's six specialist agents.

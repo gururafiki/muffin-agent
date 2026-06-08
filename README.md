@@ -489,35 +489,6 @@ muffin news-sentiment AAPL
 
 Full guide: [docs/personas.md](docs/personas.md).
 
-### Paper-Trading Pipeline (`agents/personas_council/portfolio/portfolio_decision.py`)
-
-Multi-ticker paper-trading graph that fans out the persona council per ticker, computes deterministic position limits (volatility × correlation), reconciles into concrete share-count orders, then applies them to a Pydantic-immutable `Portfolio` snapshot.
-
-```
-START → Send×N tickers
-     → [council × per-ticker → ticker_decision_node]
-     → risk_management_node            (deterministic)
-     → portfolio_reconciler_node       (hybrid det + LLM, pre-fills hold)
-     → execute_orders                  (portfolio.executor.apply_orders)
-     → END
-```
-
-**Independent of `trading_decision`** — uses the persona council, not Bull/Bear/Judge/Trader.  Reuses muffin's framework features (`MuffinAgentBuilder`, `ModelConfiguration`, `Send` fan-out, state reducers).
-
-Portfolios are JSON dumps under `~/.muffin/portfolios/<name>.json`.
-
-**CLI**:
-
-```bash
-# Dry-run on a fresh portfolio
-muffin trade AAPL,MSFT,NVDA --initial-cash 100000
-
-# Persist new state
-muffin trade AAPL,MSFT --portfolio my-port --apply
-```
-
-Full guide: [docs/paper-trading.md](docs/paper-trading.md).
-
 ### Middleware
 
 Agents are composed via `MuffinAgentBuilder`, which wires universal middleware for every agent and opt-in middleware per capability. The builder is fully typed: `with_system_prompt` accepts `str | SystemMessage`, `with_permission` accepts a real `FilesystemPermission` (deep-agent only), and the tool / subagent / middleware signatures forward exactly the types expected by `create_deep_agent` and `create_agent`.
@@ -803,13 +774,6 @@ muffin council AAPL -q "Long-only quality bias, 5-year horizon"
 # Specialist signal agents — deterministic, no LLM (cheap, fast)
 muffin technicals AAPL    # 5-strategy technical ensemble
 muffin sentiment AAPL     # 30/70 weighted insider + news sentiment
-
-# Multi-ticker paper-trading: council per ticker → position sizing
-# (vol × correlation) → reconciler → executor. Portfolio state under
-# ~/.muffin/portfolios/<name>.json
-muffin trade AAPL,MSFT,NVDA --initial-cash 100000             # dry-run
-muffin trade AAPL,MSFT --portfolio my-port --apply            # persist
-muffin trade AAPL,MSFT -q "Long-only quality bias"
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"
