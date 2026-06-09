@@ -134,32 +134,32 @@ class StanleyDruckenmillerState(AgentState):
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
     revenue_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     eps_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     total_debt_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     shareholders_equity_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    pe_ratio_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    ev_to_ebit_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    fcf_yield_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    pe_ratio_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    ev_to_ebit_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    fcf_yield_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     insider_trades: Annotated[
-        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=False)
     ]
     company_news: Annotated[
-        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=False)
     ]
     prices_1y: Annotated[
-        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=False)
     ]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     evidence: Annotated[
-        StanleyDruckenmillerEvidence | None, OmitFromSchema(input=True, output=True)
+        StanleyDruckenmillerEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -480,7 +480,7 @@ async def build_stanley_druckenmiller_agent(
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=StanleyDruckenmillerInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node("compute_evidence", compute_evidence_node)
@@ -490,5 +490,3 @@ async def build_stanley_druckenmiller_agent(
     graph.add_edge("compute_evidence", "render_verdict")
     graph.add_edge("render_verdict", END)
     return graph.compile()
-
-

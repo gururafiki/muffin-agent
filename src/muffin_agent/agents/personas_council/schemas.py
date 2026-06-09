@@ -17,6 +17,29 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
+
+# ── Shared node input contract ────────────────────────────────────────────────
+
+
+class PersonaInput(TypedDict, total=False):
+    """Input contract for any council-eligible persona / specialist node.
+
+    Every persona / specialist subgraph reads exactly these three fields, so
+    the council passes them via ``add_node(slug, agent, input_schema=PersonaInput)``.
+
+    **Why an explicit schema (not ``agent.input_schema``):** a ``create_agent``
+    subagent's ``.input_schema`` is a property-less ``RootModel`` that does NOT
+    reflect the state schema's ``OmitFromSchema(input=False)`` fields, so passing
+    it makes LangGraph map ``{}`` into the node and raise at coercion. Handing a
+    real field-based schema is what actually expresses the per-node input
+    contract (and isolates the node to just these fields).
+    """
+
+    ticker: str
+    as_of_date: str
+    query: str | None
+
 
 # ── Shared rating vocabulary ──────────────────────────────────────────────────
 

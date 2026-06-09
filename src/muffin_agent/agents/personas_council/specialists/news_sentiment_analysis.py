@@ -85,7 +85,7 @@ class NewsSentimentState(AgentState):
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
     articles: Annotated[
-        list[ArticleSentiment] | None, OmitFromSchema(input=True, output=True)
+        list[ArticleSentiment] | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -207,7 +207,7 @@ async def build_news_sentiment_analysis_agent(
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=NewsSentimentInput,
         retry_policy=_RETRY,
     )
     graph.add_node("aggregate_sentiment", aggregate_sentiment_node)

@@ -689,15 +689,21 @@ pytest
 # Run unit tests only
 pytest -m unit
 
+# Run E2E integration tests (real graphs, mocked LLM/MCP/sandbox — offline)
+pytest -m integration
+
 # Run with coverage
 pytest --cov=muffin_agent tests/
 
 # Run specific test file
 pytest tests/test_config.py
 
-# Run integration tests calling APIs
+# Run tests calling live APIs (e.g. refresh integration fixtures from MCP)
 pytest -m live
 ```
+
+See [docs/integration-testing.md](docs/integration-testing.md) for the E2E
+integration test harness and how to add a test for every new graph.
 
 ### Code Quality
 

@@ -241,5 +241,3 @@ def build_technical_analysis_agent() -> CompiledStateGraph:
     graph.add_edge("fetch_ohlcv", "compute_technical_signal")
     graph.add_edge("compute_technical_signal", END)
     return graph.compile()
-
-

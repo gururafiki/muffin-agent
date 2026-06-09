@@ -204,33 +204,33 @@ class BenGrahamState(AgentState):
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
 
     eps_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     dividends_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     current_assets_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     current_liabilities_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     total_assets_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     total_liabilities_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     outstanding_shares_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     book_value_per_share_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
 
     evidence: Annotated[
-        BenGrahamEvidence | None, OmitFromSchema(input=True, output=True)
+        BenGrahamEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -561,7 +561,7 @@ async def build_ben_graham_agent(config: RunnableConfig) -> CompiledStateGraph:
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=BenGrahamInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node("compute_evidence", compute_evidence_node)
@@ -571,5 +571,3 @@ async def build_ben_graham_agent(config: RunnableConfig) -> CompiledStateGraph:
     graph.add_edge("compute_evidence", "render_verdict")
     graph.add_edge("render_verdict", END)
     return graph.compile()
-
-

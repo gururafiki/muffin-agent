@@ -146,50 +146,50 @@ class CharlieMungerState(AgentState):
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
     revenue_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     operating_income_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     operating_margin_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     net_income_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     free_cash_flow_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     capital_expenditure_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     research_and_development_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     return_on_invested_capital_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     goodwill_and_intangible_assets_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     total_debt_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     shareholders_equity_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     cash_and_equivalents_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     outstanding_shares_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     insider_trades: Annotated[
-        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=False)
     ]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     evidence: Annotated[
-        CharlieMungerEvidence | None, OmitFromSchema(input=True, output=True)
+        CharlieMungerEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -621,7 +621,7 @@ async def build_charlie_munger_agent(config: RunnableConfig) -> CompiledStateGra
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=CharlieMungerInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node("compute_evidence", compute_evidence_node)
@@ -631,5 +631,3 @@ async def build_charlie_munger_agent(config: RunnableConfig) -> CompiledStateGra
     graph.add_edge("compute_evidence", "render_verdict")
     graph.add_edge("render_verdict", END)
     return graph.compile()
-
-

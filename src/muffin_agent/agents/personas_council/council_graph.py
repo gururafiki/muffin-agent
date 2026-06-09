@@ -59,6 +59,7 @@ from .personas import (
     build_stanley_druckenmiller_agent,
     build_warren_buffett_agent,
 )
+from .schemas import PersonaInput
 from .specialists import (
     build_fundamentals_analysis_agent,
     build_growth_analysis_agent,
@@ -142,13 +143,11 @@ async def build_council_graph(
     persona_agents = await asyncio.gather(
         *(builder(effective_config) for _, builder in PERSONA_BUILDERS)
     )
-    for (slug, _builder), agent in zip(
-        PERSONA_BUILDERS, persona_agents, strict=False
-    ):
+    for (slug, _builder), agent in zip(PERSONA_BUILDERS, persona_agents, strict=False):
         graph.add_node(
             slug,
             agent,
-            input_schema=agent.input_schema,
+            input_schema=PersonaInput,
             retry_policy=_LLM_RETRY,
         )
         graph.add_edge(START, slug)
@@ -163,7 +162,7 @@ async def build_council_graph(
         for slug, sync_builder in sync_specialists:
             agent = sync_builder()
             graph.add_node(
-                slug, agent, input_schema=agent.input_schema, retry_policy=_LLM_RETRY
+                slug, agent, input_schema=PersonaInput, retry_policy=_LLM_RETRY
             )
             graph.add_edge(START, slug)
             graph.add_edge(slug, "council_judge")
@@ -183,7 +182,7 @@ async def build_council_graph(
             async_specialists, async_agents, strict=False
         ):
             graph.add_node(
-                slug, agent, input_schema=agent.input_schema, retry_policy=_LLM_RETRY
+                slug, agent, input_schema=PersonaInput, retry_policy=_LLM_RETRY
             )
             graph.add_edge(START, slug)
             graph.add_edge(slug, "council_judge")

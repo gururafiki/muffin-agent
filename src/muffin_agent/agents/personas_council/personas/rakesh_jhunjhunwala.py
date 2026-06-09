@@ -134,42 +134,42 @@ class RakeshJhunjhunwalaState(AgentState):
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
     revenue_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     net_income_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     eps_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     free_cash_flow_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     dividends_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     issuance_or_purchase_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     total_assets_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     total_liabilities_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     current_assets_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     current_liabilities_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    roe_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    roe_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     operating_margin_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     evidence: Annotated[
-        RakeshJhunjhunwalaEvidence | None, OmitFromSchema(input=True, output=True)
+        RakeshJhunjhunwalaEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -519,7 +519,7 @@ async def build_rakesh_jhunjhunwala_agent(config: RunnableConfig) -> CompiledSta
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=RakeshJhunjhunwalaInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node("compute_evidence", compute_evidence_node)
@@ -529,5 +529,3 @@ async def build_rakesh_jhunjhunwala_agent(config: RunnableConfig) -> CompiledSta
     graph.add_edge("compute_evidence", "render_verdict")
     graph.add_edge("render_verdict", END)
     return graph.compile()
-
-

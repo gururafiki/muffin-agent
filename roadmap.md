@@ -290,8 +290,10 @@ A 42.8-min stock_evaluation run identified seven compounding root causes (slow f
 
 
 ### CI/CD and testing
-- [ ] Add full e2e integreation test mocking LLM calls
-- [ ] Add github actions to run integration tests with agents before merging pull requests
+- [x] Add full e2e integration test mocking LLM calls — reusable harness in `tests/integration/_harness/` (`ScriptedChatModel`/`patch_llm`, `patch_mcp`, `patch_sandbox`, `patch_embeddings`) + per-tool fixtures + hybrid live-capture; two worked examples (`test_equity_price_collector.py` passing, `test_persona_peter_lynch.py`) + an enforcing meta-test over `langgraph.json`. Guide: [`docs/integration-testing.md`](docs/integration-testing.md).
+- [x] **Fixed the systemic compiled-subagent composition bug surfaced by the integration suite** (broke council + all trading_decision graphs + persona CLI end-to-end; masked because graph tests stub the subagents). Two layers fixed: (1) every `add_node(..., input_schema=agent.input_schema)` now passes an explicit field-based TypedDict (`PersonaInput` in `personas_council/schemas.py`, `AnalystInput` in `trading_decision/state.py`) — `create_agent`'s `.input_schema` is a property-less `RootModel` that maps `{}` and raises at coercion; (2) persona/specialist subagent-produced fields flipped from `OmitFromSchema(input=True, output=True)` → `output=False` so the auto-unpacked `structured_response` values propagate to the downstream compute node. Locked by `test_persona_peter_lynch.py` (un-xfailed), `test_council_graph_e2e.py` (all 13 personas → judge), and `test_trading_analysts_e2e.py`. Composition rules documented in CLAUDE.md.
+- [ ] Backfill E2E integration coverage for the deployable graphs still in `PENDING_INTEGRATION_COVERAGE` (`stock_evaluation`, `criteria_analysis`, `research`) — `council` is now COVERED. Move each into `COVERED_GRAPHS` as its `tests/integration/test_<id>.py` lands.
+- [ ] Add github actions to run integration tests with agents before merging pull requests (`pytest -m integration`).
 
 ## Phase 4
 

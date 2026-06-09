@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "asset_type": "EQUITY",
+      "name": "Apple Inc.",
+      "exchange": "NMS",
+      "bid": 201.42,
+      "bid_size": 200,
+      "ask": 201.5,
+      "ask_size": 100,
+      "last_price": 201.5,
+      "last_size": 100,
+      "open": 199.8,
+      "high": 202.6,
+      "low": 199.1,
+      "close": 201.5,
+      "volume": 48213900,
+      "prev_close": 200.21,
+      "change": 1.29,
+      "change_percent": 0.006443,
+      "year_high": 237.49,
+      "year_low": 164.08,
+      "ma_50d": 196.74,
+      "ma_200d": 210.62,
+      "volume_average": 54213000,
+      "volume_average_10d": 51122300,
+      "currency": "USD"
+    }
+  ],
+  "provider": "yfinance",
+  "warnings": null,
+  "chart": null,
+  "extra": {"metadata": {"arguments": {"provider_choices": {"provider": "yfinance"}, "standard_params": {"symbol": "AAPL"}}}}
+}

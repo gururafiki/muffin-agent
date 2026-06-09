@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "one_day": 0.0064,
+      "wtd": 0.0142,
+      "one_week": 0.021,
+      "mtd": 0.0061,
+      "one_month": 0.0388,
+      "qtd": 0.0712,
+      "three_month": 0.0954,
+      "six_month": -0.0421,
+      "ytd": -0.0337,
+      "one_year": 0.1822,
+      "two_year": 0.4631,
+      "three_year": 0.9755,
+      "four_year": 1.2104,
+      "five_year": 1.6388,
+      "ten_year": 6.0421,
+      "max": 156.32
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {"metadata": {"arguments": {"provider_choices": {"provider": "fmp"}, "standard_params": {"symbol": "AAPL"}}}}
+}

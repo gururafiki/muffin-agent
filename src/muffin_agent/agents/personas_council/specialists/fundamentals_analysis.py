@@ -94,26 +94,28 @@ class FundamentalsState(AgentState):
     ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
-    return_on_equity: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    net_margin: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    operating_margin: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    revenue_growth: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    earnings_growth: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    book_value_growth: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    current_ratio: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    debt_to_equity: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    return_on_equity: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    net_margin: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    operating_margin: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    revenue_growth: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    earnings_growth: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    book_value_growth: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    current_ratio: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    debt_to_equity: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     free_cash_flow_per_share: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
-    earnings_per_share: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    earnings_per_share: Annotated[
+        float | None, OmitFromSchema(input=True, output=False)
+    ]
     price_to_earnings_ratio: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     price_to_book_ratio: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     price_to_sales_ratio: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -227,7 +229,7 @@ async def build_fundamentals_analysis_agent(
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=FundamentalsInput,
         retry_policy=_RETRY,
     )
     graph.add_node("compute_fundamentals_signal", compute_fundamentals_signal_node)

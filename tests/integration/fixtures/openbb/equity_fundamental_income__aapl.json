@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "period_ending": "2023-09-30", "fiscal_period": "FY", "fiscal_year": 2023, "symbol": "AAPL",
+      "reported_currency": "USD", "revenue": 383285000000.0, "gross_profit": 169148000000.0,
+      "ebitda": 125820000000.0, "ebit": 114301000000.0, "total_operating_income": 114301000000.0,
+      "consolidated_net_income": 96995000000.0, "bottom_line_net_income": 96995000000.0,
+      "basic_earnings_per_share": 6.16, "diluted_earnings_per_share": 6.13,
+      "weighted_average_diluted_shares_outstanding": 15812547000.0
+    },
+    {
+      "period_ending": "2024-09-28", "fiscal_period": "FY", "fiscal_year": 2024, "symbol": "AAPL",
+      "reported_currency": "USD", "revenue": 391035000000.0, "gross_profit": 180683000000.0,
+      "ebitda": 134661000000.0, "ebit": 123216000000.0, "total_operating_income": 123216000000.0,
+      "consolidated_net_income": 93736000000.0, "bottom_line_net_income": 93736000000.0,
+      "basic_earnings_per_share": 6.11, "diluted_earnings_per_share": 6.08,
+      "weighted_average_diluted_shares_outstanding": 15408095000.0
+    },
+    {
+      "period_ending": "2025-09-27", "fiscal_period": "FY", "fiscal_year": 2025, "symbol": "AAPL",
+      "reported_currency": "USD", "revenue": 410245000000.0, "gross_profit": 192815000000.0,
+      "ebitda": 141930000000.0, "ebit": 129880000000.0, "total_operating_income": 129880000000.0,
+      "consolidated_net_income": 99840000000.0, "bottom_line_net_income": 99840000000.0,
+      "basic_earnings_per_share": 6.69, "diluted_earnings_per_share": 6.62,
+      "weighted_average_diluted_shares_outstanding": 15081000000.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {"metadata": {"arguments": {"provider_choices": {"provider": "fmp"}, "standard_params": {"symbol": "AAPL", "period": "annual", "limit": 3}}}}
+}

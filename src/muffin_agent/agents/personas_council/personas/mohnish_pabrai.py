@@ -113,32 +113,32 @@ class MohnishPabraiState(AgentState):
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
     revenue_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     free_cash_flow_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     capital_expenditure_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     cash_and_equivalents_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     total_debt_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     shareholders_equity_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     current_assets_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     current_liabilities_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     evidence: Annotated[
-        MohnishPabraiEvidence | None, OmitFromSchema(input=True, output=True)
+        MohnishPabraiEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -206,9 +206,7 @@ def _score_pabrai_downside(
                 )
             elif recent_avg > 0:
                 score += 1
-                parts.append(
-                    f"Positive but declining FCF ({positives}/{len(fcf)} +ve)"
-                )
+                parts.append(f"Positive but declining FCF ({positives}/{len(fcf)} +ve)")
 
     return MohnishPabraiDownsideProtection(
         net_cash=net_cash,
@@ -396,7 +394,7 @@ async def build_mohnish_pabrai_agent(config: RunnableConfig) -> CompiledStateGra
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=MohnishPabraiInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node("compute_evidence", compute_evidence_node)
@@ -406,5 +404,3 @@ async def build_mohnish_pabrai_agent(config: RunnableConfig) -> CompiledStateGra
     graph.add_edge("compute_evidence", "render_verdict")
     graph.add_edge("render_verdict", END)
     return graph.compile()
-
-

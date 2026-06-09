@@ -268,5 +268,3 @@ def build_sentiment_analysis_agent() -> CompiledStateGraph:
     graph.add_edge("fetch_company_news", "compute_sentiment_signal")
     graph.add_edge("compute_sentiment_signal", END)
     return graph.compile()
-
-

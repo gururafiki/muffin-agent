@@ -124,29 +124,29 @@ class BillAckmanState(AgentState):
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
     revenue_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     operating_margin_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     free_cash_flow_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     total_debt_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     shareholders_equity_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     dividends_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     outstanding_shares_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     evidence: Annotated[
-        BillAckmanEvidence | None, OmitFromSchema(input=True, output=True)
+        BillAckmanEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -244,9 +244,7 @@ def _score_ackman_activism_potential(
     revenue_growth: float | None = None
     if len(revenues) >= 2 and revenues[0]:
         revenue_growth = (revenues[-1] - revenues[0]) / abs(revenues[0])
-    avg_margin: float | None = (
-        sum(op_margins) / len(op_margins) if op_margins else None
-    )
+    avg_margin: float | None = sum(op_margins) / len(op_margins) if op_margins else None
     if (
         revenue_growth is not None
         and avg_margin is not None
@@ -419,7 +417,7 @@ async def build_bill_ackman_agent(config: RunnableConfig) -> CompiledStateGraph:
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=BillAckmanInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node("compute_evidence", compute_evidence_node)
@@ -429,5 +427,3 @@ async def build_bill_ackman_agent(config: RunnableConfig) -> CompiledStateGraph:
     graph.add_edge("compute_evidence", "render_verdict")
     graph.add_edge("render_verdict", END)
     return graph.compile()
-
-

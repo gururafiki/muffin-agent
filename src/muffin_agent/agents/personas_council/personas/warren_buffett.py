@@ -352,46 +352,46 @@ class WarrenBuffettState(AgentState):
 
     # RawData fields (populated by collect_data's structured_response auto-unpack)
     metrics_history: Annotated[
-        list[BuffettMetricsRow] | None, OmitFromSchema(input=True, output=True)
+        list[BuffettMetricsRow] | None, OmitFromSchema(input=True, output=False)
     ]
     net_income_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     revenue_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     gross_margin_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     shareholders_equity_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     outstanding_shares_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     depreciation_amortization_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     capital_expenditure_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     current_assets_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     current_liabilities_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     latest_issuance_or_purchase_of_equity_shares: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     latest_dividends_and_other_cash_distributions: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
 
     # Computed evidence (filled by compute_evidence)
     evidence: Annotated[
-        WarrenBuffettEvidence | None, OmitFromSchema(input=True, output=True)
+        WarrenBuffettEvidence | None, OmitFromSchema(input=True, output=False)
     ]
 
     # Output to the council (single-element list, accumulated via parent reducer)
@@ -1034,10 +1034,12 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
 async def build_warren_buffett_agent(config: RunnableConfig) -> CompiledStateGraph:
     """Build the full 3-node Warren Buffett subgraph.
 
-    Add to a parent graph (e.g. the council) via::
+    Add to a parent graph (e.g. the council) via an explicit field-based input
+    schema — NOT ``agent.input_schema`` (a property-less ``RootModel`` that maps
+    ``{}`` and raises at coercion)::
 
         agent = await build_warren_buffett_agent(config)
-        parent.add_node("warren_buffett", agent, input_schema=agent.input_schema)
+        parent.add_node("warren_buffett", agent, input_schema=PersonaInput)
     """
     data_agent = await _build_data_collection_agent(config)
     graph = StateGraph(
@@ -1048,7 +1050,7 @@ async def build_warren_buffett_agent(config: RunnableConfig) -> CompiledStateGra
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=WarrenBuffettInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node("compute_evidence", compute_evidence_node)
@@ -1058,5 +1060,3 @@ async def build_warren_buffett_agent(config: RunnableConfig) -> CompiledStateGra
     graph.add_edge("compute_evidence", "render_verdict")
     graph.add_edge("render_verdict", END)
     return graph.compile()
-
-

@@ -402,6 +402,22 @@ git push -u origin <current-branch>
 
 ### Step 14 — Create pull request
 
+## Add an E2E integration test (required)
+
+Add `tests/integration/test_{name}_collector.py` following the ReAct recipe in
+[docs/integration-testing.md](../../docs/integration-testing.md) and the worked
+example `tests/integration/test_equity_price_collector.py`. Run the real agent via
+its factory while mocking only the boundaries:
+
+- `patch_llm(tool_turn("<a_tool>", {...}), final("…"))` scripts the model turns.
+- `patch_mcp("aapl")` serves fixture-backed tools (drop a
+  `tests/integration/fixtures/openbb/<tool>__aapl.json` for any tool the script
+  calls — author from `extras/openbb/openbb_mcp_tools.json` or capture live).
+- `patch_sandbox()` is required because data-collection agents use `.with_sandbox()`.
+
+Assert the fixture-backed `ToolMessage` is present and `cursor.consumed` matches
+the script length. Verify offline: `.venv/bin/pytest tests/integration/ -m integration`.
+
 Create a PR using `gh pr create` with:
 
 - **Title**: `Add {name} data collection agent`

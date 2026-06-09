@@ -747,6 +747,27 @@ PYTHONPATH=src pytest tests/agents/test_{name}.py -m unit --override-ini="addopt
 
 ---
 
+## Step 15b — Add an E2E integration test (required)
+
+Add `tests/integration/test_{name}.py` following the multi-node recipe in
+[docs/integration-testing.md](../../docs/integration-testing.md) and the worked
+example `tests/integration/test_persona_peter_lynch.py`. Build the real node/graph
+via its factory and mock only the boundaries:
+
+- `patch_llm(...)` — one shared script across the node's subagent calls. For a
+  deep-agent node with `response_format=`, the final ReAct turn is
+  `tool_turn("<OutputSchemaClassName>", {...})`; a direct `get_chat_model_for_role`
+  call consumes a bare Pydantic instance.
+- `patch_mcp("aapl")` for subagent MCP tools; `patch_sandbox()` if the node uses
+  `get_backend`/`.with_sandbox()`/`execute_python`.
+- Let deterministic compute run for real; assert on the structured output and
+  `cursor.consumed`.
+
+Verify offline: `.venv/bin/pytest tests/integration/ -m integration`. (Note: if the
+node composes a compiled subagent via `add_node(..., input_schema=agent.input_schema)`,
+see the known composition bug in [docs/integration-testing.md](../../docs/integration-testing.md)
+— such e2e tests are `xfail` until that is fixed.)
+
 ## Step 16 — Commit and push
 
 ```bash

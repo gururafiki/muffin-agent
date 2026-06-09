@@ -114,25 +114,25 @@ class AswathDamodaranState(AgentState):
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
     revenue_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     free_cash_flow_series: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    roic_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    beta_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    roic_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    beta_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     debt_to_equity_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     interest_coverage_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     pe_ratio_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     evidence: Annotated[
-        AswathDamodaranEvidence | None, OmitFromSchema(input=True, output=True)
+        AswathDamodaranEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -369,7 +369,7 @@ async def build_aswath_damodaran_agent(config: RunnableConfig) -> CompiledStateG
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=AswathDamodaranInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node("compute_evidence", compute_evidence_node)
@@ -379,5 +379,3 @@ async def build_aswath_damodaran_agent(config: RunnableConfig) -> CompiledStateG
     graph.add_edge("compute_evidence", "render_verdict")
     graph.add_edge("render_verdict", END)
     return graph.compile()
-
-

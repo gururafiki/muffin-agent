@@ -96,31 +96,31 @@ class GrowthState(AgentState):
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
     revenue_growth_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     eps_growth_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     fcf_growth_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     gross_margin_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     operating_margin_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     net_margin_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    peg_ratio: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    peg_ratio: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     price_to_sales_ratio: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
-    debt_to_equity: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    current_ratio: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    debt_to_equity: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    current_ratio: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     insider_trades: Annotated[
-        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
+        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
@@ -193,9 +193,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         MuffinAgentBuilder(primary, name="growth_data_collection")
         .with_fallback_models(*fallbacks)
         .with_state_schema(GrowthState)
-        .with_runtime_system_prompt_template(
-            "specialists/growth_data_collection.jinja"
-        )
+        .with_runtime_system_prompt_template("specialists/growth_data_collection.jinja")
         .with_response_format(GrowthRawData)
         .with_model_call_limit(run_limit=8, exit_behavior="end")
     )
@@ -216,7 +214,7 @@ async def build_growth_analysis_agent(config: RunnableConfig) -> CompiledStateGr
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=GrowthInput,
         retry_policy=_RETRY,
     )
     graph.add_node("compute_growth_signal", compute_growth_signal_node)

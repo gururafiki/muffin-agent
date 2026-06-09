@@ -106,40 +106,40 @@ class ValuationState(AgentState):
     ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
-    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    net_income_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    market_cap: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    net_income_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     depreciation_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     capital_expenditure_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     working_capital_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    earnings_growth: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    revenue_growth: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    earnings_growth: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    revenue_growth: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     free_cash_flow_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
-    total_debt_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
-    cash_latest: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    total_debt_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
+    cash_latest: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     interest_coverage_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     debt_to_equity_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     enterprise_value_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
     ev_to_ebitda_history: Annotated[
-        list[float | None] | None, OmitFromSchema(input=True, output=True)
+        list[float | None] | None, OmitFromSchema(input=True, output=False)
     ]
     price_to_book_ratio_latest: Annotated[
-        float | None, OmitFromSchema(input=True, output=True)
+        float | None, OmitFromSchema(input=True, output=False)
     ]
-    book_value_growth: Annotated[float | None, OmitFromSchema(input=True, output=True)]
+    book_value_growth: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
 
@@ -236,7 +236,7 @@ async def build_valuation_analysis_agent(config: RunnableConfig) -> CompiledStat
     graph.add_node(
         "collect_data",
         data_agent,
-        input_schema=data_agent.input_schema,
+        input_schema=ValuationInput,
         retry_policy=_RETRY,
     )
     graph.add_node("compute_valuation_signal", compute_valuation_signal_node)
