@@ -1,0 +1,13 @@
+{
+  "results": {
+    "symbol": "AAPL",
+    "year": 1,
+    "quarter": "sample",
+    "date": "2026-06-01",
+    "content": "sample"
+  },
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

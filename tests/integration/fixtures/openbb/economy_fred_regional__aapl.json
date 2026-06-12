@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "region": "sample",
+      "code": "sample",
+      "value": 1,
+      "series_id": "sample"
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

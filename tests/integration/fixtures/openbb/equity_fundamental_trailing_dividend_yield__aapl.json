@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "trailing_dividend_yield": 1.0
+    }
+  ],
+  "provider": "tiingo",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

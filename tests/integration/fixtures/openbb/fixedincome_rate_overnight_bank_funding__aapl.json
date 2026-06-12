@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "rate": 1.0,
+      "percentile_1": 1.0,
+      "percentile_25": 1.0,
+      "percentile_75": 1.0,
+      "percentile_99": 1.0,
+      "volume": 1.0
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

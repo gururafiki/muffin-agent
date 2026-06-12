@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "exchange": "sample",
+      "ico_date": "2026-06-01",
+      "circulating_supply": 1.0,
+      "total_supply": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

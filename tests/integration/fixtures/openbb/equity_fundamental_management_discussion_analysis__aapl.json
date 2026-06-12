@@ -1,0 +1,14 @@
+{
+  "results": {
+    "symbol": "AAPL",
+    "calendar_year": 1,
+    "calendar_period": 1,
+    "period_ending": "2026-06-01",
+    "content": "sample",
+    "url": "sample"
+  },
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

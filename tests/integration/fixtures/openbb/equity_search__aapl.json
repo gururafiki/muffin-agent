@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "dpm_name": "sample",
+      "post_station": "sample"
+    }
+  ],
+  "provider": "cboe",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

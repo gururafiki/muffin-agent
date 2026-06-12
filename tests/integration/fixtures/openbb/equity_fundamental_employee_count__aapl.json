@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "employees": 1,
+      "company_name": "sample",
+      "source": "sample",
+      "url": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

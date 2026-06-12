@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "country": "United States",
+      "continent": "sample",
+      "total_equity_risk_premium": 1.0,
+      "country_risk_premium": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

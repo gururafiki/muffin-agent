@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "date": "2026-06-01",
+      "open": 1.0,
+      "high": 1.0,
+      "low": 1.0,
+      "close": 1.0,
+      "volume": 1,
+      "calls_volume": 1.0,
+      "puts_volume": 1.0,
+      "total_options_volume": 1.0
+    }
+  ],
+  "provider": "cboe",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

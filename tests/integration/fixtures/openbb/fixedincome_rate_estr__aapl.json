@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "rate": 1.0,
+      "percentile_25": 1.0,
+      "percentile_75": 1.0,
+      "volume": 1.0,
+      "transactions": 1,
+      "number_of_banks": 1,
+      "large_bank_share_of_volume": 1.0
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

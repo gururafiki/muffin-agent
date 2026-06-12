@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "settlement_date": "2026-06-01",
+      "symbol": "AAPL",
+      "cusip": "sample",
+      "quantity": 1,
+      "price": 1.0,
+      "description": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

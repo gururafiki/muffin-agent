@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "rate": 1.0,
+      "percentile_1": 1.0,
+      "percentile_25": 1.0,
+      "percentile_75": 1.0,
+      "percentile_99": 1.0,
+      "volume": 1.0,
+      "average_30d": 1.0,
+      "average_90d": 1.0,
+      "average_180d": 1.0,
+      "index": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

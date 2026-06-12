@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "country": "United States",
+      "population": 1,
+      "gdp_usd": 1.0,
+      "gdp_qoq": 1.0,
+      "gdp_yoy": 1.0,
+      "cpi_yoy": 1.0,
+      "core_yoy": 1.0,
+      "retail_sales_yoy": 1.0,
+      "industrial_production_yoy": 1.0,
+      "policy_rate": 1.0,
+      "yield_10y": 1.0,
+      "govt_debt_gdp": 1.0,
+      "current_account_gdp": 1.0,
+      "jobless_rate": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

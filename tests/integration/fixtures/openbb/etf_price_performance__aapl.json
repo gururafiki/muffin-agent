@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "one_day": 1.0,
+      "wtd": 1.0,
+      "one_week": 1.0,
+      "mtd": 1.0,
+      "one_month": 1.0,
+      "qtd": 1.0,
+      "three_month": 1.0,
+      "six_month": 1.0,
+      "ytd": 1.0,
+      "one_year": 1.0,
+      "two_year": 1.0,
+      "three_year": 1.0,
+      "four_year": 1.0,
+      "five_year": 1.0,
+      "ten_year": 1.0,
+      "max": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

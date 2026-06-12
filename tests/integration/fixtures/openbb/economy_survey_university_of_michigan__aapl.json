@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "consumer_sentiment": 1.0,
+      "inflation_expectation": 1.0
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

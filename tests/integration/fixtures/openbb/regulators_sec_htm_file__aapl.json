@@ -1,0 +1,10 @@
+{
+  "results": {
+    "url": "sample",
+    "content": "sample"
+  },
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

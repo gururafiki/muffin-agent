@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "exchange": "sample",
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "open": 1.0,
+      "high": 1.0,
+      "low": 1.0,
+      "close": 1.0,
+      "volume": 1,
+      "prev_close": 1.0,
+      "change": 1.0,
+      "change_percent": 1.0,
+      "vwap": 1.0,
+      "prev_open": 1.0,
+      "prev_high": 1.0,
+      "prev_low": 1.0,
+      "prev_volume": 1.0,
+      "prev_vwap": 1.0,
+      "last_updated": "2026-06-01T00:00:00",
+      "bid": 1.0,
+      "bid_size": 1,
+      "ask_size": 1,
+      "ask": 1.0,
+      "quote_timestamp": "2026-06-01T00:00:00",
+      "last_trade_price": 1.0,
+      "last_trade_size": 1,
+      "last_trade_conditions": [
+        1
+      ],
+      "last_trade_exchange": 1,
+      "last_trade_timestamp": "2026-06-01T00:00:00"
+    }
+  ],
+  "provider": "polygon",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

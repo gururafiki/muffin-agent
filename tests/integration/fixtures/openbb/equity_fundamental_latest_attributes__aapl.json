@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "tag": "sample",
+      "value": "sample"
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

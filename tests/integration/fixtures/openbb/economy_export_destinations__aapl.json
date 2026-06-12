@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "origin_country": "sample",
+      "destination_country": "sample",
+      "value": 1.0,
+      "units": "sample",
+      "title": "sample",
+      "footnote": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

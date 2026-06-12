@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "update_date": "2026-06-01",
+      "share_quantity": 1.0,
+      "trade_quantity": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

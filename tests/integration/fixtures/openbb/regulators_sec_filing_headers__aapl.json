@@ -1,0 +1,22 @@
+{
+  "results": {
+    "base_url": "sample",
+    "name": "Apple Inc.",
+    "cik": "0000320193",
+    "trading_symbols": [],
+    "sic": "sample",
+    "sic_organization_name": "sample",
+    "filing_date": "2026-06-01",
+    "period_ending": "2026-06-01",
+    "fiscal_year_end": "sample",
+    "document_type": "sample",
+    "has_cover_page": false,
+    "description": "sample",
+    "cover_page": {},
+    "document_urls": []
+  },
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

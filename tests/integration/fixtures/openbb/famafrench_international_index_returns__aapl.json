@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "mkt": 1.0,
+      "firms": 1,
+      "bm": 1.0,
+      "be_me_high": 1.0,
+      "be_me_low": 1.0,
+      "ep": 1.0,
+      "e_p_high": 1.0,
+      "e_p_low": 1.0,
+      "ce_p": 1.0,
+      "ce_p_high": 1.0,
+      "ce_p_low": 1.0,
+      "yld": 1.0,
+      "yld_high": 1.0,
+      "yld_low": 1.0,
+      "yld_zero": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

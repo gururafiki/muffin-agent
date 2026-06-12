@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "title": "sample",
+      "name": "Apple Inc.",
+      "pay": 1,
+      "currency_pay": "USD",
+      "gender": "sample",
+      "year_born": 1,
+      "exercised_value": 1,
+      "unexercised_value": 1,
+      "fiscal_year": 1
+    }
+  ],
+  "provider": "yfinance",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

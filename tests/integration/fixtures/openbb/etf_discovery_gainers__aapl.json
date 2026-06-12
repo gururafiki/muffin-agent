@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "last_price": 1.0,
+      "percent_change": 1.0,
+      "net_change": 1.0,
+      "volume": 1.0,
+      "date": "2026-06-01",
+      "bluegrass_channel": "sample",
+      "country": "United States",
+      "mantissa": 1,
+      "type": "sample",
+      "formatted_price": "sample",
+      "formatted_volume": "sample",
+      "formatted_price_change": "sample",
+      "formatted_percent_change": "sample",
+      "url": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

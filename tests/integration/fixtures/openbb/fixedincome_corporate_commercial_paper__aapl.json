@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "maturity": "sample",
+      "rate": 1.0,
+      "title": "sample",
+      "asset_type": "asset_backed"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

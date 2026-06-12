@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "cik": "0000320193",
+      "report_date": "2026-06-01",
+      "company_name": "sample",
+      "executive": "sample",
+      "year": 1,
+      "salary": 1,
+      "bonus": 1,
+      "stock_award": 1,
+      "option_award": 1,
+      "incentive_plan_compensation": 1,
+      "all_other_compensation": 1,
+      "total": 1,
+      "accepted_date": "2026-06-01T00:00:00",
+      "url": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

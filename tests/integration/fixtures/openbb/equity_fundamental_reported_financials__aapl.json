@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "period_ending": "2026-06-01",
+      "fiscal_period": "sample",
+      "fiscal_year": 1
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

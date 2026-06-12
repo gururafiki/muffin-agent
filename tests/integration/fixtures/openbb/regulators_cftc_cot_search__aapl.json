@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "code": "sample",
+      "name": "Apple Inc.",
+      "category": "sample",
+      "subcategory": "sample",
+      "units": "sample",
+      "symbol": "AAPL",
+      "commodity": "sample"
+    }
+  ],
+  "provider": "cftc",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

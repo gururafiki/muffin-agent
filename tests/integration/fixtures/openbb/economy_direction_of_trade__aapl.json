@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "country": "United States",
+      "counterpart": "sample",
+      "title": "sample",
+      "value": 1.0,
+      "scale": "sample"
+    }
+  ],
+  "provider": "imf",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

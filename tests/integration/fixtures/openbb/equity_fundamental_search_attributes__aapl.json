@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "id": "sample",
+      "name": "Apple Inc.",
+      "tag": "sample",
+      "statement_code": "sample",
+      "statement_type": "sample",
+      "parent_name": "sample",
+      "sequence": 1,
+      "factor": "sample",
+      "transaction": "sample",
+      "type": "sample",
+      "unit": "sample"
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

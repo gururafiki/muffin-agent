@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "period_ending": "2026-06-01",
+      "fiscal_period": "sample",
+      "fiscal_year": 1,
+      "filing_date": "2026-06-01",
+      "region": "sample",
+      "revenue": 1
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

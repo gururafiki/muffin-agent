@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "ex_dividend_date": "2026-06-01",
+      "symbol": "AAPL",
+      "amount": 1.0,
+      "name": "Apple Inc.",
+      "record_date": "2026-06-01",
+      "payment_date": "2026-06-01",
+      "declaration_date": "2026-06-01",
+      "annualized_amount": 1.0
+    }
+  ],
+  "provider": "nasdaq",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

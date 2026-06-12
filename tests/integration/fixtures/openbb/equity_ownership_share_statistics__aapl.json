@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "date": "2026-06-01",
+      "free_float": 1.0,
+      "float_shares": 1,
+      "outstanding_shares": 1,
+      "adjusted_outstanding_shares": 1.0,
+      "public_float": 1.0
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "price": 1.0,
+      "change": 1.0,
+      "percent_change": 1.0,
+      "volume": 1,
+      "open": 1.0,
+      "high": 1.0,
+      "low": 1.0,
+      "previous_close": 1.0,
+      "ma_50": 1.0,
+      "ma_200": 1.0,
+      "year_high": 1.0,
+      "year_low": 1.0,
+      "market_cap": 1.0,
+      "shares_outstanding": 1.0,
+      "book_value": 1.0,
+      "price_to_book": 1.0,
+      "eps_ttm": 1.0,
+      "eps_forward": 1.0,
+      "pe_forward": 1.0,
+      "dividend_yield": 1.0,
+      "exchange": "sample",
+      "exchange_timezone": "sample",
+      "earnings_date": "2026-06-01T00:00:00",
+      "currency": "USD"
+    }
+  ],
+  "provider": "yfinance",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

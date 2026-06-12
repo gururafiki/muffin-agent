@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "date": "2026-06-01",
+      "estimated_revenue_low": 1,
+      "estimated_revenue_high": 1,
+      "estimated_revenue_avg": 1,
+      "estimated_sga_expense_low": 1,
+      "estimated_sga_expense_high": 1,
+      "estimated_sga_expense_avg": 1,
+      "estimated_ebitda_low": 1,
+      "estimated_ebitda_high": 1,
+      "estimated_ebitda_avg": 1,
+      "estimated_ebit_low": 1,
+      "estimated_ebit_high": 1,
+      "estimated_ebit_avg": 1,
+      "estimated_net_income_low": 1,
+      "estimated_net_income_high": 1,
+      "estimated_net_income_avg": 1,
+      "estimated_eps_avg": 1.0,
+      "estimated_eps_high": 1.0,
+      "estimated_eps_low": 1.0,
+      "number_analyst_estimated_revenue": 1,
+      "number_analysts_estimated_eps": 1
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "last_updated": "2026-06-01",
+      "period_ending": "2026-06-01",
+      "fiscal_year": 1,
+      "fiscal_period": "sample",
+      "calendar_year": 1,
+      "calendar_period": 1,
+      "low_estimate": 1,
+      "high_estimate": 1,
+      "mean": 1,
+      "median": 1,
+      "standard_deviation": 1,
+      "number_of_analysts": 1,
+      "conensus_type": "ebitda"
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

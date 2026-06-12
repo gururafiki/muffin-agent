@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "value": 1,
+      "name": "Apple Inc.",
+      "title": "sample"
+    }
+  ],
+  "provider": "federal",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

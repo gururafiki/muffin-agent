@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "value": 1.0,
+      "reported_date": "2026-06-01",
+      "period_beginning": "2026-06-01",
+      "period_ending": "2026-06-01",
+      "fiscal_year": 1,
+      "fiscal_period": "sample",
+      "cik": "0000320193",
+      "location": "sample",
+      "form": "sample",
+      "frame": "sample",
+      "accession": "sample",
+      "fact": "sample",
+      "unit": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

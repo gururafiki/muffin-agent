@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "issuer_name": "sample",
+      "cusip": "sample",
+      "isin": "sample",
+      "security_type": "sample",
+      "issue_date": "2026-06-01",
+      "maturity_date": "2026-06-01",
+      "call_date": "2026-06-01",
+      "bid": 1.0,
+      "offer": 1.0,
+      "eod_price": 1.0,
+      "last_traded_date": "2026-06-01",
+      "total_trades": 1,
+      "last_price": 1.0,
+      "highest_price": 1.0,
+      "lowest_price": 1.0,
+      "rate": 1.0,
+      "ytm": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

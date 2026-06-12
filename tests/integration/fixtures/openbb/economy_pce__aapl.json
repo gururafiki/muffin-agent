@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "value": 1.0,
+      "name": "Apple Inc.",
+      "element_id": "sample",
+      "parent_id": "sample",
+      "children": "sample",
+      "level": 1,
+      "line": 1
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

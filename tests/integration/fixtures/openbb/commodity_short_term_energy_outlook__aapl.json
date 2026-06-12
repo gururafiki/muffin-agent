@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "table": "sample",
+      "symbol": "AAPL",
+      "order": 1,
+      "title": "sample",
+      "value": 1,
+      "unit": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "maturity": "sample",
+      "maturity_years": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

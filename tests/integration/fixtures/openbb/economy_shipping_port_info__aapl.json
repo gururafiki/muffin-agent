@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "port_code": "sample",
+      "continent": "sample",
+      "country": "United States",
+      "country_code": "sample",
+      "port_name": "sample",
+      "port_full_name": "sample",
+      "latitude": 1.0,
+      "longitude": 1.0,
+      "vessel_count_total": 1,
+      "vessel_count_tanker": 1,
+      "vessel_count_container": 1,
+      "vessel_count_general_cargo": 1,
+      "vessel_count_dry_bulk": 1,
+      "vessel_count_roro": 1,
+      "industry_top_1": "sample",
+      "industry_top_2": "sample",
+      "industry_top_3": "sample",
+      "share_country_maritime_import": 1.0,
+      "share_country_maritime_export": 1.0
+    }
+  ],
+  "provider": "imf",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "equity_symbol": "AAPL",
+      "etf_symbol": "AAPL",
+      "weight": 1.0,
+      "market_value": 1,
+      "shares": 1
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

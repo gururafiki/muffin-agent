@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "activity": 1.0,
+      "sentiment": 1.0
+    }
+  ],
+  "provider": "nasdaq",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

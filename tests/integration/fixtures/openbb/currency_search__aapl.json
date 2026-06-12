@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "from_currency": "USD",
+      "to_currency": "USD",
+      "from_name": "sample",
+      "to_name": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

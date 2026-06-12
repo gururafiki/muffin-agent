@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "country": "United States",
+      "weight": 1.0
+    }
+  ],
+  "provider": "tmx",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

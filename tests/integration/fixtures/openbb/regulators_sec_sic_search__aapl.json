@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "sic": 1,
+      "industry": "sample",
+      "office": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

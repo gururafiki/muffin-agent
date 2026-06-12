@@ -1,0 +1,23 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "rate": 1.0,
+      "target_range_upper": 1.0,
+      "target_range_lower": 1.0,
+      "percentile_1": 1.0,
+      "percentile_25": 1.0,
+      "percentile_75": 1.0,
+      "percentile_99": 1.0,
+      "volume": 1.0,
+      "intraday_low": 1.0,
+      "intraday_high": 1.0,
+      "standard_deviation": 1.0,
+      "revision_indicator": "sample"
+    }
+  ],
+  "provider": "federal",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

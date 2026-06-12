@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "chokepoint": "sample",
+      "vessels_total": 1,
+      "vessels_cargo": 1,
+      "vessels_tanker": 1,
+      "vessels_container": 1,
+      "vessels_general_cargo": 1,
+      "vessels_dry_bulk": 1,
+      "vessels_roro": 1,
+      "capacity_total": 1.0,
+      "capacity_cargo": 1.0,
+      "capacity_tanker": 1.0,
+      "capacity_container": 1.0,
+      "capacity_general_cargo": 1.0,
+      "capacity_dry_bulk": 1.0,
+      "capacity_roro": 1.0
+    }
+  ],
+  "provider": "imf",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

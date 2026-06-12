@@ -122,17 +122,39 @@ for Firecrawl. `patch_mcp` builds one fake tool per fixture and the real
 `get_tools` selects each agent's allowlist, so **one library serves every graph**.
 Add a tool by dropping in a file.
 
-**Sourcing is hybrid** — fixtures are hand-authored from
-[`extras/openbb/openbb_mcp_tools.json`](../extras/openbb/openbb_mcp_tools.json) so
-the suite is offline and deterministic, and can be refreshed to genuine payloads:
+Each fake OpenBB tool advertises the **real** `inputSchema` (`provider`, `symbol`,
+…) pulled from [`extras/openbb/openbb_mcp_tools.json`](../extras/openbb/openbb_mcp_tools.json)
+(`args_schema_for(name)` in `_harness/mcp.py`, falling back to a permissive schema
+for Firecrawl / local tools). The schema is advertised, not enforced —
+`StructuredTool` passes a dict `args_schema` through without validation, so scripted
+`tool_turn` args don't need to match it.
 
-```bash
-docker compose up -d openbb-mcp firecrawl-mcp searxng
-.venv/bin/pytest tests/integration/test_capture_fixtures.py -m live
-```
+**Sourcing is three-tier:**
 
-The capture test ([`_harness/capture.py`](../tests/integration/_harness/capture.py))
-self-skips when the MCP stack isn't reachable, so it never breaks a plain run.
+1. **Hand-authored** (realistic AAPL values) — for tools a test actually *parses*
+   (e.g. the deterministic specialists). The ~8 seed fixtures + any you add.
+2. **Generated stubs** — every other agent-referenced OpenBB tool (177 of them)
+   ships a **schema-correct stub** built from the catalogue `outputSchema` by
+   [`_harness/schema_gen.py`](../tests/integration/_harness/schema_gen.py): correct
+   field names/types, lightly humanised values. Enough scaffolding for LLM-driven
+   collectors (whose tool output the scripted model ignores). Regenerate missing
+   stubs (existing files are never overwritten):
+
+   ```bash
+   python -c "import sys; sys.path.insert(0,'tests'); \
+     from integration._harness.schema_gen import materialize_missing; \
+     print(len(materialize_missing()))"
+   ```
+   A hand-authored fixture simply overrides a stub. `schema_gen.synth_envelope(tool)`
+   also backs ad-hoc use.
+3. **Live capture** — refresh any fixture to a genuine payload with the MCP stack up:
+
+   ```bash
+   docker compose up -d openbb-mcp firecrawl-mcp searxng
+   .venv/bin/pytest tests/integration/test_capture_fixtures.py -m live
+   ```
+   The capture test ([`_harness/capture.py`](../tests/integration/_harness/capture.py))
+   self-skips when the MCP stack isn't reachable, so it never breaks a plain run.
 
 ## Default workflow: every new graph gets a test
 
