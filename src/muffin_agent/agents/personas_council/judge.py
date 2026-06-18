@@ -116,7 +116,7 @@ async def council_judge_node(
         config, "reasoner", schema=CouncilSynthesisOutput
     )
     prompt = render_template(
-        "personas/council_judge.jinja",
+        "personas_council/council_judge.jinja",
         ticker=ticker,
         query=state.get("query"),
         signals=signals,

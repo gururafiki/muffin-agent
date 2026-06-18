@@ -457,7 +457,7 @@ async def render_verdict_node(
         config, "reasoner", schema=RakeshJhunjhunwalaSignal
     )
     prompt = render_template(
-        "personas/rakesh_jhunjhunwala.jinja",
+        "personas_council/personas/rakesh_jhunjhunwala.jinja",
         ticker=ticker,
         as_of_date=as_of_date,
         evidence=evidence,
@@ -498,7 +498,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         .with_fallback_models(*fallbacks)
         .with_state_schema(RakeshJhunjhunwalaState)
         .with_runtime_system_prompt_template(
-            "personas/rakesh_jhunjhunwala_data_collection.jinja"
+            "personas_council/personas/rakesh_jhunjhunwala_data_collection.jinja"
         )
         .with_response_format(RakeshJhunjhunwalaRawData)
         .with_model_call_limit(run_limit=8, exit_behavior="end")

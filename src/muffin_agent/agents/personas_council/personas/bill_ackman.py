@@ -358,7 +358,7 @@ async def render_verdict_node(
         config, "reasoner", schema=BillAckmanSignal
     )
     prompt = render_template(
-        "personas/bill_ackman.jinja",
+        "personas_council/personas/bill_ackman.jinja",
         ticker=ticker,
         as_of_date=as_of_date,
         evidence=evidence,
@@ -396,7 +396,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         .with_fallback_models(*fallbacks)
         .with_state_schema(BillAckmanState)
         .with_runtime_system_prompt_template(
-            "personas/bill_ackman_data_collection.jinja"
+            "personas_council/personas/bill_ackman_data_collection.jinja"
         )
         .with_response_format(BillAckmanRawData)
         .with_model_call_limit(run_limit=8, exit_behavior="end")

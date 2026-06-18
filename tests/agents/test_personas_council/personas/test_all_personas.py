@@ -33,19 +33,24 @@ class TestPersonaSurface:
         env = Environment(loader=FileSystemLoader(PROMPTS_DIR))
         for slug in _PERSONA_SLUGS:
             try:
-                env.get_template(f"personas/{slug}.jinja")
+                env.get_template(f"personas_council/personas/{slug}.jinja")
             except Exception as exc:
-                pytest.fail(f"Failed to parse personas/{slug}.jinja: {exc}")
+                pytest.fail(
+                    f"Failed to parse personas_council/personas/{slug}.jinja: {exc}"
+                )
 
     def test_every_persona_has_data_collection_prompt(self):
         """Every persona ships a data-collection prompt for its ReAct sub-agent."""
         env = Environment(loader=FileSystemLoader(PROMPTS_DIR))
         for slug in _PERSONA_SLUGS:
             try:
-                env.get_template(f"personas/{slug}_data_collection.jinja")
+                env.get_template(
+                    f"personas_council/personas/{slug}_data_collection.jinja"
+                )
             except Exception as exc:
                 pytest.fail(
-                    f"Failed to parse personas/{slug}_data_collection.jinja: {exc}"
+                    "Failed to parse "
+                    f"personas_council/personas/{slug}_data_collection.jinja: {exc}"
                 )
 
 

@@ -184,7 +184,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         .with_fallback_models(*fallbacks)
         .with_state_schema(NewsSentimentState)
         .with_runtime_system_prompt_template(
-            "specialists/news_sentiment_data_collection.jinja"
+            "personas_council/specialists/news_sentiment_data_collection.jinja"
         )
         .with_response_format(NewsSentimentRawData)
         .with_model_call_limit(run_limit=6, exit_behavior="end")

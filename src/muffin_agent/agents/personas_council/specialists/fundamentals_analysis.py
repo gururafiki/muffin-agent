@@ -205,7 +205,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         .with_fallback_models(*fallbacks)
         .with_state_schema(FundamentalsState)
         .with_runtime_system_prompt_template(
-            "specialists/fundamentals_data_collection.jinja"
+            "personas_council/specialists/fundamentals_data_collection.jinja"
         )
         .with_response_format(FundamentalsRawData)
         .with_model_call_limit(run_limit=6, exit_behavior="end")

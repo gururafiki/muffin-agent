@@ -415,7 +415,7 @@ async def render_verdict_node(
         config, "reasoner", schema=StanleyDruckenmillerSignal
     )
     prompt = render_template(
-        "personas/stanley_druckenmiller.jinja",
+        "personas_council/personas/stanley_druckenmiller.jinja",
         ticker=ticker,
         as_of_date=as_of_date,
         evidence=evidence,
@@ -457,7 +457,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         .with_fallback_models(*fallbacks)
         .with_state_schema(StanleyDruckenmillerState)
         .with_runtime_system_prompt_template(
-            "personas/stanley_druckenmiller_data_collection.jinja"
+            "personas_council/personas/stanley_druckenmiller_data_collection.jinja"
         )
         .with_response_format(StanleyDruckenmillerRawData)
         .with_model_call_limit(run_limit=10, exit_behavior="end")

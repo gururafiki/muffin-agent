@@ -337,7 +337,7 @@ async def render_verdict_node(
         config, "reasoner", schema=MohnishPabraiSignal
     )
     prompt = render_template(
-        "personas/mohnish_pabrai.jinja",
+        "personas_council/personas/mohnish_pabrai.jinja",
         ticker=ticker,
         as_of_date=as_of_date,
         evidence=evidence,
@@ -373,7 +373,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         .with_fallback_models(*fallbacks)
         .with_state_schema(MohnishPabraiState)
         .with_runtime_system_prompt_template(
-            "personas/mohnish_pabrai_data_collection.jinja"
+            "personas_council/personas/mohnish_pabrai_data_collection.jinja"
         )
         .with_response_format(MohnishPabraiRawData)
         .with_model_call_limit(run_limit=8, exit_behavior="end")

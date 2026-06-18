@@ -452,7 +452,7 @@ async def render_verdict_node(
         config, "reasoner", schema=PhilFisherSignal
     )
     prompt = render_template(
-        "personas/phil_fisher.jinja",
+        "personas_council/personas/phil_fisher.jinja",
         ticker=ticker,
         as_of_date=as_of_date,
         evidence=evidence,
@@ -492,7 +492,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         .with_fallback_models(*fallbacks)
         .with_state_schema(PhilFisherState)
         .with_runtime_system_prompt_template(
-            "personas/phil_fisher_data_collection.jinja"
+            "personas_council/personas/phil_fisher_data_collection.jinja"
         )
         .with_response_format(PhilFisherRawData)
         .with_model_call_limit(run_limit=8, exit_behavior="end")

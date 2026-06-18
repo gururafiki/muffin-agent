@@ -193,7 +193,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         MuffinAgentBuilder(primary, name="growth_data_collection")
         .with_fallback_models(*fallbacks)
         .with_state_schema(GrowthState)
-        .with_runtime_system_prompt_template("specialists/growth_data_collection.jinja")
+        .with_runtime_system_prompt_template("personas_council/specialists/growth_data_collection.jinja")
         .with_response_format(GrowthRawData)
         .with_model_call_limit(run_limit=8, exit_behavior="end")
     )

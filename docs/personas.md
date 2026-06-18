@@ -96,7 +96,7 @@ class CouncilSynthesisOutput(BaseModel):
     reasoning: str
 ```
 
-The judge **may override the numerical majority** when a small number of personas have very high-confidence dissent grounded in specific data the majority overlooked. See [`council_judge.jinja`](../src/muffin_agent/prompts/personas/council_judge.jinja) for the explicit override criteria.
+The judge **may override the numerical majority** when a small number of personas have very high-confidence dissent grounded in specific data the majority overlooked. See [`council_judge.jinja`](../src/muffin_agent/prompts/personas_council/council_judge.jinja) for the explicit override criteria.
 
 ## Valuation methodology (ai-hedge-fund parity)
 
