@@ -33,7 +33,7 @@ dependencies = [
     "opensandbox>=0.1.9",
     "opensandbox-code-interpreter>=0.1.2",
     # Technical-indicator computation (trading_decision Market analyst)
-    "stockstats>=0.6.0",
+    "stockstats>=0.6.8",
     "pandas>=3.0",
     # Required by pandas.DataFrame.to_markdown() (trading_decision tools).
     "tabulate>=0.10",
