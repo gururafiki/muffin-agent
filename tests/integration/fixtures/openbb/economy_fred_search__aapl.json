@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "release_id": "sample",
+      "series_id": "sample",
+      "series_group": "sample",
+      "region_type": "sample",
+      "name": "Apple Inc.",
+      "title": "sample",
+      "observation_start": "2026-06-01",
+      "observation_end": "2026-06-01",
+      "frequency": "sample",
+      "frequency_short": "sample",
+      "units": "sample",
+      "units_short": "sample",
+      "seasonal_adjustment": "sample",
+      "seasonal_adjustment_short": "sample",
+      "last_updated": "2026-06-01T00:00:00",
+      "popularity": 1,
+      "group_popularity": 1,
+      "realtime_start": "2026-06-01",
+      "realtime_end": "2026-06-01",
+      "notes": "sample",
+      "press_release": false,
+      "url": "sample"
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

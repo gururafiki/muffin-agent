@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "date": "2026-06-01",
+      "transaction_date": "2026-06-01",
+      "representative": "sample",
+      "chamber": "House",
+      "owner": "sample",
+      "asset_type": "sample",
+      "asset_description": "sample",
+      "transaction_type": "sample",
+      "amount": "sample",
+      "comment": "sample",
+      "url": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

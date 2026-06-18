@@ -21,13 +21,17 @@ evicts large results to ``{root}/large_tool_results/<tool_call_id>``
 (default threshold 20K tokens). Offload messages are excluded from the
 cache (see ``non_cacheable_patterns``) because they embed an ephemeral
 path keyed by ``tool_call_id`` that becomes stale on a cache hit.
+
+Cache primitives live in :mod:`muffin_agent.middlewares.tool_result_cache.cache`
+(``cache_lookup``, ``cache_store``, ``get_args_hash``, ``is_error_content``).
+The middleware composes them so direct callers (e.g. specialist Python nodes
+calling ``cached_invoke``) and LLM-driven callers share one hashing/namespace
+scheme.
 """
 
-import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
@@ -35,6 +39,12 @@ from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+from .cache import (
+    cache_lookup,
+    cache_store,
+    get_args_hash,  # re-exported below for backwards compatibility
+    is_error_content,  # re-exported below for backwards compatibility
+)
 from .config import ToolResultCacheConfiguration
 
 # Note: discover_cached_tool_outputs, get_tool_output_schema, and
@@ -43,30 +53,12 @@ from .config import ToolResultCacheConfiguration
 
 logger = logging.getLogger(__name__)
 
-
-def get_args_hash(args: dict[str, Any]) -> str:
-    """Build a deterministic 12-char hex hash from sorted args."""
-    args_json = json.dumps(args, sort_keys=True)
-    return hashlib.sha256(args_json.encode()).hexdigest()[:12]
-
-
-def is_error_content(content: str) -> bool:
-    """Check whether a tool message contains an error."""
-    if not isinstance(content, str):
-        return False
-    lower = content.lower()
-    return lower.startswith("error") or lower.startswith("duplicate call blocked")
-
-
-def _should_skip_cache(result: ToolMessage, non_cacheable_patterns: list[str]) -> bool:
-    """Return True when this ToolMessage result should not be written to the cache."""
-    if getattr(result, "status", None) == "error":
-        return True
-    if isinstance(result.content, str):
-        return is_error_content(result.content) or any(
-            p in result.content.lower() for p in non_cacheable_patterns
-        )
-    return False  # list content with no error status → cacheable
+# Re-exported for backwards compatibility — original public API of this module.
+__all__ = [
+    "ToolResultCacheMiddleware",
+    "get_args_hash",
+    "is_error_content",
+]
 
 
 def _cache_metadata(
@@ -83,6 +75,13 @@ def _cache_metadata(
         "args_hash": args_hash,
         "byte_size": byte_size,
     }
+
+
+def _content_byte_size(content: Any) -> int:
+    """Compute the cache-metadata byte size (matches cache.py helper)."""
+    if isinstance(content, str):
+        return len(content)
+    return len(json.dumps(content, default=str))
 
 
 class ToolResultCacheMiddleware(AgentMiddleware):
@@ -129,34 +128,23 @@ class ToolResultCacheMiddleware(AgentMiddleware):
         if store is None:
             return await handler(request)
 
-        namespace = ("cache", tool_name)
-        key = get_args_hash(args)
+        args_hash = get_args_hash(args)
 
         # ── Cache hit ───────────────────────────────────────────────
-        try:
-            item = await store.aget(namespace, key)
-            if item is not None and item.value.get("content"):
-                cached = item.value["content"]
-                logger.debug("Cache HIT for %s → %s/%s", tool_name, namespace, key)
-                byte_size = (
-                    len(cached)
-                    if isinstance(cached, str)
-                    else len(json.dumps(cached, default=str))
-                )
-                return ToolMessage(
-                    content=cached,
-                    tool_call_id=request.tool_call["id"],
-                    additional_kwargs={
-                        "cache": _cache_metadata(
-                            hit=True,
-                            tool_name=tool_name,
-                            args_hash=key,
-                            byte_size=byte_size,
-                        )
-                    },
-                )
-        except Exception:
-            pass  # store read failed → treat as miss
+        hit, cached = await cache_lookup(tool_name, args, store)
+        if hit:
+            return ToolMessage(
+                content=cached,
+                tool_call_id=request.tool_call["id"],
+                additional_kwargs={
+                    "cache": _cache_metadata(
+                        hit=True,
+                        tool_name=tool_name,
+                        args_hash=args_hash,
+                        byte_size=_content_byte_size(cached),
+                    )
+                },
+            )
 
         # ── Cache miss: execute tool ────────────────────────────────
         result = await handler(request)
@@ -170,34 +158,14 @@ class ToolResultCacheMiddleware(AgentMiddleware):
         cache_config = ToolResultCacheConfiguration.from_runnable_config(
             request.runtime.config
         )
-        if _should_skip_cache(result, cache_config.non_cacheable_patterns):
-            return result
-
-        byte_size = (
-            len(result.content)
-            if isinstance(result.content, str)
-            else len(json.dumps(result.content, default=str))
+        written = await cache_store(
+            tool_name,
+            args,
+            store,
+            result.content,
+            non_cacheable_patterns=cache_config.non_cacheable_patterns,
         )
-
-        try:
-            await store.aput(
-                namespace,
-                key,
-                {
-                    "content": result.content,
-                    "tool_name": tool_name,
-                    "args": args,
-                    "cached_at": datetime.now(UTC).isoformat(),
-                    "content_size": byte_size,
-                },
-            )
-            logger.debug("Cache WRITE for %s → %s/%s", tool_name, namespace, key)
-        except Exception:
-            logger.debug(
-                "Store write failed for %s, returning original result",
-                tool_name,
-                exc_info=True,
-            )
+        if not written:
             return result
 
         return ToolMessage(
@@ -209,8 +177,8 @@ class ToolResultCacheMiddleware(AgentMiddleware):
                 "cache": _cache_metadata(
                     hit=False,
                     tool_name=tool_name,
-                    args_hash=key,
-                    byte_size=byte_size,
+                    args_hash=args_hash,
+                    byte_size=_content_byte_size(result.content),
                 ),
             },
         )

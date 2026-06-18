@@ -13,7 +13,9 @@ consumed by the Bull/Bear/Judge/Trader/PM downstream nodes:
 
 Each factory returns a ``CompiledStateGraph`` ready to be added
 directly to a parent graph via ``add_node(name, agent,
-input_schema=agent.input_schema)``. The parent state must declare
+input_schema=AnalystInput)`` — an explicit ``{ticker, decision_date}``
+field schema, NOT ``agent.input_schema`` (a property-less ``RootModel``
+that maps ``{}`` and raises at coercion). The parent state must declare
 ``ticker`` and ``decision_date`` (read by every analyst) plus the
 analyst's output report field.
 """

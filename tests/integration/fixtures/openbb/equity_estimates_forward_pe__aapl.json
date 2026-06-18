@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "year_1": 1.0,
+      "year_2": 1.0,
+      "year_3": 1.0,
+      "year_4": 1.0,
+      "year_5": 1.0,
+      "peg_ratio_year_1": 1.0,
+      "eps_ttm": 1.0,
+      "last_updated": "2026-06-01"
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

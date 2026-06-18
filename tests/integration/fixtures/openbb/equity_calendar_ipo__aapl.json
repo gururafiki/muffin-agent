@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "ipo_date": "2026-06-01",
+      "exchange_date": "2026-06-01T00:00:00",
+      "name": "Apple Inc.",
+      "exchange": "sample",
+      "actions": "sample",
+      "shares": 1,
+      "price_range": "sample",
+      "market_cap": 1
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

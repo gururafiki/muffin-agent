@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "currency": "USD",
+      "price": 1.0,
+      "open": 1.0,
+      "high": 1.0,
+      "low": 1.0,
+      "close": 1.0,
+      "volume": 1,
+      "prev_close": 1.0,
+      "change": 1.0,
+      "change_percent": 1.0,
+      "year_high": 1.0,
+      "year_low": 1.0,
+      "return_mtd": 1.0,
+      "return_qtd": 1.0,
+      "return_ytd": 1.0,
+      "total_market_value": 1.0,
+      "number_of_constituents": 1,
+      "constituent_average_market_value": 1.0,
+      "constituent_median_market_value": 1.0,
+      "constituent_top_10_market_value": 1.0,
+      "constituent_largest_market_value": 1.0,
+      "constituent_largest_weight": 1.0,
+      "constituent_smallest_market_value": 1.0,
+      "constituent_smallest_weight": 1.0
+    }
+  ],
+  "provider": "tmx",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

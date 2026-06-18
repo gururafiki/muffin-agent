@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "weight": 1.0,
+      "shares": "sample",
+      "market_value": "sample",
+      "currency": "USD",
+      "share_percentage": 1.0,
+      "share_change": "sample",
+      "country": "United States",
+      "exchange": "sample",
+      "type_id": "sample",
+      "fund_id": "sample"
+    }
+  ],
+  "provider": "tmx",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

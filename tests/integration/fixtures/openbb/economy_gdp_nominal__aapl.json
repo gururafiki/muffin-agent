@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "country": "United States",
+      "value": 1,
+      "nominal_growth_qoq": 1.0,
+      "nominal_growth_yoy": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

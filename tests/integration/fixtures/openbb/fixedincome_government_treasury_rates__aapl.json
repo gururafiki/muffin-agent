@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "week_4": 1.0,
+      "month_1": 1.0,
+      "month_2": 1.0,
+      "month_3": 1.0,
+      "month_6": 1.0,
+      "year_1": 1.0,
+      "year_2": 1.0,
+      "year_3": 1.0,
+      "year_5": 1.0,
+      "year_7": 1.0,
+      "year_10": 1.0,
+      "year_20": 1.0,
+      "year_30": 1.0
+    }
+  ],
+  "provider": "federal",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

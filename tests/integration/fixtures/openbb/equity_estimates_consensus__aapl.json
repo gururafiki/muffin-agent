@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "target_high": 1.0,
+      "target_low": 1.0,
+      "target_consensus": 1.0,
+      "target_median": 1.0,
+      "standard_deviation": 1.0,
+      "total_anaylsts": 1,
+      "raised": 1,
+      "lowered": 1,
+      "most_recent_date": "2026-06-01",
+      "industry_group_number": 1
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

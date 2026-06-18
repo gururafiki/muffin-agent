@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "update_date": "2026-06-01",
+      "latest_action_date": "2026-06-01",
+      "bill_url": "sample",
+      "congress": 1,
+      "bill_number": 1,
+      "origin_chamber": "sample",
+      "origin_chamber_code": "sample",
+      "bill_type": "sample",
+      "title": "sample",
+      "latest_action": "sample",
+      "update_date_including_text": "2026-06-01T00:00:00"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

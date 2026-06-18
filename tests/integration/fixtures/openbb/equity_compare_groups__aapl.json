@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "name": "Apple Inc.",
+      "stocks": 1,
+      "market_cap": 1,
+      "performance_1d": 1.0,
+      "performance_1w": 1.0,
+      "performance_1m": 1.0,
+      "performance_3m": 1.0,
+      "performance_6m": 1.0,
+      "performance_1y": 1.0,
+      "performance_ytd": 1.0,
+      "dividend_yield": 1.0,
+      "pe": 1.0,
+      "forward_pe": 1.0,
+      "peg": 1.0,
+      "eps_growth_past_5y": 1.0,
+      "eps_growth_next_5y": 1.0,
+      "sales_growth_past_5y": 1.0,
+      "float_short": 1.0,
+      "analyst_recommendation": 1.0,
+      "volume": 1,
+      "volume_average": 1,
+      "volume_relative": 1.0
+    }
+  ],
+  "provider": "finviz",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

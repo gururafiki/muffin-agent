@@ -279,6 +279,7 @@ A 42.8-min stock_evaluation run identified seven compounding root causes (slow f
     - [ ] Precedent Transactions — zero coverage. No M&A deal data source exists in OpenBB's MCP tools, so there's no subagent to collect transaction multiples, control premiums, or deal environment context. We'd need an external M&A data provider first. OpenBB doesn't expose M&A deal databases (that's typically Bloomberg/Capital IQ/Refinitiv territory). Without deal data, there's nothing to compute on.
     - [ ] SOTP (Sum-of-the-Parts) — schema field exists (sum_of_parts: dict | None) but is explicitly None / v1 placeholder. Would need segment-level revenue/EBITDA extraction (from 10-K MD&A), per-segment peer multiples, and a new aggregation tool. Needs segment-level financials. The regulatory-filings subagent can fetch 10-K filings, but parsing segment tables from SEC filings is a non-trivial extraction problem.
     - [ ] Residual Income — also mentioned in docs/investment-process.md but not implemented.
+- [ ] Check possibility of refactoring tool result cache to get output schema of pythin tools using `function.get_output_jsonschema` (method) of decorator. Check if tool result cache. Check if we can get rid off `cached_invoke` and isntead call middleware using BaseTool or function based tool. Check how it's implemented in langchain itself.
 
 
 ### Unbiasing agents
@@ -289,8 +290,10 @@ A 42.8-min stock_evaluation run identified seven compounding root causes (slow f
 
 
 ### CI/CD and testing
-- [ ] Add full e2e integreation test mocking LLM calls
-- [ ] Add github actions to run integration tests with agents before merging pull requests
+- [x] Add full e2e integration test mocking LLM calls — reusable harness in `tests/integration/_harness/` (`ScriptedChatModel`/`patch_llm`, `patch_mcp`, `patch_sandbox`, `patch_embeddings`) + per-tool fixtures + hybrid live-capture; two worked examples (`test_equity_price_collector.py` passing, `test_persona_peter_lynch.py`) + an enforcing meta-test over `langgraph.json`. Guide: [`docs/integration-testing.md`](docs/integration-testing.md).
+- [x] **Fixed the systemic compiled-subagent composition bug surfaced by the integration suite** (broke council + all trading_decision graphs + persona CLI end-to-end; masked because graph tests stub the subagents). Two layers fixed: (1) every `add_node(..., input_schema=agent.input_schema)` now passes an explicit field-based TypedDict (`PersonaInput` in `personas_council/schemas.py`, `AnalystInput` in `trading_decision/state.py`) — `create_agent`'s `.input_schema` is a property-less `RootModel` that maps `{}` and raises at coercion; (2) persona/specialist subagent-produced fields flipped from `OmitFromSchema(input=True, output=True)` → `output=False` so the auto-unpacked `structured_response` values propagate to the downstream compute node. Locked by `test_persona_peter_lynch.py` (un-xfailed), `test_council_graph_e2e.py` (all 13 personas → judge), and `test_trading_analysts_e2e.py`. Composition rules documented in CLAUDE.md.
+- [ ] Backfill E2E integration coverage for the deployable graphs still in `PENDING_INTEGRATION_COVERAGE` (`stock_evaluation`, `criteria_analysis`, `research`) — `council` is now COVERED. Move each into `COVERED_GRAPHS` as its `tests/integration/test_<id>.py` lands.
+- [ ] Add github actions to run integration tests with agents before merging pull requests (`pytest -m integration`).
 
 ## Phase 4
 
@@ -339,3 +342,30 @@ A 42.8-min stock_evaluation run identified seven compounding root causes (slow f
 ### DX
 - [ ] Add Claude Code skills for Spec driven development
 - [x] Check Claude Code development via mobile app
+
+
+## Persona Council (ai-hedge-fund port)
+
+Ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).  Guide: [`docs/personas.md`](docs/personas.md).
+
+### Council
+- [x] Phase 1 foundations — `AnalystSignal`, `PersonaDataBundle`, shared scoring helpers (`agents/personas_council/tools/scoring_helpers.py`), technical-indicator + sentiment tools, registry scaffolding
+- [x] Phase 2 — 13 personas (Buffett, Graham, Wood, Munger, Ackman, Burry, Pabrai, Taleb, Lynch, Fisher, Jhunjhunwala, Druckenmiller, Damodaran) + council graph (`build_council_graph`) + LLM-mediated judge synthesis + `muffin persona` / `muffin council` CLI + LangGraph registration as `"council"`
+- [x] Phase 3 — Technical-analysis + sentiment-analysis specialists (deterministic, no LLM) + `SPECIALIST_REGISTRY` + `muffin technicals` / `muffin sentiment` CLI
+- [x] Phase 3b — Ported the 4 remaining ai-hedge-fund specialists: `fundamentals`, `growth`, `valuation`, `news_sentiment` (persona-style ReAct extraction → deterministic scoring) + `tools/{fundamentals,growth,valuation_signal}.py` + council `include_specialists` wiring + CLI (`growth` / `valuation` / `news-sentiment` / `fundamentals-signal`)
+- [x] Phase 3c — Restored persona valuation/DCF parity with ai-hedge-fund: history-derived growth + exit-multiple terminals (Buffett / Ackman / Rakesh), relative-median P/E + base-FCFF terminal (Damodaran), full Buffett owner earnings (median maintenance capex + ΔWC); discrete fixes (Munger ≥5% buyback gate, Pabrai FCF trend, Taleb population stats, Buffett confidence-anchor prompt, `metrics_history` oldest→newest)
+- [x] Phase 3d — Consolidated the whole port into `agents/personas_council/` (personas / specialists / tools / portfolio); council registered as the async **factory** `council_graph.py:build_council_graph` (config-driven `include_specialists`); collectors that derive ratios get `execute_python`; **removed** the graceful LLM-failure `hold` fallbacks (prefer fail-loud + retries over a hidden empty result)
+
+### Paper-trading + backtester (removed → deferred to a generic module)
+- **Removed** the council-specific paper-trading layer (`personas_council/portfolio/`: Portfolio book + executor, `risk_management_node`, `ticker_decision_node`, `portfolio_reconciler_node`, the `build_portfolio_decision_graph` graph) + the `muffin trade` CLI, **and** the council-specific `BacktestEngine`. Both were ai-hedge-fund-derived and council-coupled; upstream the Portfolio book + `TradeExecutor` were backtester infra and the decision logic (vol×corr sizing, order-legality reconciliation) is generic, not council-specific. The orphaned `portfolio_reconciler.jinja` / `ticker_decision.jinja` prompts and the unused `utils/outcomes.py` re-export shim were since removed too (2026-06-18) — the `OutcomesFetcher` Protocol + `fetch_decision_outcome` live solely in `trading_decision/tools.py`; the future generic module below can import from there directly.
+- [ ] Build a **generic, pipeline-agnostic portfolio-management + paper-trading + backtester** module usable by council / `trading_decision` / `investment`: Pydantic Portfolio book + executor (partial-fill, margin), vol×corr position sizing, order-legality reconciliation, and a walk-forward backtester (`full`/`signals` modes, Sharpe/Sortino/max-drawdown/SPY metrics). Harden as-of-date enforcement on OpenBB MCP tools (server-side `curr_date` cap) for reproducible historical runs. Reference impls (the removed council paper-trading layer + ai-hedge-fund `BacktestEngine`) are in git history.
+
+### Open items
+- [x] News sentiment LLM-per-article specialist — ported (Phase 3b, `news_sentiment`)
+- [x] Growth-analysis specialist — ported (Phase 3b, `growth`)
+- [ ] Port Nassim Taleb's `analyze_black_swan_sentinel` (negative-news ratio + volume-spike crisis signal) — deferred; needs company-news collection added to the Taleb data step (volume/price-dislocation half already implicit in the verdict via tail-risk + vol-regime evidence)
+- [ ] Damodaran terminal value uses upstream's base-FCFF anchor (understates IV) for parity; revisit whether to switch to the textbook `terminal_basis="final_cf"` as the default
+- [ ] Wire personas into `investment_analysis.py` as an opt-in stage (currently they're independent + pluggable via `PERSONA_BUILDERS`)
+- [ ] **Validate collector code-execution + tool-result-cache need.** Run real councils and evaluate the quality/correctness of collector arithmetic (gross_margin / BVPS derivations, series ordering). Decide whether the `execute_python` tool now on the persona + fundamentals/growth/valuation collectors is justified (vs. moving those derivations into the deterministic compute nodes), and whether to add the tool-result-cache workflow via `.with_sandbox()` (cache tools + `tool_result_cache.jinja` partial + offload backend) so collectors can discover sibling-cached data and process large/offloaded outputs in code — matching the `equity_price` collector pattern.
+- [ ] Council debate mode using `multi_agent` conference framework (sequential deliberation alternative to parallel vote)
+- [ ] Consider using [skills](https://docs.langchain.com/oss/python/deepagents/skills) per each persona with python scripts to compute necessary scores instead of having scoring functions as utils manually invoked from nodes.

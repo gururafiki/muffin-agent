@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "description": "sample",
+      "data_delay": 1,
+      "currency": "USD",
+      "time_zone": "sample",
+      "open_time": "sample",
+      "close_time": "sample",
+      "tick_days": "sample",
+      "tick_frequency": "sample",
+      "tick_period": "sample"
+    }
+  ],
+  "provider": "cboe",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

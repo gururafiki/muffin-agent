@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "price": 1.0,
+      "change": 1.0,
+      "percent_change": 1.0,
+      "volume": 1,
+      "exchange": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

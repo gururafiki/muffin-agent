@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "period_ending": "2026-06-01",
+      "disclosure_date": "2026-06-01",
+      "symbol": "AAPL",
+      "cik": "0000320193",
+      "company_name": "sample",
+      "form_type": "sample",
+      "environmental_score": 1.0,
+      "social_score": 1.0,
+      "governance_score": 1.0,
+      "esg_score": 1.0,
+      "url": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

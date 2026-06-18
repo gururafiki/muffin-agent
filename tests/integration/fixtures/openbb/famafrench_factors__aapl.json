@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "mkt_rf": 1.0,
+      "smb": 1.0,
+      "hml": 1.0,
+      "rmw": 1.0,
+      "cma": 1.0,
+      "rf": 1.0,
+      "mom": 1.0,
+      "wml": 1.0,
+      "lt_rev": 1.0,
+      "st_rev": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

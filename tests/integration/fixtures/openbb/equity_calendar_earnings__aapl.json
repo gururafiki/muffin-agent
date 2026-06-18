@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "report_date": "2026-06-01",
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "eps_previous": 1.0,
+      "eps_consensus": 1.0,
+      "market_cap": 1.0,
+      "reporting_time": "sample",
+      "exchange": "sample",
+      "sector_id": 1
+    }
+  ],
+  "provider": "sa",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

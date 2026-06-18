@@ -1,0 +1,23 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "date": "2026-06-01",
+      "fiscal_year": 1,
+      "fiscal_period": "sample",
+      "calendar_year": 1,
+      "calendar_period": "sample",
+      "low_estimate": 1.0,
+      "high_estimate": 1.0,
+      "mean": 1.0,
+      "median": 1.0,
+      "standard_deviation": 1.0,
+      "number_of_analysts": 1
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

@@ -1,0 +1,11 @@
+{
+  "results": [
+    {"date": "2026-05-28", "symbol": "AAPL", "market_cap": 3001230000000.0},
+    {"date": "2026-05-29", "symbol": "AAPL", "market_cap": 3033870000000.0},
+    {"date": "2026-06-01", "symbol": "AAPL", "market_cap": 3020450000000.0}
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {"metadata": {"arguments": {"provider_choices": {"provider": "fmp"}, "standard_params": {"symbol": "AAPL"}}}}
+}

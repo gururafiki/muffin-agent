@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL", "company_cik": "0000320193", "filing_date": "2026-05-12",
+      "transaction_date": "2026-05-08", "owner_name": "COOK TIMOTHY D", "owner_title": "Chief Executive Officer",
+      "ownership_type": "D", "transaction_type": "P-Purchase", "acquisition_or_disposition": "A",
+      "security_type": "Common Stock", "securities_owned": 3280000, "securities_transacted": 25000,
+      "transaction_price": 196.4, "form_type": "4", "year": 2026, "quarter": 2,
+      "acquired_transactions": 1, "disposed_transactions": 0
+    },
+    {
+      "symbol": "AAPL", "company_cik": "0000320193", "filing_date": "2026-04-30",
+      "transaction_date": "2026-04-28", "owner_name": "MAESTRI LUCA", "owner_title": "Senior Vice President, CFO",
+      "ownership_type": "D", "transaction_type": "S-Sale", "acquisition_or_disposition": "D",
+      "security_type": "Common Stock", "securities_owned": 112000, "securities_transacted": 8000,
+      "transaction_price": 190.2, "form_type": "4", "year": 2026, "quarter": 2,
+      "acquired_transactions": 0, "disposed_transactions": 1
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {"metadata": {"arguments": {"provider_choices": {"provider": "fmp"}, "standard_params": {"symbol": "AAPL"}}}}
+}

@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "range_high": 1.0,
+      "central_tendency_high": 1.0,
+      "median": 1.0,
+      "range_midpoint": 1.0,
+      "central_tendency_midpoint": 1.0,
+      "range_low": 1.0,
+      "central_tendency_low": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

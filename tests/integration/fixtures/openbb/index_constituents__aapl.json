@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "security_type": "sample",
+      "last_price": 1.0,
+      "open": 1.0,
+      "high": 1.0,
+      "low": 1.0,
+      "close": 1.0,
+      "volume": 1,
+      "prev_close": 1.0,
+      "change": 1.0,
+      "change_percent": 1.0,
+      "tick": "sample",
+      "last_trade_time": "2026-06-01T00:00:00",
+      "asset_type": "sample"
+    }
+  ],
+  "provider": "cboe",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "country": "United States",
+      "value": 1
+    }
+  ],
+  "provider": "oecd",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

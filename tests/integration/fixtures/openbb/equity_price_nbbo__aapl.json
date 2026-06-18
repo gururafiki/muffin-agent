@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "ask_exchange": "sample",
+      "ask": 1.0,
+      "ask_size": 1,
+      "bid_size": 1,
+      "bid": 1.0,
+      "bid_exchange": "sample",
+      "tape": "sample",
+      "conditions": "sample",
+      "indicators": [
+        1
+      ],
+      "sequence_num": 1,
+      "participant_timestamp": "2026-06-01T00:00:00",
+      "sip_timestamp": "2026-06-01T00:00:00",
+      "trf_timestamp": "2026-06-01T00:00:00"
+    }
+  ],
+  "provider": "polygon",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

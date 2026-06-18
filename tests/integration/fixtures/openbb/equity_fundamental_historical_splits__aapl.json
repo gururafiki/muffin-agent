@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "numerator": 1.0,
+      "denominator": 1.0,
+      "split_ratio": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

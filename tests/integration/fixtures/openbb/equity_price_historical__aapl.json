@@ -1,0 +1,13 @@
+{
+  "results": [
+    {"date": "2026-05-26", "open": 195.6, "high": 198.2, "low": 195.1, "close": 197.8, "volume": 41230000, "vwap": 197.1, "split_ratio": null, "dividend": null},
+    {"date": "2026-05-27", "open": 197.9, "high": 200.4, "low": 197.3, "close": 199.6, "volume": 45120000, "vwap": 199.0, "split_ratio": null, "dividend": null},
+    {"date": "2026-05-28", "open": 199.7, "high": 201.1, "low": 198.4, "close": 200.21, "volume": 39850000, "vwap": 199.8, "split_ratio": null, "dividend": null},
+    {"date": "2026-05-29", "open": 200.3, "high": 202.9, "low": 199.9, "close": 202.4, "volume": 52310000, "vwap": 201.3, "split_ratio": null, "dividend": null},
+    {"date": "2026-06-01", "open": 201.0, "high": 202.6, "low": 199.1, "close": 201.5, "volume": 48213900, "vwap": 201.0, "split_ratio": null, "dividend": null}
+  ],
+  "provider": "yfinance",
+  "warnings": null,
+  "chart": null,
+  "extra": {"metadata": {"arguments": {"provider_choices": {"provider": "yfinance"}, "standard_params": {"symbol": "AAPL", "interval": "1d"}}}}
+}

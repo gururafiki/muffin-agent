@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "published_date": "2026-06-01",
+      "published_time": "sample",
+      "symbol": "AAPL",
+      "exchange": "sample",
+      "company_name": "sample",
+      "analyst_name": "sample",
+      "analyst_firm": "sample",
+      "currency": "USD",
+      "price_target": 1.0,
+      "adj_price_target": 1.0,
+      "price_target_previous": 1.0,
+      "previous_adj_price_target": 1.0,
+      "price_when_posted": 1.0,
+      "rating_current": "sample",
+      "rating_previous": "sample",
+      "action": "sample",
+      "news_title": "sample",
+      "news_url": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

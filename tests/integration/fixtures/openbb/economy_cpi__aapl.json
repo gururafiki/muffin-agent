@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "country": "United States",
+      "value": 1.0,
+      "expenditure": "sample"
+    }
+  ],
+  "provider": "oecd",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

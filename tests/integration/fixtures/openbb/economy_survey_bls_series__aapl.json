@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "title": "sample",
+      "value": 1.0,
+      "change_1_m": 1.0,
+      "change_3_m": 1.0,
+      "change_6_m": 1.0,
+      "change_12_m": 1.0,
+      "change_percent_1_m": 1.0,
+      "change_percent_3_m": 1.0,
+      "change_percent_6_m": 1.0,
+      "change_percent_12_m": 1.0,
+      "latest": false,
+      "footnotes": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

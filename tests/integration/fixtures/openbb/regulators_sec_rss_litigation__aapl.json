@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "published": "2026-06-01T00:00:00",
+      "title": "sample",
+      "summary": "sample",
+      "id": "sample",
+      "link": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

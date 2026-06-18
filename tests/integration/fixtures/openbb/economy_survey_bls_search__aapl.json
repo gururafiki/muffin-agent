@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "title": "sample",
+      "survey_name": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

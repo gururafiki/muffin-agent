@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "date": "2026-06-01",
+      "fiscal_year": 1,
+      "fiscal_period": "sample",
+      "calendar_year": 1,
+      "calendar_period": "sample",
+      "low_estimate": 1,
+      "high_estimate": 1,
+      "mean": 1,
+      "median": 1,
+      "standard_deviation": 1,
+      "number_of_analysts": 1,
+      "revisions_1w_up": 1,
+      "revisions_1w_down": 1,
+      "revisions_1w_change_percent": 1.0,
+      "revisions_1m_up": 1,
+      "revisions_1m_down": 1,
+      "revisions_1m_change_percent": 1.0,
+      "revisions_3m_up": 1,
+      "revisions_3m_down": 1,
+      "revisions_3m_change_percent": 1.0
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

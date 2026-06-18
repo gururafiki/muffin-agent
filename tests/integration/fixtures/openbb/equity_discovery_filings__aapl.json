@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "cik": "0000320193",
+      "filing_date": "2026-06-01",
+      "accepted_date": "2026-06-01T00:00:00",
+      "form_type": "sample",
+      "link": "sample",
+      "final_link": "sample"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

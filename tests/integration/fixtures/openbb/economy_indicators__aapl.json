@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol_root": "sample",
+      "symbol": "AAPL",
+      "country": "United States",
+      "value": 1
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

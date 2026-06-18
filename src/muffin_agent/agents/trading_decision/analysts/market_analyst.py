@@ -59,9 +59,10 @@ async def build_market_analyst_agent(
     """Build the Market Analyst as a compiled ReAct agent.
 
     Add directly to a parent graph via ``parent.add_node("market_analyst", agent,
-    input_schema=agent.input_schema)``. The parent state must declare ``ticker``
-    and ``decision_date`` (read by the analyst) and ``market_report`` (written
-    by the analyst).
+    input_schema=AnalystInput)`` (an explicit ``{ticker, decision_date}`` schema —
+    NOT ``agent.input_schema``, a property-less ``RootModel`` that maps ``{}`` and
+    raises at coercion). The parent state must declare ``ticker`` and
+    ``decision_date`` (read by the analyst) and ``market_report`` (written by it).
     """
     cfg = ModelConfiguration.from_runnable_config(config)
     primary, *fallbacks = cfg.get_llm_for_role("collector")

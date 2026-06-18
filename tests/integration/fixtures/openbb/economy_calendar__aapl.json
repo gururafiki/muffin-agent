@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01T00:00:00",
+      "country": "United States",
+      "category": "sample",
+      "event": "sample",
+      "importance": "sample",
+      "source": "sample",
+      "currency": "USD",
+      "unit": "sample",
+      "consensus": "sample",
+      "previous": "sample",
+      "revised": "sample",
+      "actual": "sample",
+      "forecast": "sample",
+      "reference": "sample",
+      "reference_date": "2026-06-01",
+      "calendar_id": 1,
+      "date_span": 1,
+      "symbol": "AAPL",
+      "ticker": "sample",
+      "te_url": "sample",
+      "source_url": "sample",
+      "last_updated": "2026-06-01T00:00:00"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

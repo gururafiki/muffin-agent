@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "title": "sample",
+      "cusip": "sample",
+      "lei": "sample",
+      "isin": "sample",
+      "other_id": "sample",
+      "is_restricted": "sample",
+      "fair_value_level": 1,
+      "is_cash_collateral": "sample",
+      "is_non_cash_collateral": "sample",
+      "is_loan_by_fund": "sample",
+      "loan_value": 1.0,
+      "issuer_conditional": "sample",
+      "asset_conditional": "sample",
+      "payoff_profile": "sample",
+      "asset_category": "sample",
+      "issuer_category": "sample",
+      "country": "United States",
+      "balance": 1,
+      "units": 1,
+      "currency": "USD",
+      "value": 1,
+      "weight": 1.0,
+      "as_of": "2026-06-01"
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

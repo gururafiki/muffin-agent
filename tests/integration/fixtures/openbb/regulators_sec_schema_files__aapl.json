@@ -1,0 +1,11 @@
+{
+  "results": {
+    "files": [
+      "sample"
+    ]
+  },
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

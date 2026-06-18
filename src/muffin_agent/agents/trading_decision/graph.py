@@ -15,7 +15,7 @@ callers can opt into the depth they need:
 All builders are **async** because each starts by building four
 compiled analyst ReAct agents (one per perspective: market /
 fundamentals / news / social) that are added directly as parent-graph
-nodes via ``add_node(name, agent, input_schema=agent.input_schema)``.
+nodes via ``add_node(name, agent, input_schema=AnalystInput)``.
 The agent build is amortised to graph-construction time; per-call
 invocation is just LLM + tool work.
 
@@ -67,7 +67,7 @@ from .researchers import (
     bull_researcher_node,
     investment_judge_node,
 )
-from .state import TradingDecisionState
+from .state import AnalystInput, TradingDecisionState
 from .tools import OutcomesFetcher
 from .trader import trader_node
 
@@ -130,9 +130,11 @@ async def _add_analyst_nodes(graph: StateGraph, config: RunnableConfig) -> None:
     Each analyst is a compiled ReAct agent with a custom ``AgentState``
     extension that declares shared keys with ``TradingDecisionState``
     (``ticker``, ``decision_date``, ``<role>_report``) via
-    ``OmitFromSchema`` annotations. We forward ``input_schema=`` from
-    the compiled agent so the parent-graph composition is
-    self-documenting.
+    ``OmitFromSchema`` annotations. We pass the explicit ``AnalystInput``
+    field schema (``ticker`` + ``decision_date``) — NOT
+    ``agent.input_schema`` (a property-less ``RootModel`` that would map
+    ``{}`` and raise at coercion) — so each analyst receives exactly its
+    declared inputs and the four run isolated in parallel.
     """
     market_agent = await build_market_analyst_agent(config)
     fundamentals_agent = await build_fundamentals_analyst_agent(config)
@@ -142,25 +144,25 @@ async def _add_analyst_nodes(graph: StateGraph, config: RunnableConfig) -> None:
     graph.add_node(
         "market_analyst",
         market_agent,
-        input_schema=market_agent.input_schema,
+        input_schema=AnalystInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node(
         "fundamentals_analyst",
         fundamentals_agent,
-        input_schema=fundamentals_agent.input_schema,
+        input_schema=AnalystInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node(
         "news_analyst",
         news_agent,
-        input_schema=news_agent.input_schema,
+        input_schema=AnalystInput,
         retry_policy=_LLM_RETRY,
     )
     graph.add_node(
         "social_analyst",
         social_agent,
-        input_schema=social_agent.input_schema,
+        input_schema=AnalystInput,
         retry_policy=_LLM_RETRY,
     )
 

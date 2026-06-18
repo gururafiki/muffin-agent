@@ -455,6 +455,40 @@ Required: `docker compose up -d openbb-mcp firecrawl-mcp searxng` (the four anal
 
 The CLI ships with `InMemoryStore`, so reflection memory persists only within a single Python process today. Wire `PostgresStore` (or run on LangGraph Platform) for cross-session persistence — see [docs/trading-decision.md](docs/trading-decision.md) for the recipe.
 
+### Persona Council (`agents/personas_council/`)
+
+13 famous-investor persona agents (Buffett, Graham, Wood, Munger, Ackman, Burry, Pabrai, Taleb, Lynch, Fisher, Jhunjhunwala, Druckenmiller, Damodaran) ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) and re-platformed onto muffin's idioms.  Each persona is a **compiled 3-node subgraph** — `collect_data` (a ReAct sub-agent that fetches its own data via curated OpenBB MCP tools) → `compute_evidence` (deterministic Python scoring via [`agents/personas_council/tools/scoring_helpers.py`](src/muffin_agent/agents/personas_council/tools/scoring_helpers.py)) → `render_verdict` (one structured-output LLM call).  Outputs use the 5-tier `InvestmentSignal` (`strong_sell` … `strong_buy`) shared with `trading_decision` and `criteria_analysis`.
+
+The council fans out all 13 personas in parallel — each owns its own MCP data fetch (no shared collection step; calls dedupe through the shared tool-result cache) — then synthesises one consensus rating via an LLM-mediated judge:
+
+```
+START → [13 personas in parallel] → council_judge → END
+```
+
+It is registered in `langgraph.json` as the `"council"` async graph **factory** (`council_graph.py:build_council_graph`), so LangGraph Platform injects the managed checkpointer / store.
+
+Six **specialist** signal agents emit the same `AnalystSignal` contract: `technicals` (5-strategy ensemble) and `sentiment` (insider + news, 30/70) are fully deterministic; `fundamentals`, `growth`, and `valuation` use a ReAct step only to extract OpenBB fields, then score deterministically; `news_sentiment` is the one LLM specialist (per-headline classification).  Enable them in the council with `--include-specialists` — personas and specialists are wired directly into the graph (no central registry).
+
+**CLI**:
+
+```bash
+# Single persona
+muffin persona warren_buffett AAPL
+
+# Full 13-persona council + synthesis (add --include-specialists for the 6 specialists)
+muffin council AAPL -q "Long-only quality bias"
+
+# Specialists (technicals/sentiment deterministic; news-sentiment uses an LLM)
+muffin technicals AAPL
+muffin sentiment AAPL
+muffin fundamentals-signal AAPL   # bare `fundamentals` is the raw data-collection command
+muffin growth AAPL
+muffin valuation AAPL
+muffin news-sentiment AAPL
+```
+
+Full guide: [docs/personas.md](docs/personas.md).
+
 ### Middleware
 
 Agents are composed via `MuffinAgentBuilder`, which wires universal middleware for every agent and opt-in middleware per capability. The builder is fully typed: `with_system_prompt` accepts `str | SystemMessage`, `with_permission` accepts a real `FilesystemPermission` (deep-agent only), and the tool / subagent / middleware signatures forward exactly the types expected by `create_deep_agent` and `create_agent`.
@@ -655,15 +689,21 @@ pytest
 # Run unit tests only
 pytest -m unit
 
+# Run E2E integration tests (real graphs, mocked LLM/MCP/sandbox — offline)
+pytest -m integration
+
 # Run with coverage
 pytest --cov=muffin_agent tests/
 
 # Run specific test file
 pytest tests/test_config.py
 
-# Run integration tests calling APIs
+# Run tests calling live APIs (e.g. refresh integration fixtures from MCP)
 pytest -m live
 ```
+
+See [docs/integration-testing.md](docs/integration-testing.md) for the E2E
+integration test harness and how to add a test for every new graph.
 
 ### Code Quality
 
@@ -730,6 +770,16 @@ muffin decide AAPL --query "long-term hold candidate"
 muffin decide AAPL --narrative "Recent earnings call mentioned X..." --user alice
 muffin decide AAPL --decision-date 2026-05-23 --invest-rounds 1 --risk-rounds 1
 muffin decide AAPL --no-reflection
+
+# Persona council (ported from ai-hedge-fund). 13 famous-investor personas
+# evaluate the same ticker via precomputed deterministic facts + a single
+# LLM call each, then a judge synthesises a 5-tier consensus rating.
+muffin persona warren_buffett AAPL
+muffin council AAPL -q "Long-only quality bias, 5-year horizon"
+
+# Specialist signal agents — deterministic, no LLM (cheap, fast)
+muffin technicals AAPL    # 5-strategy technical ensemble
+muffin sentiment AAPL     # 30/70 weighted insider + news sentiment
 
 # Custom query
 muffin fundamentals MSFT -q "Get income statement and ratios"

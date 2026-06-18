@@ -11,6 +11,30 @@
                 "clear": true
             },
             "problemMatcher": []
+        },
+        {
+            "label": "Run Integration Tests (offline)",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/pytest tests/integration/ -m integration -v",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Refresh Integration Fixtures (live MCP)",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/pytest tests/integration/test_capture_fixtures.py -m live -v",
+            "dependsOn": "Start Docker Infra",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": []
         }
     ]
 }

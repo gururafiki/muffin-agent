@@ -33,6 +33,20 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 
+class AnalystInput(TypedDict, total=False):
+    """Input contract for the four analyst nodes (market/fundamentals/news/social).
+
+    Each analyst reads exactly ``ticker`` + ``decision_date``. Passed via
+    ``graph.add_node(name, agent, input_schema=AnalystInput)`` — NOT
+    ``agent.input_schema`` (a property-less ``RootModel`` that maps ``{}`` and
+    raises at coercion). A real field-based schema also isolates each analyst to
+    just these inputs, so the four parallel analysts never share state.
+    """
+
+    ticker: str
+    decision_date: str
+
+
 class TradingDecisionState(TypedDict, total=False):
     """Top-level state for ``build_trading_decision_graph`` and its variants.
 

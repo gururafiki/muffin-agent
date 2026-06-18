@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "open": 1.0,
+      "high": 1.0,
+      "low": 1.0,
+      "close": 1.0,
+      "volume": 1.0,
+      "vwap": 1.0,
+      "transactions": 1
+    }
+  ],
+  "provider": "polygon",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

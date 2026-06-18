@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "ex_dividend_date": "2026-06-01",
+      "amount": 1.0,
+      "factor": 1.0,
+      "currency": "USD",
+      "split_ratio": 1.0
+    }
+  ],
+  "provider": "intrinio",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

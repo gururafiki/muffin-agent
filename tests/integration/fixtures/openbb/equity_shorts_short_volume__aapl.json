@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "market": "sample",
+      "short_volume": 1,
+      "short_exempt_volume": 1,
+      "total_volume": 1,
+      "close": 1.0,
+      "short_volume_percent": 1.0
+    }
+  ],
+  "provider": "stockgrid",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

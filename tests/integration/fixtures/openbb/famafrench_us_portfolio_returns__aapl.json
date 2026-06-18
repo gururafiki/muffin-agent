@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "portfolio": "sample",
+      "measure": "value",
+      "value": 1
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

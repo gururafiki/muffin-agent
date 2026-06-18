@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "value": 1.0,
+      "maturity": "sample",
+      "title": "sample"
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

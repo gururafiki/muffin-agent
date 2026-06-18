@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "topic": "sample",
+      "diffusion_index": 1.0,
+      "percent_reporting_increase": 1.0,
+      "percent_reporting_decrease": 1.0,
+      "percent_reporting_no_change": 1.0
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

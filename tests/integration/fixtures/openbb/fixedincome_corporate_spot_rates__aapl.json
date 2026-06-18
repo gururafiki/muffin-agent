@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "rate": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

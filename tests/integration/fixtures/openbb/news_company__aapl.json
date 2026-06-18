@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01T13:30:00", "title": "Apple unveils on-device AI upgrade ahead of WWDC",
+      "author": "Jane Doe", "excerpt": "Apple detailed a new on-device model stack expected to lift Services engagement.",
+      "url": "https://www.benzinga.com/news/apple-on-device-ai", "symbols": "AAPL",
+      "channels": "Tech", "tags": "AI, Services", "id": "44129981"
+    },
+    {
+      "date": "2026-05-30T09:05:00", "title": "Analyst lifts Apple target on iPhone upgrade cycle",
+      "author": "John Roe", "excerpt": "A bullish note cites an accelerating replacement cycle into FY27.",
+      "url": "https://www.benzinga.com/analyst-ratings/apple-target-raise", "symbols": "AAPL",
+      "channels": "Analyst Ratings", "tags": "Ratings", "id": "44119872"
+    },
+    {
+      "date": "2026-05-28T16:45:00", "title": "Apple faces fresh EU scrutiny over App Store fees",
+      "author": "Maria Smith", "excerpt": "Regulators reopened a probe that could pressure Services margins.",
+      "url": "https://www.benzinga.com/news/apple-eu-app-store", "symbols": "AAPL",
+      "channels": "Regulatory", "tags": "EU, Regulation", "id": "44101220"
+    }
+  ],
+  "provider": "benzinga",
+  "warnings": null,
+  "chart": null,
+  "extra": {"metadata": {"arguments": {"provider_choices": {"provider": "benzinga"}, "standard_params": {"symbol": "AAPL"}}}}
+}

@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "settlement_date": "2026-06-01",
+      "symbol": "AAPL",
+      "issue_name": "sample",
+      "market_class": "sample",
+      "current_short_position": 1.0,
+      "previous_short_position": 1.0,
+      "avg_daily_volume": 1.0,
+      "days_to_cover": 1.0,
+      "change": 1.0,
+      "change_pct": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

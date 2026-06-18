@@ -1,0 +1,39 @@
+{
+  "results": [
+    {
+      "base_currency": "USD",
+      "counter_currency": "USD",
+      "last_rate": 1.0,
+      "open": 1.0,
+      "high": 1.0,
+      "low": 1.0,
+      "close": 1.0,
+      "volume": 1,
+      "prev_close": 1.0,
+      "vwap": 1.0,
+      "change": 1.0,
+      "change_percent": 1.0,
+      "prev_open": 1.0,
+      "prev_high": 1.0,
+      "prev_low": 1.0,
+      "prev_volume": 1.0,
+      "prev_vwap": 1.0,
+      "bid": 1.0,
+      "ask": 1.0,
+      "minute_open": 1.0,
+      "minute_high": 1.0,
+      "minute_low": 1.0,
+      "minute_close": 1.0,
+      "minute_volume": 1.0,
+      "minute_vwap": 1.0,
+      "minute_transactions": 1.0,
+      "quote_timestamp": "2026-06-01T00:00:00",
+      "minute_timestamp": "2026-06-01T00:00:00",
+      "last_updated": "2026-06-01T00:00:00"
+    }
+  ],
+  "provider": "polygon",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

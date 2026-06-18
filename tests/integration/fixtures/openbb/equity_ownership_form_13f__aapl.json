@@ -1,0 +1,23 @@
+{
+  "results": [
+    {
+      "period_ending": "2026-06-01",
+      "issuer": "sample",
+      "cusip": "sample",
+      "asset_class": "sample",
+      "security_type": "SH",
+      "option_type": "call",
+      "investment_discretion": "sample",
+      "voting_authority_sole": 1,
+      "voting_authority_shared": 1,
+      "voting_authority_none": 1,
+      "principal_amount": 1,
+      "value": 1,
+      "weight": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

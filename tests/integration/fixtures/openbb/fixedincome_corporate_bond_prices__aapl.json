@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "isin": "sample",
+      "lei": "sample",
+      "figi": "sample",
+      "cusip": "sample",
+      "coupon_rate": 1.0,
+      "ytm": 1.0,
+      "price": 1.0,
+      "highest_price": 1.0,
+      "lowest_price": 1.0,
+      "total_trades": 1,
+      "last_traded_date": "2026-06-01",
+      "maturity_date": "2026-06-01",
+      "issue_date": "2026-06-01",
+      "issuer_name": "sample"
+    }
+  ],
+  "provider": "tmx",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

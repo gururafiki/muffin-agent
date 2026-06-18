@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "sector": "sample",
+      "weight": 1.0
+    }
+  ],
+  "provider": "fmp",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

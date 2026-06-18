@@ -1,0 +1,18 @@
+{
+  "results": [
+    {
+      "symbol": "AAPL",
+      "date": "2026-06-01",
+      "eps_actual": 1,
+      "eps_estimated": 1,
+      "surprise": 1.0,
+      "surprise_percent": 1.0,
+      "reported_date": "2026-06-01",
+      "report_time": "sample"
+    }
+  ],
+  "provider": "alphavantage",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "sector": "sample",
+      "weight": 1.0
+    }
+  ],
+  "provider": "tmx",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}

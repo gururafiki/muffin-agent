@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "date": "2026-06-01",
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "rate": 1.0
+    }
+  ],
+  "provider": "fred",
+  "warnings": null,
+  "chart": null,
+  "extra": {}
+}
