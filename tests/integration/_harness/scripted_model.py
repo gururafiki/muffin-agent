@@ -174,6 +174,27 @@ def tool_turn(
     )
 
 
+def parallel_tool_turn(*calls: tuple[str, dict[str, Any]]) -> AIMessage:
+    """An ``AIMessage`` issuing several tool calls in one turn (parallel calls).
+
+    Real tool-calling LLMs batch independent calls like this; the ``ToolNode``
+    executes them all before the next model turn. Each *call* is a
+    ``(tool_name, args)`` tuple.
+    """
+    return AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": name,
+                "args": args,
+                "id": f"call_{name}_{i}",
+                "type": "tool_call",
+            }
+            for i, (name, args) in enumerate(calls)
+        ],
+    )
+
+
 def final(text: str) -> AIMessage:
     """A free-form text ``AIMessage`` (a plain answer, no tool calls)."""
     return AIMessage(content=text)

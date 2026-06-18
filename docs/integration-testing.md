@@ -112,6 +112,20 @@ script one shared timeline across all of them. See
 The deterministic node is **not** mocked — assert it ran by inspecting downstream
 state or the rendered prompt (`cursor.last_system_prompt()`).
 
+## Recipe 3 — full tool-allowlist coverage per agent
+
+To prove an agent can execute **every** tool it declares (names resolve through
+the real `get_tools` filter, each fixture loads, the loop still completes), batch
+all the calls into one turn with `parallel_tool_turn(*(name, args))` — the way a
+real LLM batches independent fetches, and cheap on the agent's model-call budget.
+[`test_persona_tools_e2e.py`](../tests/integration/test_persona_tools_e2e.py)
+parametrises this over all 13 personas: each `collect_data` invokes its whole
+`_MCP_TOOLS` list + `execute_python`, asserted via the `ToolMessage`s captured in
+`cursor.inputs[1]` (a missing fixture or a tool name drifting from the OpenBB
+catalogue fails by name). The council e2e intentionally skips tool fan-out (its
+schema-routed model is stateless for parallel personas) — this recipe is the
+tool-coverage counterpart.
+
 ## Fixtures — one pluggable file per tool
 
 Fixtures live under [`tests/integration/fixtures/`](../tests/integration/fixtures)
