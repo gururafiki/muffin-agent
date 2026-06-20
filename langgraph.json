@@ -1,10 +1,10 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "stock_evaluation": "./src/muffin_agent/graph.py:graph",
-    "criteria_analysis": "./src/muffin_agent/agents/criteria_analysis/graph.py:graph",
-    "research": "./src/muffin_agent/agents/research/graph.py:graph",
-    "council": "./src/muffin_agent/agents/personas_council/council_graph.py:build_council_graph"
+    "stock_evaluation": "muffin_agent.graph:graph",
+    "criteria_analysis": "muffin_agent.agents.criteria_analysis.graph:graph",
+    "research": "muffin_agent.agents.research.graph:graph",
+    "council": "muffin_agent.agents.personas_council.council_graph:build_council_graph"
   },
   "env": ".env",
   "python_version": "3.13",
