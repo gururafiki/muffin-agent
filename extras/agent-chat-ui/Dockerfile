@@ -9,7 +9,10 @@ RUN git clone --depth 1 https://github.com/langchain-ai/agent-chat-ui.git .
 
 RUN pnpm install --frozen-lockfile
 
-ARG NEXT_PUBLIC_API_URL=http://localhost:8123
+# Default to the same-origin API proxy (Next route /api → server-side LANGGRAPH_API_URL).
+# Relative, so it's deployment-independent and needs no build-time configuration; the real
+# backend is set at runtime via the LANGGRAPH_API_URL env on the container (docker stack).
+ARG NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 RUN pnpm build

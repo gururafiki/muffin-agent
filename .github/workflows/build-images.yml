@@ -6,8 +6,9 @@ name: Build & push images
 # Consumed by the Oracle Swarm deploy (oracle-cloud-docker-swarm-setup):
 #   ghcr.io/gururafiki/muffin:{api,openbb,ui}
 #
-# Required repo setting: Settings → Secrets and variables → Actions → Variables:
-#   PUBLIC_API_URL = https://muffin-api.rafiki.guru   (baked into the chat UI at build time)
+# The UI uses the same-origin API proxy (NEXT_PUBLIC_API_URL=/api, baked in the Dockerfile);
+# the real backend is set at runtime via LANGGRAPH_API_URL in the docker stack — so no build-time
+# config / repo variable is needed here.
 # After the first run, make the `muffin` GHCR package public so the VM can pull without a PAT.
 
 on:
@@ -84,8 +85,6 @@ jobs:
           context: ./extras/agent-chat-ui
           platforms: ${{ env.PLATFORM }}
           push: true
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_API_URL }}
           tags: |
             ${{ env.REGISTRY }}:ui
             ${{ env.REGISTRY }}:ui-${{ github.sha }}
