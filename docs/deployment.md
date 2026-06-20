@@ -197,6 +197,45 @@ The current Docker Compose setup is intended for **local development**. Before d
 ### Build reproducibility
 - [ ] **Pin Agent Chat UI version** — The Dockerfile clones `main` at build time; pin to a specific commit or tag for reproducible builds
 
+## Oracle Cloud (Always-Free) Docker Swarm
+
+The full stack can run 24/7 on a **single ARM Always-Free** Oracle Cloud VM using the
+Terraform + Ansible + Docker-Swarm pipeline in the sibling
+[`oracle-cloud-docker-swarm-setup`](../../oracle-cloud-docker-swarm-setup) repo. The complete
+walkthrough lives in
+[`docker-stack/templates/muffin/README.md`](../../oracle-cloud-docker-swarm-setup/docker-stack/templates/muffin/README.md);
+the short version:
+
+1. **Build & push** the 3 source-built images (`api`, `openbb`, `ui`) for `linux/arm64` to GHCR
+   via `docker-stack/templates/muffin/build-and-push.sh` (the UI bakes `NEXT_PUBLIC_API_URL`).
+2. **`terraform apply`** provisions one `VM.Standard.A1.Flex` (4 OCPU / 24 GB) — the whole
+   Always-Free ARM allowance on a single node. (The AMD `E2.1.Micro` micro shape is too small.)
+3. **`ansible-playbook muffin_stack.yml`** hardens the node, forms a single-node Swarm, stages
+   the env/config files, creates Docker secrets, and `docker stack deploy`s.
+4. **Cloudflare** fronts it: proxied DNS for `chat.<domain>` + `api.<domain>`, with **Traefik**
+   at the origin terminating TLS via a Cloudflare **DNS-01** wildcard Let's Encrypt cert.
+
+**Exposure:** Traefik runs with `exposedByDefault=false`; only `agent-chat-ui` and `langgraph-api`
+carry routing labels. Every MCP / infra service (OpenBB, Firecrawl, SearxNG, OpenSandbox, Postgres,
+Redis) stays private on the Swarm overlay with no published ports.
+
+### Authentication & CORS for the LangGraph server
+
+The LangGraph Standalone Server ships with **no auth**. Two complementary layers:
+
+- **Edge — Cloudflare Access** (recommended, zero code): add a Zero-Trust Access application over
+  `chat.<domain>` + `api.<domain>`. Browser users authenticate via email/SSO; programmatic clients
+  use an Access **service token**.
+- **Origin — LangGraph custom auth** ([`auth.py`](../auth.py), wired through the `auth` key in
+  [`langgraph.json`](../langgraph.json)): set `MUFFIN_API_TOKEN` (shared bearer) and/or
+  `CF_ACCESS_TEAM_DOMAIN` + `CF_ACCESS_AUD` (verifies the Cloudflare Access JWT). With nothing set
+  it stays **disabled** (anonymous), so `langgraph dev` and local `docker compose up` are
+  unaffected. When the CF Access JWT is verified, the email becomes `configurable.user_id` →
+  real per-user `/memories/` isolation (drop `MEMORY_DEBUG_USER_ID` once enabled).
+
+**CORS** (browser UI on a different subdomain calling the API) is injected by a Traefik headers
+middleware on the `api` router (see the stack's `deploy.labels`), scoped to the chat origin.
+
 ## Limits & Alternatives
 
 **Self-Hosted Lite** is free up to **1 million node executions**. After that, upgrade to Self-Hosted Enterprise (contact LangChain sales).

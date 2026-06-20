@@ -305,14 +305,23 @@ A 42.8-min stock_evaluation run identified seven compounding root causes (slow f
 - [ ] Optimize prompts based on evals using langfuse
 
 ### Deployment
-- [ ] Self-hosted infrastructure setup. Use (oracle-cloud-docker-swarm-setup with Dokploy)[https://github.com/gururafiki/oracle-cloud-docker-swarm-setup]
-    - [ ] Setup Terraform and Ansible to spin up instances with Docker swarm setup
-        - [ ] Spin up independent test and prod swarms
-        - [ ] Setup GitHub actions (or Dockploy) to auto deploy to test swarm on merge
-    - [ ] Deploy Postgre (or Supabase)
-    - [ ] Deploy (langfuse)[https://langfuse.com/self-hosting]
-    - [ ] Deploy Agent server, build custom FastAPI/FastMCP wrapper or use paid langsmith plan
-    - [ ] Deploy client web app.
+- [x] Self-hosted infrastructure setup using [oracle-cloud-docker-swarm-setup](https://github.com/gururafiki/oracle-cloud-docker-swarm-setup) — Terraform + Ansible deploy the full 13-service stack to a single ARM Always-Free OCI VM (single-node Docker Swarm), behind Traefik (Cloudflare DNS-01 wildcard TLS) with only the chat UI + LangGraph API exposed. Templates: `docker-stack/templates/muffin/`, playbook `ansible/muffin_stack.yml`. App-level auth added via [`auth.py`](../auth.py) (`langgraph.json` `auth` key). Walkthrough in [docs/deployment.md](docs/deployment.md#oracle-cloud-always-free-docker-swarm).
+    - [x] Terraform + Ansible to spin up an instance with Docker Swarm (ARM A1.Flex, 4 OCPU / 24 GB)
+    - [x] Deploy Postgres (langgraph-postgres) + Agent server + client web app (agent-chat-ui) onto the Swarm
+    - [x] Cloudflare as IaC via the Terraform `cloudflare` provider (`terraform/cloudflare.tf`): proxied DNS (`muffin`/`muffin-api`.rafiki.guru) + Zero-Trust Access app/policy/service-token; one CF API token drives Terraform + Traefik DNS-01
+    - [x] GitHub Actions to **build & push** the 3 ARM64 images to GHCR on merge (`muffin-agent/.github/workflows/build-images.yml`, native `ubuntu-24.04-arm` runner)
+    - [ ] GitHub Actions to **auto-deploy** to the swarm on merge — add a deploy job that SSHes to the VM and rolls services (`SSH_HOST` + `SSH_PRIVATE_KEY` repo secrets)
+    - [ ] Spin up independent test and prod swarms (Terraform workspaces + `<workspace>.tfvars`)
+    - [ ] Deploy [langfuse](https://langfuse.com/self-hosting) onto the swarm for tracing
+- [ ] **Migrate the deployed server to [Aegra](https://github.com/aegra/aegra)** (postponed 2026-06-19; ~985★, Apache-2.0, Agent-Protocol compatible). Removes the LangGraph standalone server's `LANGSMITH_API_KEY` dependency + the **1M-node-execution ceiling** (a real ceiling for muffin's node-heavy multi-agent runs) and brings auth (JWT/OAuth) OOTB. Plan: (a) validate locally with `aegra dev` against muffin's graphs (council / trading_decision / research / investment) + custom middleware / MCP / HITL; (b) swap the `langgraph-api` service + image build to Aegra (`aegra.json`, `aegra serve`) and replace [`auth.py`](../auth.py) with Aegra auth. ~90% of the deploy (Traefik/Swarm/PG/Redis/Cloudflare/Ansible) is reused.
+- [ ] **Deployment hardening / known limitations** (current single-node setup):
+    - [ ] Single node = no HA; add scheduled `pg_dump` backups of the `langgraph-data` volume (or move to managed/Supabase Postgres)
+    - [ ] Encrypt app API keys at rest — they're plaintext in the Swarm service spec today (LangGraph reads plain env); add an entrypoint that sources Docker secret files into env, or get it for free via the Aegra migration
+    - [ ] Verify ARM64 manifests for all third-party images; the OpenSandbox runtime images (`execd`/`egress`) are the most likely arm64 gap — degrade `execute_python` gracefully or pin/replace
+    - [ ] Swarm drops `depends_on` startup ordering — services converge via restart; consider a lightweight wait/init if cold-start churn is noisy
+    - [ ] Lock the OCI security list to Cloudflare IP ranges so the origin isn't directly reachable
+    - [ ] Validate SSE (`/runs/stream`) isn't buffered/timed-out behind the Cloudflare proxy
+    - [ ] Move off `nvidia/...:free` model routes for the always-on prod deploy (CLAUDE.md flags `:free` as rate-limited / mid-stream-buggy)
 - [ ] Monitoring & alerting
 - [ ] Scale testing
 
