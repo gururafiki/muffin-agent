@@ -29,3 +29,16 @@ class OpenSandboxConfiguration(BaseConfiguration):
             "pre-installed for faster startup."
         ),
     )
+
+    opensandbox_use_server_proxy: bool = Field(
+        default=True,
+        description=(
+            "Route sandbox traffic through the OpenSandbox server instead of "
+            "connecting to sandbox containers directly. Required whenever the agent "
+            "cannot reach sandbox container ports directly — e.g. Docker Swarm "
+            "overlay / bridge deployments where the server spawns sandboxes on the "
+            "host via docker.sock (the server proxies via the Docker API). Set "
+            "OPENSANDBOX_USE_SERVER_PROXY=false only for host/flat-network setups "
+            "where direct access is faster and reachable."
+        ),
+    )
