@@ -36,7 +36,6 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
@@ -108,32 +107,31 @@ class CouncilState(TypedDict, total=False):
 async def build_council_graph(
     config: RunnableConfig | None = None,
     *,
-    checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
-    include_specialists: bool = False,
 ) -> CompiledStateGraph:
     """Build and compile the persona council graph.
 
+    Registered in ``langgraph.json`` as the config-only graph factory. LangGraph
+    Platform caps factory parameters at two and injects the managed checkpointer /
+    store, so persistence is left to the Platform (or the caller's ``store``) and the
+    specialist toggle is read from ``config`` rather than passed as an argument.
+
     Args:
-        config: Runnable config forwarded to every persona's async
-            ``build_*_agent`` factory (used to materialise MCP tool
-            handles at compile time).  Defaults to an empty config.
-        checkpointer: Optional ``BaseCheckpointSaver`` for resumable runs.
-        store: Optional ``BaseStore`` for the shared
-            ``ToolResultCacheMiddleware`` cache (lets MCP tool calls
-            dedupe across the 13 persona subgraphs).
-        include_specialists: When True, also wires the six specialist
-            subgraphs (``technicals``, ``sentiment``, ``fundamentals``,
-            ``growth``, ``valuation``, ``news_sentiment``) into the fan-in.
-            Also honoured via ``config["configurable"]["include_specialists"]``
-            so the langgraph-deployed factory (which only receives ``config``)
-            and per-request clients can toggle specialists without a kwarg.
+        config: Runnable config forwarded to every persona's async ``build_*_agent``
+            factory (used to materialise MCP tool handles at compile time). Also
+            carries ``configurable.include_specialists`` (bool) to additionally wire
+            the six specialist subgraphs (``technicals``, ``sentiment``,
+            ``fundamentals``, ``growth``, ``valuation``, ``news_sentiment``) into the
+            fan-in. Defaults to an empty config.
+        store: Optional ``BaseStore`` for the shared ``ToolResultCacheMiddleware``
+            cache (dedupes MCP tool calls across the 13 persona subgraphs). The
+            Platform injects its managed store; CLI / tests may pass one explicitly.
 
     Returns:
         Compiled state graph ready for ``ainvoke``.
     """
     effective_config: RunnableConfig = config or {}
-    include_specialists = include_specialists or bool(
+    include_specialists = bool(
         effective_config.get("configurable", {}).get("include_specialists", False)
     )
 
@@ -190,4 +188,6 @@ async def build_council_graph(
     graph.add_node("council_judge", council_judge_node)
     graph.add_edge("council_judge", END)
 
-    return graph.compile(checkpointer=checkpointer, store=store)
+    # checkpointer left to the Platform (or unused for one-shot council runs); store is
+    # passed by CLI/tests or injected by the Platform.
+    return graph.compile(store=store)

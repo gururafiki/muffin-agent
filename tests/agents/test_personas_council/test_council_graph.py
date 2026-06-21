@@ -64,7 +64,9 @@ class TestCouncilGraphWiring:
             "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
             return_value=mock_client,
         ):
-            graph = await build_council_graph(include_specialists=True)
+            graph = await build_council_graph(
+                {"configurable": {"include_specialists": True}}
+            )
         nodes = list(graph.get_graph().nodes)
         for slug in (
             "technicals",

@@ -925,14 +925,13 @@ async def _run_council(
     store = InMemoryStore()
     config = RunnableConfig(
         callbacks=callbacks,
-        configurable={"thread_id": session_id, "user_id": user},
+        configurable={
+            "thread_id": session_id,
+            "user_id": user,
+            "include_specialists": include_specialists,
+        },
     )
-    graph = await build_council_graph(
-        config,
-        checkpointer=_get_checkpointer(),
-        store=store,
-        include_specialists=include_specialists,
-    )
+    graph = await build_council_graph(config, store=store)
 
     result = await graph.ainvoke({"ticker": ticker, "query": query}, config=config)
 
