@@ -51,6 +51,7 @@ class SandboxFactory:
             domain=self._config.opensandbox_url,
             api_key=self._config.opensandbox_api_key,
             protocol="http",
+            use_server_proxy=self._config.opensandbox_use_server_proxy,
         )
 
     def _make_async_connection(self):
@@ -61,6 +62,7 @@ class SandboxFactory:
             domain=self._config.opensandbox_url,
             api_key=self._config.opensandbox_api_key,
             protocol="http",
+            use_server_proxy=self._config.opensandbox_use_server_proxy,
         )
 
     def _find_sandbox_id(self) -> str | None:

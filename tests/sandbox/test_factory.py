@@ -13,6 +13,7 @@ def _make_mock_config():
     config.opensandbox_url = "localhost:8080"
     config.opensandbox_api_key = None
     config.opensandbox_image = "python:3.11-slim"
+    config.opensandbox_use_server_proxy = True
     return config
 
 
@@ -67,6 +68,50 @@ class TestSandboxFactoryThreadId:
 
         factory = SandboxFactory(runtime)
         assert factory._get_thread_id() == "default"
+
+
+# ---------------------------------------------------------------------------
+# Tests — connection config carries use_server_proxy
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSandboxFactoryConnection:
+    """The sync/async ConnectionConfig must forward opensandbox_use_server_proxy.
+
+    Required for Swarm/bridge deployments where the agent cannot reach sandbox
+    container ports directly and must proxy through the server (the default).
+    """
+
+    @pytest.mark.parametrize("proxy", [True, False])
+    def test_sync_connection_forwards_proxy(self, proxy):
+        from muffin_agent.sandbox.factory import SandboxFactory
+
+        runtime = MagicMock()
+        runtime.config = {"configurable": {"thread_id": "t"}}
+        cfg = _make_mock_config()
+        cfg.opensandbox_use_server_proxy = proxy
+        with patch(
+            f"{_PATCH_PREFIX}.OpenSandboxConfiguration.from_runnable_config",
+            return_value=cfg,
+        ):
+            conn = SandboxFactory(runtime)._make_sync_connection()
+        assert conn.use_server_proxy is proxy
+
+    @pytest.mark.parametrize("proxy", [True, False])
+    def test_async_connection_forwards_proxy(self, proxy):
+        from muffin_agent.sandbox.factory import SandboxFactory
+
+        runtime = MagicMock()
+        runtime.config = {"configurable": {"thread_id": "t"}}
+        cfg = _make_mock_config()
+        cfg.opensandbox_use_server_proxy = proxy
+        with patch(
+            f"{_PATCH_PREFIX}.OpenSandboxConfiguration.from_runnable_config",
+            return_value=cfg,
+        ):
+            conn = SandboxFactory(runtime)._make_async_connection()
+        assert conn.use_server_proxy is proxy
 
 
 # ---------------------------------------------------------------------------
