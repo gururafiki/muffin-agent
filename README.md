@@ -451,7 +451,7 @@ muffin decide AAPL --decision-date 2026-05-23 --invest-rounds 1 --risk-rounds 1 
                    --no-reflection
 ```
 
-Required: `docker compose up -d openbb-mcp firecrawl-mcp searxng` (the four analysts need OpenBB MCP + Firecrawl MCP).
+Required: the OpenBB MCP + Firecrawl MCP + SearxNG services — the local stack lives in [`muffin-deployment/compose`](https://github.com/gururafiki/muffin-deployment/tree/main/compose) (`docker compose up -d openbb-mcp firecrawl-mcp searxng`).
 
 The CLI ships with `InMemoryStore`, so reflection memory persists only within a single Python process today. Wire `PostgresStore` (or run on LangGraph Platform) for cross-session persistence — see [docs/trading-decision.md](docs/trading-decision.md) for the recipe.
 
@@ -533,7 +533,7 @@ Filesystem routes are composed opt-in through `MuffinAgentBuilder`:
 
 `user_id` is required in `RunnableConfig["configurable"]` for `/memories/` access: it's the namespace key that isolates each user's persistent memory. Pass `--user <id>` on `muffin analyze` / `muffin screen` to populate it; on LangGraph Platform, set `configurable.user_id` per request (add an `@auth.authenticate` hook once multi-user isolation is required). CLI ships `InMemoryStore`; LangGraph Platform injects managed Postgres automatically.
 
-**Debugging against `agent-chat-ui`** — the UI does not yet populate `configurable.user_id`, so a request without the fallback would raise `MemoryUnavailableError`. For local debugging set `MEMORY_DEBUG_USER_ID=<id>` (or `configurable.memory_debug_user_id`) — this value is consulted by `_memories_namespace` as a fallback before raising, pinning all anonymous traffic to a single `("memories", <id>)` namespace. `docker-compose.yml` passes the env var through to the `langgraph-api` service; just set it in your shell or `.env`. **Do NOT set it in multi-user deployments** — it collapses every request onto a shared namespace.
+**Debugging against `agent-chat-ui`** — the UI does not yet populate `configurable.user_id`, so a request without the fallback would raise `MemoryUnavailableError`. For local debugging set `MEMORY_DEBUG_USER_ID=<id>` (or `configurable.memory_debug_user_id`) — this value is consulted by `_memories_namespace` as a fallback before raising, pinning all anonymous traffic to a single `("memories", <id>)` namespace. the `muffin-deployment` compose passes the env var through to the `langgraph-api` service; just set it in your shell or `.env`. **Do NOT set it in multi-user deployments** — it collapses every request onto a shared namespace.
 
 **Builder example**:
 
@@ -603,15 +603,12 @@ pip install -e .
 
 Muffin Agent uses [OpenBB](https://openbb.co/) as its data backbone via the Model Context Protocol (MCP). The OpenBB MCP server runs separately and must be available at `http://127.0.0.1:8001/mcp`.
 
-> OpenBB has heavy dependencies — we recommend setting it up in a **separate virtual environment** under `extras/openbb/`. See [extras/openbb/README.md](extras/openbb/) for detailed instructions on installation, provider API keys, and startup.
+> OpenBB has heavy dependencies. The MCP server is published as a container image — [`openbb-mcp-docker`](https://github.com/gururafiki/openbb-mcp-docker) (`ghcr.io/gururafiki/openbb-mcp-docker`). Run it standalone, or bring up the whole local stack via [`muffin-deployment/compose`](https://github.com/gururafiki/muffin-deployment/tree/main/compose).
 
 Quick version:
 
 ```bash
-cd extras/openbb
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-openbb-mcp --port 8001
+docker run -d --name openbb-mcp -p 8001:8001 ghcr.io/gururafiki/openbb-mcp-docker:latest
 ```
 
 For full OpenBB MCP documentation, see the [official docs](https://docs.openbb.co/odp/python/extensions/interface/openbb-mcp).
@@ -631,7 +628,7 @@ docker run -d --name opensandbox \
 
 The server starts on `http://localhost:8080`. No API key is needed for local development.
 
-> **Docker Compose**: When deploying with `docker compose up`, the `opensandbox-server` service starts automatically — no manual step required.
+> **Local stack**: bringing up [`muffin-deployment/compose`](https://github.com/gururafiki/muffin-deployment/tree/main/compose) starts `opensandbox-server` automatically — no manual step required.
 
 ### Step 4: Configure Environment Variables
 
