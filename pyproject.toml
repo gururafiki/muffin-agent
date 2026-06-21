@@ -25,7 +25,7 @@ dependencies = [
     "typer>=0.24",
     "rich>=14.3",
     # Observability
-    "langfuse>=4.7.1",
+    "langfuse>=4.9.1",
     "deepagents>=0.6.3",
     # Checkpointing (CLI persistence)
     "langgraph-checkpoint-sqlite>=3.1",
