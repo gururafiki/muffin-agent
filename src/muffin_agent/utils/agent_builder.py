@@ -138,11 +138,42 @@ _TRANSIENT_LLM_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 
+# langchain-openrouter surfaces upstream provider hiccups mid-stream as a plain
+# ValueError (no typed exception), e.g. "OpenRouter API returned an error during
+# streaming: Upstream idle timeout exceeded (code: 504)". Retry the transient ones
+# (5xx / timeout / rate-limit / overloaded) by message so the retry budget covers
+# free-route flakiness; permanent ones (bad request, invalid model) won't match.
+_TRANSIENT_LLM_MESSAGE_HINTS: tuple[str, ...] = (
+    "code: 500",
+    "code: 502",
+    "code: 503",
+    "code: 504",
+    "code: 429",
+    "timeout",
+    "timed out",
+    "overloaded",
+    "rate limit",
+    "rate-limit",
+    "temporarily unavailable",
+    "service unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "internal server error",
+)
+
+
 def _should_retry_llm_call(exc: Exception) -> bool:
     """Filter for ``ModelRetryMiddleware``: only transient provider errors."""
     if isinstance(exc, _PERMANENT_LLM_ERRORS):
         return False
-    return isinstance(exc, _TRANSIENT_LLM_ERRORS)
+    if isinstance(exc, _TRANSIENT_LLM_ERRORS):
+        return True
+    # OpenRouter streaming errors arrive as a bare ValueError (see langchain_openrouter
+    # chat_models._astream) — match the transient ones by message.
+    message = str(exc).lower()
+    if "openrouter api returned an error" in message:
+        return any(hint in message for hint in _TRANSIENT_LLM_MESSAGE_HINTS)
+    return False
 
 
 # Substrings in ``ToolException.args[0]`` that mark a transient tool failure
