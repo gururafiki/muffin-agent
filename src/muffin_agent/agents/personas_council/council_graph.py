@@ -191,3 +191,16 @@ async def build_council_graph(
     # checkpointer left to the Platform (or unused for one-shot council runs); store is
     # passed by CLI/tests or injected by the Platform.
     return graph.compile(store=store)
+
+
+async def make_graph(config: RunnableConfig | None = None) -> CompiledStateGraph:
+    """LangGraph Platform graph factory (config-only); registered in ``langgraph.json``.
+
+    The Platform's factory protocol only accepts parameters typed ``RunnableConfig`` /
+    ``ServerRuntime`` (a ``BaseStore`` parameter is rejected) and injects its managed
+    checkpointer/store into the returned graph. So the deployed entrypoint is this thin
+    config-only factory; :func:`build_council_graph` keeps its ``store`` parameter for
+    CLI / programmatic callers (the within-run MCP cache shared across the personas).
+    ``include_specialists`` is read from ``config["configurable"]``.
+    """
+    return await build_council_graph(config)
