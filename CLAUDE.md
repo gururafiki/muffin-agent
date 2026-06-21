@@ -185,7 +185,7 @@ The source lives in `src/muffin_agent/` and is organized as:
 
   **Dependencies added:** `stockstats>=0.6.0` + `pandas` + `tabulate` (for `pd.DataFrame.to_markdown`).
 
-  **CLI**: `muffin decide <TICKER> [--narrative ...] [--query ...] [--user alice] [--invest-rounds 2] [--risk-rounds 1] [--reflection/--no-reflection] [--decision-date YYYY-MM-DD]` ([src/muffin_cli/main.py](src/muffin_cli/main.py)). Requires `docker compose up -d openbb-mcp firecrawl-mcp searxng`. CLI uses `InMemoryStore` — reflection accumulates only within a single Python process; wire a `PostgresStore` (or LangGraph Platform's injected store) for cross-session persistence.
+  **CLI**: `muffin decide <TICKER> [--narrative ...] [--query ...] [--user alice] [--invest-rounds 2] [--risk-rounds 1] [--reflection/--no-reflection] [--decision-date YYYY-MM-DD]` ([src/muffin_cli/main.py](src/muffin_cli/main.py)). Requires the local MCP/infra stack ([`muffin-deployment/compose`](https://github.com/gururafiki/muffin-deployment/tree/main/compose)): `docker compose up -d openbb-mcp firecrawl-mcp searxng`. CLI uses `InMemoryStore` — reflection accumulates only within a single Python process; wire a `PostgresStore` (or LangGraph Platform's injected store) for cross-session persistence.
 
   **Future migration paths** (documented in [docs/trading-decision.md](docs/trading-decision.md)):
   - **Path 1 — Custom subgraph with `ToolNode`**: when a downstream role grows tools + internal multi-step structure (e.g. self-critique loop), build a `StateGraph(...)`-compiled subgraph in the per-role file and add it as a graph node.

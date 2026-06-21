@@ -1,4 +1,0 @@
-openbb[all]
-openbb-mcp-server
-ipykernel
-matplotlib

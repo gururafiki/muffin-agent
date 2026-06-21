@@ -1,5 +1,7 @@
 # Debugging Locally
 
+> **Note:** the local stack (`docker-compose`) now lives in [`muffin-deployment/compose`](https://github.com/gururafiki/muffin-deployment/tree/main/compose). Run the `docker compose …` commands below from that directory (or via the umbrella `muffin` checkout).
+
 Run the agent server on the host under a Python debugger while docker compose provides infrastructure (OpenBB MCP, Firecrawl MCP stack, OpenSandbox, SearxNG, Redis, Postgres) and the chat UI. Breakpoints hit in the same files you edit; `langgraph dev` hot-reloads on save.
 
 ## Architecture
