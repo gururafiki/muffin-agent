@@ -1,11 +1,13 @@
 """Configuration and LLM provider management."""
 
+from functools import lru_cache
 from typing import Any, Literal, overload
 
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import AIMessage
+from langchain_core.rate_limiters import BaseRateLimiter, InMemoryRateLimiter
 from langchain_core.runnables import Runnable, RunnableConfig
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .utils.base_config import BaseConfiguration
 
@@ -17,6 +19,22 @@ from .utils.base_config import BaseConfiguration
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 Role = Literal["orchestrator", "collector", "reasoner"]
+
+
+@lru_cache(maxsize=8)
+def _shared_rate_limiter(requests_per_second: float) -> InMemoryRateLimiter:
+    """Return a process-wide token bucket shared by every chat model at this rate.
+
+    Concurrently-built chat models that pass the SAME ``requests_per_second`` (e.g. the
+    13 council personas fanning out in parallel) share ONE limiter instance, so the
+    COMBINED request rate stays under the provider cap (OpenRouter free = 20 req/min).
+    ``max_bucket_size=1`` disallows bursts above the steady rate.
+    """
+    return InMemoryRateLimiter(
+        requests_per_second=requests_per_second,
+        check_every_n_seconds=0.1,
+        max_bucket_size=1,
+    )
 
 
 class ModelConfiguration(BaseConfiguration):
@@ -38,6 +56,17 @@ class ModelConfiguration(BaseConfiguration):
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     llm_provider: Literal["openai", "anthropic", "openrouter"] = "openai"
     llm_sdk_retries: int = Field(default=6, ge=0, le=10)
+    llm_requests_per_second: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Optional global cap on LLM requests/second, shared across ALL "
+            "concurrently-built chat models in this process (LangChain "
+            "InMemoryRateLimiter). Required for OpenRouter free models: the council "
+            "fans out ~50 calls in parallel but the free tier allows only 20 req/min, "
+            "so set e.g. 0.3 (=18/min). Env LLM_REQUESTS_PER_SECOND; unset = no limit."
+        ),
+    )
 
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
@@ -60,12 +89,26 @@ class ModelConfiguration(BaseConfiguration):
         ),
     )
 
+    @field_validator("llm_requests_per_second", mode="before")
+    @classmethod
+    def _blank_rps_to_none(cls, v: Any) -> Any:
+        """Treat an empty/blank env value as unset (no limit) instead of erroring."""
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    def _rate_limiter(self) -> BaseRateLimiter | None:
+        """Shared process-wide rate limiter (or None) from llm_requests_per_second."""
+        rps = self.llm_requests_per_second
+        return _shared_rate_limiter(rps) if rps else None
+
     def get_llm(
         self, model: str | None = None, temperature: float | None = None, **kwargs: Any
     ) -> BaseChatModel:
         """Get a single LLM instance based on ``llm_provider``."""
         model = model or self.model
         temperature = temperature if temperature is not None else self.temperature
+        rate_limiter = self._rate_limiter()
 
         if self.llm_provider == "openai":
             from langchain_openai import ChatOpenAI
@@ -79,6 +122,7 @@ class ModelConfiguration(BaseConfiguration):
                 base_url=self.openai_site_url,
                 default_headers={"HTTP-Referer": self.openai_site_url or ""},
                 max_retries=self.llm_sdk_retries,
+                rate_limiter=rate_limiter,
                 **kwargs,
             )
         if self.llm_provider == "anthropic":
@@ -91,6 +135,7 @@ class ModelConfiguration(BaseConfiguration):
                 temperature=temperature,
                 api_key=self.anthropic_api_key,
                 max_retries=self.llm_sdk_retries,
+                rate_limiter=rate_limiter,
                 **kwargs,
             )
         if self.llm_provider == "openrouter":
@@ -103,6 +148,7 @@ class ModelConfiguration(BaseConfiguration):
                 temperature=temperature,
                 openrouter_api_key=self.openrouter_api_key,
                 max_retries=self.llm_sdk_retries,
+                rate_limiter=rate_limiter,
                 **kwargs,
             )
         raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
