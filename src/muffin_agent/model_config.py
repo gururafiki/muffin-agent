@@ -7,7 +7,7 @@ from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import AIMessage
 from langchain_core.rate_limiters import BaseRateLimiter, InMemoryRateLimiter
 from langchain_core.runnables import Runnable, RunnableConfig
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .utils.base_config import BaseConfiguration
 
@@ -88,6 +88,14 @@ class ModelConfiguration(BaseConfiguration):
             "it shares `llm_provider` with the rest of the agent."
         ),
     )
+
+    @field_validator("llm_requests_per_second", mode="before")
+    @classmethod
+    def _blank_rps_to_none(cls, v: Any) -> Any:
+        """Treat an empty/blank env value as unset (no limit) instead of erroring."""
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
 
     def _rate_limiter(self) -> BaseRateLimiter | None:
         """Shared process-wide rate limiter (or None) from llm_requests_per_second."""

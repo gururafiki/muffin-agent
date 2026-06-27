@@ -27,6 +27,13 @@ class TestSharedRateLimiter:
         assert m1.rate_limiter is _shared_rate_limiter(0.3)
         assert m1.rate_limiter.requests_per_second == 0.3
 
+    def test_blank_env_value_coerces_to_none(self):
+        # an empty LLM_REQUESTS_PER_SECOND (e.g. unset GitHub var) must not crash
+        cfg = ModelConfiguration.from_runnable_config(
+            {"configurable": {"llm_requests_per_second": ""}}
+        )
+        assert cfg.llm_requests_per_second is None
+
     def test_role_chain_models_share_the_limiter(self):
         cfg = ModelConfiguration(
             llm_provider="openrouter",
