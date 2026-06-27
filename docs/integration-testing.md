@@ -137,9 +137,14 @@ for Firecrawl. `patch_mcp` builds one fake tool per fixture and the real
 Add a tool by dropping in a file.
 
 Each fake OpenBB tool advertises the **real** `inputSchema` (`provider`, `symbol`,
-…) pulled from [`extras/openbb/openbb_mcp_tools.json`](../extras/openbb/openbb_mcp_tools.json)
-(`args_schema_for(name)` in `_harness/mcp.py`, falling back to a permissive schema
-for Firecrawl / local tools). The schema is advertised, not enforced —
+…) pulled from the OpenBB catalogue `openbb_mcp_tools.json` (`args_schema_for(name)`
+in `_harness/mcp.py`, falling back to a permissive schema for Firecrawl / local
+tools, or when the catalogue is absent). The catalogue was moved out of this repo
+(commit `c3705a9`) and now ships with the `openbb-mcp-docker` image build; the
+harness resolves it via `openbb_catalogue_path()` (`_harness/fixtures.py`), preferring
+the `openbb-mcp-docker` sibling submodule in an umbrella checkout and honouring a
+legacy `extras/openbb/` copy. In a standalone muffin-agent checkout it is absent, so
+`test_generator_covers_every_schematizable_tool` skips. The schema is advertised, not enforced —
 `StructuredTool` passes a dict `args_schema` through without validation, so scripted
 `tool_turn` args don't need to match it.
 

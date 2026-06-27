@@ -15,9 +15,9 @@ Layout (add a new graph's tools by dropping in files; nothing else changes)::
 * **Firecrawl** tools return a **list** (list content) — see the cache
   middleware's strict-content note in CLAUDE.md.
 
-Fixtures are schema-accurate: field names/types are taken from
-``extras/openbb/openbb_mcp_tools.json``. Refresh them against live MCP with
-``tests/integration/test_capture_fixtures.py`` (``-m live``).
+Fixtures are schema-accurate: field names/types are taken from the OpenBB catalogue
+(``openbb_mcp_tools.json``, resolved via :func:`openbb_catalogue_path`). Refresh them
+against live MCP with ``tests/integration/test_capture_fixtures.py`` (``-m live``).
 """
 
 from __future__ import annotations
@@ -28,6 +28,24 @@ from pathlib import Path
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 _OPENBB_DIR = FIXTURES_DIR / "openbb"
 _FIRECRAWL_DIR = FIXTURES_DIR / "firecrawl"
+
+# The OpenBB tool catalogue (``openbb_mcp_tools.json``) is the schema source the
+# fixtures + fake-MCP ``inputSchema``s are authored from. It was moved out of this
+# repo in the slimming commit (c3705a9) and now ships with the ``openbb-mcp-docker``
+# image build — in an umbrella checkout it sits in that sibling submodule. A legacy
+# local copy under ``extras/openbb/`` is still honoured. None of these exist in a
+# standalone muffin-agent checkout, so callers degrade (fake MCP → permissive schema)
+# or skip the catalogue-only tests.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_CATALOGUE_CANDIDATES = (
+    _REPO_ROOT.parent / "openbb-mcp-docker" / "openbb_mcp_tools.json",
+    _REPO_ROOT / "extras" / "openbb" / "openbb_mcp_tools.json",
+)
+
+
+def openbb_catalogue_path() -> Path | None:
+    """First existing OpenBB tool-catalogue path, or ``None`` if none is present."""
+    return next((p for p in _CATALOGUE_CANDIDATES if p.is_file()), None)
 
 
 def _find(tool_name: str, scenario: str) -> tuple[Path, str]:

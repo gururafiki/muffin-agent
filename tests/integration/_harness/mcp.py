@@ -6,7 +6,8 @@ The fake tools mirror ``langchain-mcp-adapters`` exactly: a ``StructuredTool``
 with a JSON-schema dict ``args_schema`` and a ``**kwargs`` coroutine.
 
 For OpenBB tools the ``args_schema`` is the **real** ``inputSchema`` pulled from
-``extras/openbb/openbb_mcp_tools.json``, so each fake advertises the genuine
+the OpenBB catalogue (``openbb_mcp_tools.json``, resolved via
+``openbb_catalogue_path``), so each fake advertises the genuine
 argument signature (`provider`, `symbol`, …) the production tool exposes. The
 schema is *not* enforced at call time (``StructuredTool`` passes a dict schema
 through without validation — verified), so scripted ``tool_turn`` args never need
@@ -19,13 +20,12 @@ from __future__ import annotations
 import functools
 import json
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Any, Iterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain_core.tools import StructuredTool
 
-from .fixtures import available_tool_names, load_fixture
+from .fixtures import available_tool_names, load_fixture, openbb_catalogue_path
 
 # Permissive fallback for tools absent from the OpenBB catalogue (e.g. Firecrawl).
 # ``additionalProperties: True`` accepts any scripted args.
@@ -35,23 +35,20 @@ _PERMISSIVE_ARGS_SCHEMA: dict[str, Any] = {
     "additionalProperties": True,
 }
 
-# extras/openbb/openbb_mcp_tools.json — the canonical tool catalogue (the same
-# source the fixtures are authored from). Repo root is 3 parents up from here.
-_OPENBB_TOOLS_JSON = (
-    Path(__file__).resolve().parents[3] / "extras" / "openbb" / "openbb_mcp_tools.json"
-)
-
 
 @functools.lru_cache(maxsize=1)
 def _openbb_input_schemas() -> dict[str, dict[str, Any]]:
     """Map OpenBB tool name → its real ``inputSchema`` (loaded once, lazily).
 
-    Returns ``{}`` if the catalogue is missing so the harness still works (every
-    tool then falls back to the permissive schema).
+    Sourced from the OpenBB catalogue (``openbb_mcp_tools.json``, resolved via
+    :func:`openbb_catalogue_path` — the same source the fixtures are authored from).
+    Returns ``{}`` if the catalogue is missing so the harness still works (every tool
+    then falls back to the permissive schema).
     """
-    if not _OPENBB_TOOLS_JSON.exists():
+    path = openbb_catalogue_path()
+    if path is None:
         return {}
-    data = json.loads(_OPENBB_TOOLS_JSON.read_text())
+    data = json.loads(path.read_text())
     tools = data["tools"] if isinstance(data, dict) else data
     return {
         t["name"]: t["inputSchema"]

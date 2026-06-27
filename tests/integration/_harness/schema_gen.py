@@ -4,8 +4,9 @@ For the many OpenBB tools whose *realistic values* don't matter to a test — th
 LLM-driven collector agents ignore the bytes (the scripted model never reads tool
 output), and the result is usually just passed through — a **schema-correct** stub
 is enough scaffolding. ``synth_envelope(tool)`` builds one from the real
-``outputSchema`` in ``extras/openbb/openbb_mcp_tools.json`` (correct field names +
-types, lightly humanised values); ``materialize(tool)`` writes it as a fixture.
+``outputSchema`` in the OpenBB catalogue (``openbb_mcp_tools.json``, resolved via
+``openbb_catalogue_path``) — correct field names + types, lightly humanised values;
+``materialize(tool)`` writes it as a fixture.
 
 Tests that *parse* tool values (e.g. the deterministic specialists) should commit
 a hand-authored fixture with realistic numbers — it simply overrides the stub.
@@ -24,10 +25,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .fixtures import FIXTURES_DIR
+from .fixtures import FIXTURES_DIR, openbb_catalogue_path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CATALOGUE_JSON = _REPO_ROOT / "extras" / "openbb" / "openbb_mcp_tools.json"
 _AGENTS_DIR = _REPO_ROOT / "src" / "muffin_agent" / "agents"
 
 # Provider prefixes seen in OpenBB ``*Data`` model names → lower-case provider id.
@@ -68,7 +68,15 @@ _PROVIDER_PREFIXES = (
 
 @functools.lru_cache(maxsize=1)
 def _catalogue() -> dict[str, dict[str, Any]]:
-    data = json.loads(_CATALOGUE_JSON.read_text())
+    path = openbb_catalogue_path()
+    if path is None:
+        raise FileNotFoundError(
+            "OpenBB tool catalogue not found (looked in the openbb-mcp-docker sibling "
+            "and extras/openbb/). It was moved out of muffin-agent in c3705a9; "
+            "catalogue-dependent tests skip when it is absent — guard callers with "
+            "openbb_catalogue_path()."
+        )
+    data = json.loads(path.read_text())
     tools = data["tools"] if isinstance(data, dict) else data
     return {t["name"]: t for t in tools if isinstance(t, dict)}
 
