@@ -366,3 +366,17 @@ async def build_trading_decision_graph(
     graph.add_edge("decision_writeback", END)
 
     return graph.compile(checkpointer=checkpointer, store=store)
+
+
+async def make_graph(config: RunnableConfig | None = None) -> CompiledStateGraph:
+    """LangGraph Platform graph factory (config-only); registered in ``langgraph.json``.
+
+    Returns the full trading-decision pipeline (:func:`build_trading_decision_graph`).
+    The Platform's factory protocol only accepts parameters typed ``RunnableConfig`` /
+    ``ServerRuntime`` (a ``BaseStore`` parameter is rejected) and injects its managed
+    checkpointer/store into the returned graph. So the deployed entrypoint is this thin
+    config-only factory; :func:`build_trading_decision_graph` keeps its ``store`` /
+    ``checkpointer`` parameters for CLI / programmatic callers. Mirrors
+    :func:`muffin_agent.agents.personas_council.council_graph.make_graph`.
+    """
+    return await build_trading_decision_graph(config or {})

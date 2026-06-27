@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from ._harness.fixtures import FIXTURES_DIR
+from ._harness.fixtures import FIXTURES_DIR, openbb_catalogue_path
 from ._harness.schema_gen import (
     _catalogue,
     _resolve_results,
@@ -44,6 +44,11 @@ def test_generator_covers_every_schematizable_tool() -> None:
     result. Tools the catalogue under-specifies (``results: anyOf[{}, null]``)
     are legitimately skipped — there's nothing to synthesise.
     """
+    if openbb_catalogue_path() is None:
+        pytest.skip(
+            "OpenBB catalogue absent (openbb-mcp-docker sibling / extras/openbb) — "
+            "moved out in c3705a9; present only in an umbrella checkout."
+        )
     catalogue = _catalogue()
     referenced = agent_referenced_openbb_tools()
     assert referenced, "no agent-referenced OpenBB tools found"

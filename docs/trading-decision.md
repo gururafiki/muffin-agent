@@ -65,6 +65,8 @@ Three composable async builders share `TradingDecisionState` and let callers opt
 
 All three are **async** — each starts by building the four compiled analyst agents (so the agent construction cost is amortised to graph-build time, not per-call).
 
+The full pipeline is the deployable graph: `build_trading_decision_graph` is exposed to LangGraph Platform through the config-only factory `graph.py:make_graph`, **registered in `langgraph.json` as `"trading_decision"`**. The wrapper exists because the Platform factory protocol only accepts `RunnableConfig`-typed parameters (it rejects a `BaseStore` param) and injects its managed checkpointer/store into the *returned* graph — so `make_graph(config)` just delegates to `build_trading_decision_graph(config)`, while the builder keeps its `store`/`checkpointer` params for CLI/programmatic callers. This mirrors how `council` is registered. End-to-end coverage lives in `tests/integration/test_trading_decision.py` (the real compiled graph driven through `make_graph`, only the LLM/MCP/sandbox boundaries mocked).
+
 > **Note:** the 3-way risk debate is wired through the [Multi-Agent Conference Framework](multi-agent.md). The three risk debators are `LLMParticipant` configs; `_build_risk_debate_subgraph(max_rounds)` adds them as a single `risk_debate` node in the parent graph. See [docs/multi-agent.md](multi-agent.md) for the conference-framework architecture (Participant kinds, per-agent persistence via `checkpointer=True`, etc.). The investment debate (Bull/Bear) still uses bespoke node functions today — its migration to the conference framework is a roadmap item.
 
 ---

@@ -28,6 +28,7 @@ _INTEGRATION_DIR = Path(__file__).resolve().parent
 # graph id (in langgraph.json) → the integration test module that covers it.
 COVERED_GRAPHS: dict[str, str] = {
     "council": "test_council_graph_e2e.py",
+    "trading_decision": "test_trading_decision.py",
 }
 
 # Deployable graphs awaiting integration coverage. Tracked in roadmap.md.
