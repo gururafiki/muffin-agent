@@ -161,6 +161,10 @@ _TRANSIENT_LLM_MESSAGE_HINTS: tuple[str, ...] = (
     "internal server error",
 )
 
+# Transient HTTP statuses on typed SDK errors that carry ``status_code`` (e.g. the
+# openrouter SDK's TooManyRequestsResponseError = 429, InternalServerError = 5xx).
+_TRANSIENT_HTTP_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
 
 def _should_retry_llm_call(exc: Exception) -> bool:
     """Filter for ``ModelRetryMiddleware``: only transient provider errors."""
@@ -168,7 +172,13 @@ def _should_retry_llm_call(exc: Exception) -> bool:
         return False
     if isinstance(exc, _TRANSIENT_LLM_ERRORS):
         return True
-    # OpenRouter streaming errors arrive as a bare ValueError (see langchain_openrouter
+    # Typed SDK errors (e.g. openrouter's TooManyRequestsResponseError) carry an HTTP
+    # status_code — retry the transient ones (429 rate-limit, 5xx). The rate limiter
+    # keeps us under the cap; this is the straggler safety net (retried after backoff).
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and status in _TRANSIENT_HTTP_STATUSES:
+        return True
+    # OpenRouter streaming errors arrive as a bare ValueError (langchain_openrouter
     # chat_models._astream) — match the transient ones by message.
     message = str(exc).lower()
     if "openrouter api returned an error" in message:
