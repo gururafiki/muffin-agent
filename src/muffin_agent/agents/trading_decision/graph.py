@@ -50,6 +50,7 @@ from ...multi_agent import (
     RoundRobinModerator,
     build_conference_graph,
 )
+from ...utils.observability import instrument_graph
 from .analysts import (
     build_fundamentals_analyst_agent,
     build_market_analyst_agent,
@@ -379,4 +380,4 @@ async def make_graph(config: RunnableConfig | None = None) -> CompiledStateGraph
     ``checkpointer`` parameters for CLI / programmatic callers. Mirrors
     :func:`muffin_agent.agents.personas_council.council_graph.make_graph`.
     """
-    return await build_trading_decision_graph(config or {})
+    return instrument_graph(await build_trading_decision_graph(config or {}))

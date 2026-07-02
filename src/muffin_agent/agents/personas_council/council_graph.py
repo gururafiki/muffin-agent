@@ -42,6 +42,8 @@ from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 from typing_extensions import TypedDict
 
+from muffin_agent.utils.observability import instrument_graph
+
 from .judge import council_judge_node
 from .personas import (
     build_aswath_damodaran_agent,
@@ -203,4 +205,4 @@ async def make_graph(config: RunnableConfig | None = None) -> CompiledStateGraph
     CLI / programmatic callers (the within-run MCP cache shared across the personas).
     ``include_specialists`` is read from ``config["configurable"]``.
     """
-    return await build_council_graph(config)
+    return instrument_graph(await build_council_graph(config))

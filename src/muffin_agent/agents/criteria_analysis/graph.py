@@ -40,6 +40,8 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Send
 
+from muffin_agent.utils.observability import instrument_graph
+
 from .criteria_definition_node import criteria_definition_node
 from .criterion_evaluation_node import criterion_evaluation_node
 from .merge_criteria import merge_criteria_node
@@ -111,4 +113,4 @@ def build_criteria_analysis_graph(
 
 
 # Module-level pre-compiled graph for LangGraph Platform autodiscovery.
-graph = build_criteria_analysis_graph()
+graph = instrument_graph(build_criteria_analysis_graph())

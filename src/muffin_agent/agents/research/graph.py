@@ -27,6 +27,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 
+from muffin_agent.utils.observability import instrument_graph
+
 from .nodes import classifier_node, rerank_node, researcher_node, writer_node
 from .state import ResearchState
 
@@ -89,4 +91,4 @@ def build_research_graph(
 # Module-level pre-compiled graph for LangGraph Platform autodiscovery.
 # The platform injects checkpointer + store on invocation; we compile
 # with neither here so the import is side-effect-free.
-graph = build_research_graph()
+graph = instrument_graph(build_research_graph())
