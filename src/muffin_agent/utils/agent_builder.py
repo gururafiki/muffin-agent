@@ -94,6 +94,8 @@ from ..middlewares import (
     CollectionFindings,
     SubagentRefinementMiddleware,
     SubagentRefinementParentMiddleware,
+    SubagentTranscriptMiddleware,
+    SubagentTranscriptParentMiddleware,
     ToolKnowledgeMiddleware,
     ToolResultCacheMiddleware,
 )
@@ -1018,6 +1020,14 @@ class MuffinAgentBuilder:
                             backend_factory=refinement_factory,
                         )
                     )
+        # Subagent-transcript capture: children (ReAct) write their own
+        # transcript into ``subagent_runs``; deep orchestrators declare the
+        # channel so the merged-up child records land in thread state and become
+        # visible when the run is reopened from history.
+        if is_deep:
+            stack.append(SubagentTranscriptParentMiddleware())
+        else:
+            stack.append(SubagentTranscriptMiddleware(name=self._name))
         if self._skills.filter_middleware is not None:
             stack.append(self._skills.filter_middleware)
         # Runtime prompt + structured-response unpacking middlewares

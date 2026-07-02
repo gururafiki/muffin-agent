@@ -52,3 +52,14 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/muffin-agent:latest
             ghcr.io/${{ github.repository_owner }}/muffin-agent:${{ github.sha }}
+      # Auto-CD: tell muffin-deployment a fresh image is on GHCR so it redeploys the Swarm stack
+      # (deploy.yml listens for repository_dispatch type=deploy). Needs a cross-repo PAT — the
+      # built-in GITHUB_TOKEN can't dispatch to another repo.
+      - name: Trigger deploy
+        if: github.ref == 'refs/heads/main'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
+          repository: ${{ github.repository_owner }}/muffin-deployment
+          event-type: deploy
+          client-payload: '{"repo": "${{ github.repository }}", "sha": "${{ github.sha }}"}'

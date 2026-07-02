@@ -74,7 +74,7 @@
 #### Option 2:
 - [ ] ~~Go with [chainlit](https://docs.chainlit.io/integrations/langchain) for both client and server~~
 #### For both options:
-- [ ] Make sure that integration with langfuse still works. Probalby requires updating graph compilation to pre-compile callback.
+- [x] Make sure that integration with langfuse still works. The CLI attaches the handler per-run via `RunnableConfig(callbacks=...)`, but the deployed graphs are invoked by the LangGraph Platform server, which never saw those callbacks — so tracing worked from the CLI but not in deployment. Fixed by `utils/observability.py:instrument_graph(graph)` (LangFuse's documented LangGraph Server pattern: bake the handler in via `graph.with_config({"callbacks": [CallbackHandler()]})`); wired into all five `langgraph.json` entrypoints. (`session_id` grouping still pending — see the `propagate_attributes()` item below.)
 
 ## Phase 2
 

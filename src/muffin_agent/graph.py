@@ -19,10 +19,11 @@ MCP tools are fetched eagerly during graph construction.
 import asyncio
 
 from muffin_agent.agents import create_stock_evaluation_agent
+from muffin_agent.utils.observability import instrument_graph
 
 
 async def _build_graph():
     return await create_stock_evaluation_agent({"configurable": {}})
 
 
-graph = asyncio.run(_build_graph())
+graph = instrument_graph(asyncio.run(_build_graph()))
