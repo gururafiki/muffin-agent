@@ -1021,11 +1021,17 @@ class MuffinAgentBuilder:
                         )
                     )
         # Subagent-transcript capture: children (ReAct) write their own
-        # transcript into ``subagent_runs``; deep orchestrators declare the
-        # channel so the merged-up child records land in thread state and become
-        # visible when the run is reopened from history.
+        # transcript into ``subagent_runs``; deep agents declare the channel so
+        # merged-up child records land in thread state AND carry a guarded
+        # child capturer of their own — it only fires when the deep agent is
+        # itself task-invoked as a subagent (``ls_agent_type == "subagent"``),
+        # so a top-level orchestrator never duplicates its thread messages but
+        # a deep agent wrapped in ``CompiledSubAgent`` still leaves a transcript.
         if is_deep:
             stack.append(SubagentTranscriptParentMiddleware())
+            stack.append(
+                SubagentTranscriptMiddleware(name=self._name, subagent_only=True)
+            )
         else:
             stack.append(SubagentTranscriptMiddleware(name=self._name))
         if self._skills.filter_middleware is not None:
