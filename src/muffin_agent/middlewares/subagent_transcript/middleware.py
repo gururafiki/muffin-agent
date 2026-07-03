@@ -9,6 +9,7 @@ from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ContextT
 from langchain_core.messages import AnyMessage
+from langgraph.config import get_config
 from langgraph.runtime import Runtime
 
 # Cap a single message's text so a chatty subagent can't bloat parent state.
@@ -88,35 +89,67 @@ def _record(name: str, messages: list[AnyMessage]) -> dict[str, Any]:
     }
 
 
+def _running_as_subagent() -> bool:
+    """Report whether this execution was invoked by the deepagents task tool.
+
+    The task tool stamps ``configurable.ls_agent_type = "subagent"`` on the
+    config it passes to the subagent runnable (and langgraph's ``ensure_config``
+    keeps it ambient for the whole nested run).
+    """
+    try:
+        config = get_config()
+    except Exception:
+        return False
+    configurable = config.get("configurable") if isinstance(config, dict) else None
+    return (
+        isinstance(configurable, dict)
+        and configurable.get("ls_agent_type") == "subagent"
+    )
+
+
 class SubagentTranscriptMiddleware(
     AgentMiddleware[SubagentTranscriptState, ContextT],
     Generic[ContextT],
 ):
-    """Child-side: persist this subagent's transcript into ``subagent_runs``."""
+    """Child-side: persist this subagent's transcript into ``subagent_runs``.
+
+    Args:
+        name: Label for this agent's transcript records.
+        subagent_only: Capture only when actually running as a task-invoked
+            subagent (``ls_agent_type == "subagent"``). Used on deep agents,
+            which are usually orchestrators (capturing a top-level deep agent's
+            transcript would just duplicate the thread's own ``messages``) but
+            may themselves be wrapped in ``CompiledSubAgent``.
+    """
 
     state_schema = SubagentTranscriptState
 
-    def __init__(self, name: str | None = None) -> None:
+    def __init__(
+        self, name: str | None = None, *, subagent_only: bool = False
+    ) -> None:
         """Initialise with the subagent's name (used to label its transcript)."""
         self._name = name or "subagent"
+        self._subagent_only = subagent_only
+
+    def _capture(self, state: SubagentTranscriptState) -> dict[str, Any] | None:
+        if self._subagent_only and not _running_as_subagent():
+            return None
+        messages = state.get("messages") or []
+        if not messages:
+            return None
+        return _record(self._name, messages)
 
     def after_agent(
         self, state: SubagentTranscriptState, runtime: Runtime[ContextT]
     ) -> dict[str, Any] | None:
         """Capture this subagent's transcript into ``subagent_runs`` (sync)."""
-        messages = state.get("messages") or []
-        if not messages:
-            return None
-        return _record(self._name, messages)
+        return self._capture(state)
 
     async def aafter_agent(
         self, state: SubagentTranscriptState, runtime: Runtime[ContextT]
     ) -> dict[str, Any] | None:
         """Capture this subagent's transcript into ``subagent_runs`` (async)."""
-        messages = state.get("messages") or []
-        if not messages:
-            return None
-        return _record(self._name, messages)
+        return self._capture(state)
 
 
 class SubagentTranscriptParentMiddleware(

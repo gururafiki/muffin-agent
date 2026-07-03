@@ -117,3 +117,65 @@ def test_transcript_merges_up_into_parent_state() -> None:
     assert record["name"] == "equity_fundamentals"
     assert record["description"] == "get AAPL fundamentals"
     assert any("revenue=100" in m.get("content", "") for m in record["messages"])
+
+
+@pytest.mark.unit
+def test_guarded_capture_noop_when_not_subagent() -> None:
+    """A deep agent's guarded child capturer stays silent at the top level."""
+    agent = create_deep_agent(
+        model=_Scripted(responses=[AIMessage("orchestrator answer")]),
+        middleware=[
+            SubagentTranscriptParentMiddleware(),
+            SubagentTranscriptMiddleware(name="stock_evaluation", subagent_only=True),
+        ],
+        checkpointer=InMemorySaver(),
+    )
+    cfg = {"configurable": {"thread_id": "T-top"}}
+    agent.invoke({"messages": [HumanMessage("go")]}, cfg)
+    runs = agent.get_state(cfg).values.get("subagent_runs")
+    assert not runs, "top-level deep agent must not capture its own transcript"
+
+
+@pytest.mark.unit
+def test_guarded_capture_fires_for_deep_agent_as_subagent() -> None:
+    """A deep agent wrapped in CompiledSubAgent leaves a transcript upstream."""
+    child_deep = create_deep_agent(
+        model=_Scripted(responses=[AIMessage("nested deep agent worked")]),
+        middleware=[
+            SubagentTranscriptParentMiddleware(),
+            SubagentTranscriptMiddleware(name="nested_deep", subagent_only=True),
+        ],
+    )
+    subagent = CompiledSubAgent(
+        name="nested-deep",
+        description="a deep agent as a subagent",
+        runnable=child_deep,
+    )
+    parent = create_deep_agent(
+        model=_Scripted(
+            responses=[
+                AIMessage(
+                    "",
+                    tool_calls=[
+                        {
+                            "name": "task",
+                            "args": {
+                                "description": "delegate to the nested deep agent",
+                                "subagent_type": "nested-deep",
+                            },
+                            "id": "c1",
+                        }
+                    ],
+                ),
+                AIMessage("final"),
+            ]
+        ),
+        subagents=[subagent],
+        middleware=[SubagentTranscriptParentMiddleware()],
+        checkpointer=InMemorySaver(),
+    )
+    cfg = {"configurable": {"thread_id": "T-nested"}}
+    parent.invoke({"messages": [HumanMessage("go")]}, cfg)
+    runs = parent.get_state(cfg).values.get("subagent_runs")
+    assert runs, "the nested deep agent's transcript should merge up"
+    assert any(r["name"] == "nested_deep" for r in runs.values())

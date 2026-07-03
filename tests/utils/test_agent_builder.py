@@ -33,6 +33,7 @@ class TestMinimalBuilders:
         )
 
         from muffin_agent.middlewares import (
+            SubagentTranscriptMiddleware,
             SubagentTranscriptParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
@@ -48,13 +49,16 @@ class TestMinimalBuilders:
         assert kwargs["backend"] is None
         assert kwargs["system_prompt"] is None
         mw = kwargs["middleware"]
-        assert len(mw) == 5
+        assert len(mw) == 6
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], ToolKnowledgeMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert mw[2]._cacheable_tools is None
         assert isinstance(mw[3], ToolRetryMiddleware)
         assert isinstance(mw[4], SubagentTranscriptParentMiddleware)
+        # Deep agents also carry a guarded child capturer (fires only when the
+        # deep agent is itself task-invoked as a subagent).
+        assert isinstance(mw[5], SubagentTranscriptMiddleware)
 
     def test_minimal_react_agent_no_filesystem_middleware(self):
         """No routes → no ``FilesystemMiddleware`` wired on a ReAct agent."""
@@ -202,6 +206,7 @@ class TestSkills:
         )
 
         from muffin_agent.middlewares import (
+            SubagentTranscriptMiddleware,
             SubagentTranscriptParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
@@ -216,13 +221,14 @@ class TestSkills:
             )
 
         mw = _deep_kwargs(mock_cda)["middleware"]
-        # Universal middlewares + the subagent-transcript parent, no filter.
-        assert len(mw) == 5
+        # Universal middlewares + the subagent-transcript pair, no filter.
+        assert len(mw) == 6
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], ToolKnowledgeMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert isinstance(mw[3], ToolRetryMiddleware)
         assert isinstance(mw[4], SubagentTranscriptParentMiddleware)
+        assert isinstance(mw[5], SubagentTranscriptMiddleware)
 
     def test_with_skills_called_twice_raises(self, tmp_path):
         """Calling ``with_skills`` twice raises ``ValueError``."""
