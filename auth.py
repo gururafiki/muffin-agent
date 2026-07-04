@@ -31,14 +31,14 @@ identity on top of an already-gated perimeter (Cloudflare Access in the muffin
 deployment). A credential that IS presented but fails verification still 401s
 (fail loud, never silently downgrade a signed-in client).
 
-**Per-user thread isolation**: when any auth mode is enabled, the ``@auth.on.threads``
-handler stamps ``metadata.owner`` on created threads/runs and filters reads/searches
-by it, so users only see their own runs (the app's Calls tab). Anonymous traffic is
-scoped to ``owner=anonymous`` (one shared pool, hidden from signed-in users and vice
-versa). The shared-token identity (``api-client``) is exempt and sees everything;
-assistants stay unfiltered (presets are non-secret and shared by design). Threads
-created before this handler existed have no ``owner`` and are visible only to the
-exempt identity (backfill SQL in the muffin-deployment runbook if needed).
+**Shared-by-default threads**: when any auth mode is enabled, the ``@auth.on.threads``
+handler leaves reads/searches OPEN (muffin's brand — research shared by everyone
+behind the Access perimeter), stamps ``metadata.owner`` on creation for attribution,
+forces the run's ``configurable.user_id`` to the verified identity for signed-in
+users (single source of truth inside the graph), and requires ownership for
+``update`` / ``delete``. Anonymous callers author into the shared ``owner=anonymous``
+pool; the shared-token identity (``api-client``) is fully exempt; assistants stay
+unfiltered (presets are non-secret and shared by design).
 """
 
 from __future__ import annotations
@@ -194,25 +194,62 @@ async def authenticate(headers: Any) -> dict[str, Any]:
     )
 
 
+def _force_verified_user_id(value: dict[str, Any], identity: str) -> None:
+    """Overwrite the run's ``configurable.user_id`` with the verified identity.
+
+    Makes ``user_id`` the single source of truth inside the graph: every
+    configurable consumer (memory namespaces, reflection, future
+    ``runtime.context.user_id`` context schemas) sees the authenticated user,
+    and a client cannot run as somebody else by sending a different value.
+    Mutating the ``create_run`` payload in the auth handler is the documented
+    way to inject server-side values; shapes are checked defensively so a
+    payload without ``kwargs.config`` is simply left alone (the
+    ``resolve_user_id`` chain still prefers the injected
+    ``langgraph_auth_user_id`` as belt-and-braces).
+    """
+    kwargs = value.get("kwargs")
+    if not isinstance(kwargs, dict):
+        return
+    config = kwargs.setdefault("config", {})
+    if not isinstance(config, dict):
+        return
+    configurable = config.setdefault("configurable", {})
+    if isinstance(configurable, dict):
+        configurable["user_id"] = identity
+
+
 @auth.on.threads
 async def scope_threads(
     ctx: Auth.types.AuthContext, value: dict[str, Any]
 ) -> dict[str, str] | None:
-    """Per-user thread isolation: stamp `owner` on writes, filter reads by it.
+    """Shared-by-default threads: open reads, owner-scoped mutations.
 
-    Applies to every thread action (create / create_run / read / search /
-    update / delete). Returning the filter dict makes LangGraph reject or hide
-    resources whose metadata doesn't match; returning None applies no scoping
-    (auth fully disabled, or the trusted shared-token client). Anonymous
-    traffic (optional sign-in mode) shares one `owner=anonymous` pool — its
-    threads are hidden from signed-in users and vice versa.
+    Muffin's brand is *research shared by everyone* and the perimeter is
+    Cloudflare Access, so read-style actions (``read`` / ``search``) are open
+    to every caller — anonymous runs and other users' runs are all visible.
+    Creation stamps ``metadata.owner`` for attribution (and, for real users,
+    forces the run's ``configurable.user_id`` to the verified identity);
+    ``update`` / ``delete`` require ownership so only the author (or the
+    shared anonymous pool for anonymous callers) can modify a thread.
+    Returning None applies no scoping (auth fully disabled, read actions, or
+    the trusted shared-token client).
     """
     identity = ctx.user.identity
     if not _AUTH_ENABLED or identity in _SCOPE_EXEMPT_IDENTITIES:
         return None
-    filters = {"owner": identity}
-    # On create/create_run this metadata is persisted with the resource; on
-    # read-style actions mutating the payload is harmless (documented pattern).
-    metadata = value.setdefault("metadata", {})
-    metadata.update(filters)
-    return filters
+
+    action = ctx.action
+    if action in ("read", "search"):
+        return None
+
+    if action in ("create", "create_run"):
+        metadata = value.setdefault("metadata", {})
+        metadata.setdefault("owner", identity)
+        # Real users run as their verified identity; anonymous keeps the
+        # client-supplied user_id / MEMORY_DEBUG_USER_ID chain untouched.
+        if action == "create_run" and identity != "anonymous":
+            _force_verified_user_id(value, identity)
+        return None
+
+    # update / delete (and anything new): owner-only.
+    return {"owner": identity}

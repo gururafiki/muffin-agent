@@ -71,9 +71,9 @@ def _mint(
     )
 
 
-def _ctx(identity: str) -> Any:
-    """Minimal AuthContext stand-in (handlers only read ctx.user.identity)."""
-    return SimpleNamespace(user=SimpleNamespace(identity=identity))
+def _ctx(identity: str, action: str = "create") -> Any:
+    """Minimal AuthContext stand-in (handlers read ctx.user.identity + ctx.action)."""
+    return SimpleNamespace(user=SimpleNamespace(identity=identity), action=action)
 
 
 @pytest.mark.unit
@@ -183,38 +183,66 @@ class TestOptionalMode:
 
 @pytest.mark.unit
 class TestThreadScoping:
+    """Shared-by-default: open reads, owner-stamped creates, owner-only mutations."""
+
     @pytest.mark.asyncio
-    async def test_stamps_owner_and_returns_filter(self, monkeypatch):
+    @pytest.mark.parametrize("action", ["read", "search"])
+    async def test_reads_are_open_to_everyone(self, monkeypatch, action):
         mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
         value: dict[str, Any] = {}
-        result = await mod.scope_threads(_ctx("user-uuid"), value)
+        assert await mod.scope_threads(_ctx("user-uuid", action), value) is None
+        assert value == {}
+
+    @pytest.mark.asyncio
+    async def test_create_stamps_owner_without_filtering(self, monkeypatch):
+        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
+        value: dict[str, Any] = {"metadata": {"agentId": "research"}}
+        result = await mod.scope_threads(_ctx("user-uuid", "create"), value)
+        assert result is None
+        assert value["metadata"] == {"agentId": "research", "owner": "user-uuid"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("action", ["update", "delete"])
+    async def test_mutations_are_owner_scoped(self, monkeypatch, action):
+        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
+        result = await mod.scope_threads(_ctx("user-uuid", action), {})
         assert result == {"owner": "user-uuid"}
+
+    @pytest.mark.asyncio
+    async def test_create_run_forces_verified_user_id(self, monkeypatch):
+        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
+        value: dict[str, Any] = {
+            "kwargs": {"config": {"configurable": {"user_id": "spoofed"}}}
+        }
+        await mod.scope_threads(_ctx("user-uuid", "create_run"), value)
+        assert value["kwargs"]["config"]["configurable"]["user_id"] == "user-uuid"
         assert value["metadata"]["owner"] == "user-uuid"
 
     @pytest.mark.asyncio
-    async def test_preserves_existing_metadata(self, monkeypatch):
+    async def test_create_run_anonymous_keeps_client_user_id(self, monkeypatch):
         mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
-        value: dict[str, Any] = {"metadata": {"agentId": "research"}}
-        await mod.scope_threads(_ctx("user-uuid"), value)
-        assert value["metadata"] == {"agentId": "research", "owner": "user-uuid"}
+        value: dict[str, Any] = {
+            "kwargs": {"config": {"configurable": {"user_id": "local-alice"}}}
+        }
+        await mod.scope_threads(_ctx("anonymous", "create_run"), value)
+        assert value["kwargs"]["config"]["configurable"]["user_id"] == "local-alice"
+        assert value["metadata"]["owner"] == "anonymous"
+
+    @pytest.mark.asyncio
+    async def test_create_run_without_config_shape_is_left_alone(self, monkeypatch):
+        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
+        value: dict[str, Any] = {"kwargs": "not-a-dict"}
+        await mod.scope_threads(_ctx("user-uuid", "create_run"), value)
+        assert value["kwargs"] == "not-a-dict"
 
     @pytest.mark.asyncio
     async def test_api_client_unfiltered(self, monkeypatch):
         mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
         value: dict[str, Any] = {}
-        assert await mod.scope_threads(_ctx("api-client"), value) is None
+        assert await mod.scope_threads(_ctx("api-client", "update"), value) is None
         assert value == {}
-
-    @pytest.mark.asyncio
-    async def test_anonymous_scoped_to_shared_pool(self, monkeypatch):
-        # Optional-mode anonymous traffic is isolated from signed-in users.
-        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
-        value: dict[str, Any] = {}
-        result = await mod.scope_threads(_ctx("anonymous"), value)
-        assert result == {"owner": "anonymous"}
-        assert value["metadata"]["owner"] == "anonymous"
 
     @pytest.mark.asyncio
     async def test_no_filter_when_auth_disabled(self, monkeypatch):
         mod = _load_auth(monkeypatch)
-        assert await mod.scope_threads(_ctx("someone"), {}) is None
+        assert await mod.scope_threads(_ctx("someone", "update"), {}) is None
