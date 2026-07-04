@@ -183,7 +183,8 @@ class TestOptionalMode:
 
 @pytest.mark.unit
 class TestThreadScoping:
-    """Shared-by-default: open reads, owner-stamped creates, owner-only mutations."""
+    """Read-shared, write-authenticated: open reads, sign-in-only creates,
+    owner-only mutations."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("action", ["read", "search"])
@@ -192,6 +193,19 @@ class TestThreadScoping:
         value: dict[str, Any] = {}
         assert await mod.scope_threads(_ctx("user-uuid", action), value) is None
         assert value == {}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("action", ["read", "search"])
+    async def test_anonymous_can_read(self, monkeypatch, action):
+        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
+        assert await mod.scope_threads(_ctx("anonymous", action), {}) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("action", ["create", "create_run"])
+    async def test_anonymous_cannot_create(self, monkeypatch, action):
+        # Creating a thread / starting a run requires sign-in (403 == False).
+        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
+        assert await mod.scope_threads(_ctx("anonymous", action), {}) is False
 
     @pytest.mark.asyncio
     async def test_create_stamps_owner_without_filtering(self, monkeypatch):
@@ -217,16 +231,6 @@ class TestThreadScoping:
         await mod.scope_threads(_ctx("user-uuid", "create_run"), value)
         assert value["kwargs"]["config"]["configurable"]["user_id"] == "user-uuid"
         assert value["metadata"]["owner"] == "user-uuid"
-
-    @pytest.mark.asyncio
-    async def test_create_run_anonymous_keeps_client_user_id(self, monkeypatch):
-        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
-        value: dict[str, Any] = {
-            "kwargs": {"config": {"configurable": {"user_id": "local-alice"}}}
-        }
-        await mod.scope_threads(_ctx("anonymous", "create_run"), value)
-        assert value["kwargs"]["config"]["configurable"]["user_id"] == "local-alice"
-        assert value["metadata"]["owner"] == "anonymous"
 
     @pytest.mark.asyncio
     async def test_create_run_without_config_shape_is_left_alone(self, monkeypatch):
