@@ -176,18 +176,24 @@ async def authenticate(headers: Any) -> dict[str, Any]:
             return _user(identity)
 
     # Mode 3 — Cloudflare Access JWT (dedicated header, or carried as a bearer token).
+    cf_mode = bool(_CF_TEAM_DOMAIN and _CF_AUD)
     cf_token = _header(headers, "cf-access-jwt-assertion")
-    if _CF_TEAM_DOMAIN and _CF_AUD:
+    if cf_mode:
         token = cf_token or bearer
         if token:
             identity = _verify_cf_access(token)
             if identity:
                 return _user(identity)
 
-    # Optional sign-in: nothing was presented at all → anonymous (the perimeter
-    # is gated elsewhere, e.g. Cloudflare Access). A presented-but-invalid
-    # credential still falls through to 401 below — never silently downgrade.
-    if _AUTH_OPTIONAL and not bearer and not cf_token:
+    # Optional sign-in: no credential we can verify was presented → anonymous
+    # (the perimeter is gated elsewhere, e.g. Cloudflare Access). A
+    # presented-but-invalid credential still falls through to 401 — never
+    # silently downgrade. The ``Cf-Access-Jwt-Assertion`` header is forwarded on
+    # EVERY request behind Cloudflare Access, so it only counts as a presented
+    # credential when CF mode is actually enabled — otherwise a signed-out
+    # browser (which always carries it) could never reach the anonymous path.
+    cf_presented = cf_mode and bool(cf_token)
+    if _AUTH_OPTIONAL and not bearer and not cf_presented:
         return _user("anonymous")
 
     raise Auth.exceptions.HTTPException(

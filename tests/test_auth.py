@@ -180,6 +180,32 @@ class TestOptionalMode:
         with pytest.raises(Auth.exceptions.HTTPException):
             await mod.authenticate(headers={"authorization": f"Bearer {token}"})
 
+    @pytest.mark.asyncio
+    async def test_cf_header_alone_falls_back_to_anonymous_when_cf_mode_off(
+        self, monkeypatch
+    ):
+        # Regression: behind Cloudflare Access, nginx forwards the assertion
+        # header on every request. With CF mode off (no team-domain/aud) it must
+        # NOT block the anonymous fallback, or signed-out reads 401.
+        mod = _load_auth(
+            monkeypatch, SUPABASE_JWT_SECRET=SECRET, MUFFIN_AUTH_OPTIONAL="true"
+        )
+        user = await mod.authenticate(
+            headers={"cf-access-jwt-assertion": "forwarded-by-cloudflare"}
+        )
+        assert user["identity"] == "anonymous"
+
+    @pytest.mark.asyncio
+    async def test_invalid_cf_token_still_401s_when_cf_mode_on(self, monkeypatch):
+        mod = _load_auth(
+            monkeypatch,
+            CF_ACCESS_TEAM_DOMAIN="team.cloudflareaccess.com",
+            CF_ACCESS_AUD="aud-tag",
+            MUFFIN_AUTH_OPTIONAL="true",
+        )
+        with pytest.raises(Auth.exceptions.HTTPException):
+            await mod.authenticate(headers={"cf-access-jwt-assertion": "bogus"})
+
 
 @pytest.mark.unit
 class TestThreadScoping:
