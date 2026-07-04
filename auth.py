@@ -25,12 +25,20 @@ Four modes, auto-selected from the environment so local development keeps workin
 
 Modes 2–4 may be enabled together (any accepted credential wins).
 
+**Optional sign-in** (``MUFFIN_AUTH_OPTIONAL=true``): requests that present NO
+credential fall back to the anonymous identity instead of 401 — sign-in adds
+identity on top of an already-gated perimeter (Cloudflare Access in the muffin
+deployment). A credential that IS presented but fails verification still 401s
+(fail loud, never silently downgrade a signed-in client).
+
 **Per-user thread isolation**: when any auth mode is enabled, the ``@auth.on.threads``
 handler stamps ``metadata.owner`` on created threads/runs and filters reads/searches
-by it, so users only see their own runs (the app's Calls tab). The shared-token
-identity (``api-client``) is exempt and sees everything; assistants stay unfiltered
-(presets are non-secret and shared by design). Threads created before this handler
-existed have no ``owner`` and are visible only to the exempt identity.
+by it, so users only see their own runs (the app's Calls tab). Anonymous traffic is
+scoped to ``owner=anonymous`` (one shared pool, hidden from signed-in users and vice
+versa). The shared-token identity (``api-client``) is exempt and sees everything;
+assistants stay unfiltered (presets are non-secret and shared by design). Threads
+created before this handler existed have no ``owner`` and are visible only to the
+exempt identity (backfill SQL in the muffin-deployment runbook if needed).
 """
 
 from __future__ import annotations
@@ -51,10 +59,15 @@ _SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET")
 _AUTH_ENABLED = bool(
     _API_TOKEN or (_CF_TEAM_DOMAIN and _CF_AUD) or _SUPABASE_JWT_SECRET
 )
+_AUTH_OPTIONAL = os.environ.get("MUFFIN_AUTH_OPTIONAL", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
-# Identities that bypass per-user resource scoping: the anonymous single-tenant
-# mode and the shared-bearer client (trusted operator tooling).
-_SCOPE_EXEMPT_IDENTITIES = frozenset({"anonymous", "api-client"})
+# Identities that bypass per-user resource scoping entirely (trusted operator
+# tooling). Anonymous is NOT exempt — it is scoped to its own shared pool.
+_SCOPE_EXEMPT_IDENTITIES = frozenset({"api-client"})
 
 
 def _header(headers: Any, name: str) -> str | None:
@@ -162,12 +175,19 @@ async def authenticate(headers: Any) -> dict[str, Any]:
             return _user(identity)
 
     # Mode 3 — Cloudflare Access JWT (dedicated header, or carried as a bearer token).
+    cf_token = _header(headers, "cf-access-jwt-assertion")
     if _CF_TEAM_DOMAIN and _CF_AUD:
-        cf_token = _header(headers, "cf-access-jwt-assertion") or bearer
-        if cf_token:
-            identity = _verify_cf_access(cf_token)
+        token = cf_token or bearer
+        if token:
+            identity = _verify_cf_access(token)
             if identity:
                 return _user(identity)
+
+    # Optional sign-in: nothing was presented at all → anonymous (the perimeter
+    # is gated elsewhere, e.g. Cloudflare Access). A presented-but-invalid
+    # credential still falls through to 401 below — never silently downgrade.
+    if _AUTH_OPTIONAL and not bearer and not cf_token:
+        return _user("anonymous")
 
     raise Auth.exceptions.HTTPException(
         status_code=401, detail="Invalid or missing credentials"
@@ -183,7 +203,9 @@ async def scope_threads(
     Applies to every thread action (create / create_run / read / search /
     update / delete). Returning the filter dict makes LangGraph reject or hide
     resources whose metadata doesn't match; returning None applies no scoping
-    (single-tenant modes and the trusted shared-token client).
+    (auth fully disabled, or the trusted shared-token client). Anonymous
+    traffic (optional sign-in mode) shares one `owner=anonymous` pool — its
+    threads are hidden from signed-in users and vice versa.
     """
     identity = ctx.user.identity
     if not _AUTH_ENABLED or identity in _SCOPE_EXEMPT_IDENTITIES:

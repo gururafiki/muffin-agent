@@ -30,6 +30,7 @@ _ENV_KEYS = (
     "CF_ACCESS_AUD",
     "SUPABASE_URL",
     "SUPABASE_JWT_SECRET",
+    "MUFFIN_AUTH_OPTIONAL",
 )
 
 
@@ -151,6 +152,36 @@ class TestSupabaseMode:
 
 
 @pytest.mark.unit
+class TestOptionalMode:
+    """MUFFIN_AUTH_OPTIONAL=true — sign-in adds identity, absence is anonymous."""
+
+    @pytest.mark.asyncio
+    async def test_no_credentials_falls_back_to_anonymous(self, monkeypatch):
+        mod = _load_auth(
+            monkeypatch, SUPABASE_JWT_SECRET=SECRET, MUFFIN_AUTH_OPTIONAL="true"
+        )
+        user = await mod.authenticate(headers={})
+        assert user["identity"] == "anonymous"
+
+    @pytest.mark.asyncio
+    async def test_valid_token_still_yields_identity(self, monkeypatch):
+        mod = _load_auth(
+            monkeypatch, SUPABASE_JWT_SECRET=SECRET, MUFFIN_AUTH_OPTIONAL="true"
+        )
+        user = await mod.authenticate(headers={"authorization": f"Bearer {_mint()}"})
+        assert user["identity"] == "9f6d0d05-1111-4222-8333-444455556666"
+
+    @pytest.mark.asyncio
+    async def test_presented_but_invalid_credential_still_401s(self, monkeypatch):
+        mod = _load_auth(
+            monkeypatch, SUPABASE_JWT_SECRET=SECRET, MUFFIN_AUTH_OPTIONAL="true"
+        )
+        token = _mint(exp_delta=-60)
+        with pytest.raises(Auth.exceptions.HTTPException):
+            await mod.authenticate(headers={"authorization": f"Bearer {token}"})
+
+
+@pytest.mark.unit
 class TestThreadScoping:
     @pytest.mark.asyncio
     async def test_stamps_owner_and_returns_filter(self, monkeypatch):
@@ -168,12 +199,20 @@ class TestThreadScoping:
         assert value["metadata"] == {"agentId": "research", "owner": "user-uuid"}
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("identity", ["api-client", "anonymous"])
-    async def test_exempt_identities_unfiltered(self, monkeypatch, identity):
+    async def test_api_client_unfiltered(self, monkeypatch):
         mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
         value: dict[str, Any] = {}
-        assert await mod.scope_threads(_ctx(identity), value) is None
+        assert await mod.scope_threads(_ctx("api-client"), value) is None
         assert value == {}
+
+    @pytest.mark.asyncio
+    async def test_anonymous_scoped_to_shared_pool(self, monkeypatch):
+        # Optional-mode anonymous traffic is isolated from signed-in users.
+        mod = _load_auth(monkeypatch, SUPABASE_JWT_SECRET=SECRET)
+        value: dict[str, Any] = {}
+        result = await mod.scope_threads(_ctx("anonymous"), value)
+        assert result == {"owner": "anonymous"}
+        assert value["metadata"]["owner"] == "anonymous"
 
     @pytest.mark.asyncio
     async def test_no_filter_when_auth_disabled(self, monkeypatch):
