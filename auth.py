@@ -31,14 +31,15 @@ identity on top of an already-gated perimeter (Cloudflare Access in the muffin
 deployment). A credential that IS presented but fails verification still 401s
 (fail loud, never silently downgrade a signed-in client).
 
-**Shared-by-default threads**: when any auth mode is enabled, the ``@auth.on.threads``
-handler leaves reads/searches OPEN (muffin's brand — research shared by everyone
-behind the Access perimeter), stamps ``metadata.owner`` on creation for attribution,
-forces the run's ``configurable.user_id`` to the verified identity for signed-in
-users (single source of truth inside the graph), and requires ownership for
-``update`` / ``delete``. Anonymous callers author into the shared ``owner=anonymous``
-pool; the shared-token identity (``api-client``) is fully exempt; assistants stay
-unfiltered (presets are non-secret and shared by design).
+**Read-shared, write-authenticated threads**: when any auth mode is enabled, the
+``@auth.on.threads`` handler leaves reads/searches OPEN (muffin's brand — research
+shared by everyone behind the Access perimeter) but requires sign-in to CREATE a
+thread or start a run — anonymous callers are read-only (403 on create). A signed-in
+create stamps ``metadata.owner`` for attribution and forces the run's
+``configurable.user_id`` to the verified identity (single source of truth inside the
+graph); ``update`` / ``delete`` require ownership. The shared-token identity
+(``api-client``) is fully exempt; assistants stay unfiltered (presets are non-secret
+and shared by design).
 """
 
 from __future__ import annotations
@@ -221,18 +222,19 @@ def _force_verified_user_id(value: dict[str, Any], identity: str) -> None:
 @auth.on.threads
 async def scope_threads(
     ctx: Auth.types.AuthContext, value: dict[str, Any]
-) -> dict[str, str] | None:
-    """Shared-by-default threads: open reads, owner-scoped mutations.
+) -> dict[str, str] | bool | None:
+    """Read-shared, write-authenticated threads.
 
     Muffin's brand is *research shared by everyone* and the perimeter is
     Cloudflare Access, so read-style actions (``read`` / ``search``) are open
-    to every caller — anonymous runs and other users' runs are all visible.
-    Creation stamps ``metadata.owner`` for attribution (and, for real users,
-    forces the run's ``configurable.user_id`` to the verified identity);
-    ``update`` / ``delete`` require ownership so only the author (or the
-    shared anonymous pool for anonymous callers) can modify a thread.
-    Returning None applies no scoping (auth fully disabled, read actions, or
-    the trusted shared-token client).
+    to every caller — anonymous callers see all runs, including other users'.
+    **Starting new work requires sign-in**: ``create`` / ``create_run`` from an
+    anonymous caller are rejected (403). A signed-in create stamps
+    ``metadata.owner`` for attribution and forces the run's
+    ``configurable.user_id`` to the verified identity. ``update`` / ``delete``
+    require ownership. Returning ``None`` = allow with no scoping (auth fully
+    disabled, read actions, or the trusted shared-token client); ``False`` =
+    reject.
     """
     identity = ctx.user.identity
     if not _AUTH_ENABLED or identity in _SCOPE_EXEMPT_IDENTITIES:
@@ -243,11 +245,13 @@ async def scope_threads(
         return None
 
     if action in ("create", "create_run"):
+        # Reads are open to all, but creating a thread / starting a run is
+        # authenticated-only — anonymous callers are read-only.
+        if identity == "anonymous":
+            return False
         metadata = value.setdefault("metadata", {})
         metadata.setdefault("owner", identity)
-        # Real users run as their verified identity; anonymous keeps the
-        # client-supplied user_id / MEMORY_DEBUG_USER_ID chain untouched.
-        if action == "create_run" and identity != "anonymous":
+        if action == "create_run":
             _force_verified_user_id(value, identity)
         return None
 
