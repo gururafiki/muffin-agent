@@ -282,6 +282,21 @@ User isolation: the `user_id` key flows from `--user` (CLI) → `configurable={"
 
 Data-collection ReAct sub-agents opt into `/scratch/` via `.with_short_term_memory()` and get `FilesystemMiddleware` wired automatically; they do **not** call `.with_persistent_memory()`.
 
+## Auth (`auth.py`, repo root)
+
+Wired via `langgraph.json` (`"auth": {"path": "./auth.py:auth"}`); gates the LangGraph HTTP routes. Four env-auto-selected modes (2–4 may coexist; any accepted credential wins):
+
+1. **Disabled** (nothing configured) — anonymous; local dev / Studio unaffected.
+2. **Shared bearer** — `MUFFIN_API_TOKEN`; identity `api-client`.
+3. **Cloudflare Access JWT** — `CF_ACCESS_TEAM_DOMAIN` + `CF_ACCESS_AUD`; verifies the `Cf-Access-Jwt-Assertion` (RS256 via JWKS); identity = email. Needs `pyjwt[crypto]`.
+4. **Supabase (GoTrue) JWT** — `SUPABASE_JWT_SECRET` (+ `SUPABASE_URL` for the issuer check against `<url>/auth/v1`); verifies user Bearer tokens (HS256, `aud=authenticated`, `require exp+sub`); identity = the Supabase user UUID (`sub`). The anon / service_role API keys are signed with the same secret but carry no `aud=authenticated`/`sub`, so they are rejected — only real user sessions authenticate. Base `pyjwt` suffices (a direct dependency).
+
+**Optional sign-in** — `MUFFIN_AUTH_OPTIONAL=true` (set by the muffin deployment): a request presenting NO credential falls back to `anonymous` instead of 401 (the perimeter is Cloudflare Access; sign-in adds identity on top). A credential that IS presented but fails verification still 401s — never silently downgrade.
+
+**Per-user thread isolation** — `@auth.on.threads` (`scope_threads`): when auth is enabled, stamps `metadata.owner` on thread/run creation and returns an `{"owner": identity}` filter on every thread action, so LangGraph hides other users' threads (the app's Calls tab). Anonymous traffic is scoped to one shared `owner=anonymous` pool (hidden from signed-in users and vice versa); only `api-client` is fully exempt (`_SCOPE_EXEMPT_IDENTITIES`). Assistants stay deliberately unfiltered — presets are non-secret and shared by design, and default assistants carry no owner metadata. Threads created before the handler existed lack `owner` and are visible only to the exempt identity (backfill SQL in the muffin-deployment runbook). **Known gap:** `configurable.user_id` (memory namespaces) is still client-supplied — deriving it server-side from the verified identity is a follow-up.
+
+Tests: `tests/test_auth.py` (fresh-module loads with controlled env; minted HS256 tokens for the accept/reject matrix; scoping handler behaviour).
+
 ## Conventions
 
 - **Ruff** with Google-style docstrings (`D401` imperative mood enforced). `D` and `UP` rules are relaxed in `tests/`.

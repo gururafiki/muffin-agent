@@ -16,6 +16,9 @@ dependencies = [
     "langchain-openrouter>=0.2.4",
     "python-dotenv>=1.0",
     "langgraph-sdk>=0.3.15",
+    # auth.py JWT verification (Supabase HS256; Cloudflare Access additionally
+    # needs the crypto extra installed in the deployment image)
+    "pyjwt>=2.8",
     "langchain-mcp-adapters>=0.2.2",
     "langgraph-cli>=0.4.26",
     "pydantic>=2.13.4",
