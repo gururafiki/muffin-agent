@@ -17,6 +17,16 @@ as the prefix of its decision-records namespace ``("memories", user_id, "decisio
 """
 
 
+_NON_USER_IDENTITIES = frozenset({"anonymous", "api-client"})
+"""Auth-hook sentinel identities that are not real users.
+
+``auth.py`` returns ``anonymous`` (auth disabled / optional sign-in without a
+credential) and ``api-client`` (shared bearer token). Neither should become a
+memory namespace — anonymous traffic keeps flowing through the existing
+``user_id`` / ``memory_debug_user_id`` chain instead.
+"""
+
+
 class MemoryUnavailableError(LookupError):
     """Raised when a per-user memory namespace cannot be resolved.
 
@@ -74,14 +84,20 @@ class MemoryConfiguration(BaseConfiguration):
         *,
         allow_missing: bool = False,
     ) -> str | None:
-        """Resolve ``user_id`` from a ``RunnableConfig`` with three-step fallback.
+        """Resolve ``user_id`` from a ``RunnableConfig`` with layered fallback.
 
         Resolution order:
 
-        1. ``configurable.user_id`` — real per-request identity.
-        2. :attr:`memory_debug_user_id` (env ``MEMORY_DEBUG_USER_ID`` or
+        1. ``configurable.langgraph_auth_user_id`` — the identity VERIFIED by
+           the LangGraph auth hook (``auth.py``) and injected server-side into
+           every run's configurable. Tamper-proof: a client cannot spoof
+           another user's memory namespace by sending a different ``user_id``.
+           The non-user sentinels (``anonymous`` / ``api-client``) are skipped.
+        2. ``configurable.user_id`` — client-supplied identity (CLI ``--user``,
+           anonymous app users, local dev without auth).
+        3. :attr:`memory_debug_user_id` (env ``MEMORY_DEBUG_USER_ID`` or
            ``configurable.memory_debug_user_id``) — debug-only fallback.
-        3. If *allow_missing* is ``True``, return ``None``; otherwise raise
+        4. If *allow_missing* is ``True``, return ``None``; otherwise raise
            :class:`MemoryUnavailableError`.
 
         This is the single source of truth for ``user_id`` resolution across
@@ -91,6 +107,13 @@ class MemoryConfiguration(BaseConfiguration):
         pipeline degrades gracefully when memory infrastructure isn't wired.
         """
         configurable = dict(config.get("configurable") or {})
+        verified = configurable.get("langgraph_auth_user_id")
+        if (
+            isinstance(verified, str)
+            and verified
+            and verified not in _NON_USER_IDENTITIES
+        ):
+            return verified
         user_id = configurable.get("user_id")
         if isinstance(user_id, str) and user_id:
             return user_id

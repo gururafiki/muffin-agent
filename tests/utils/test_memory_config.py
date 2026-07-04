@@ -27,6 +27,32 @@ class TestResolveUserId:
         config = {"configurable": {"user_id": "alice"}}
         assert MemoryConfiguration.resolve_user_id(config) == "alice"
 
+    def test_verified_identity_wins_over_client_user_id(self):
+        # langgraph_auth_user_id is injected server-side from the verified
+        # auth.py identity — a client-supplied user_id cannot spoof it.
+        config = {
+            "configurable": {
+                "langgraph_auth_user_id": "verified-uuid",
+                "user_id": "spoofed-victim",
+            }
+        }
+        assert MemoryConfiguration.resolve_user_id(config) == "verified-uuid"
+
+    @pytest.mark.parametrize("sentinel", ["anonymous", "api-client"])
+    def test_sentinel_identities_fall_through(self, sentinel):
+        config = {
+            "configurable": {
+                "langgraph_auth_user_id": sentinel,
+                "user_id": "alice",
+            }
+        }
+        assert MemoryConfiguration.resolve_user_id(config) == "alice"
+
+    def test_sentinel_identity_reaches_debug_fallback(self, monkeypatch):
+        monkeypatch.setenv("MEMORY_DEBUG_USER_ID", "shared")
+        config = {"configurable": {"langgraph_auth_user_id": "anonymous"}}
+        assert MemoryConfiguration.resolve_user_id(config) == "shared"
+
     def test_falls_back_to_memory_debug_user_id_env(self, monkeypatch):
         monkeypatch.setenv("MEMORY_DEBUG_USER_ID", "debug-alex")
         config = {"configurable": {}}
