@@ -6,18 +6,19 @@ valuation methodology the analyst community applies to this ticker and
 (recent sell-side debate, narrative drivers, idiosyncratic governance
 issues).
 
-Subagents: ``web-search`` (Firecrawl-backed ReAct agent) plus
-``discovery-screening`` for peer-comparison context.  No sandbox, no
-persistent memory, no skills — keep the surface tight.
+Compiled with a state schema + runtime prompt so it is added directly to
+the orchestrator graph as a node.  Subagents: ``web-search``
+(Firecrawl-backed ReAct agent) plus ``discovery-screening`` for
+peer-comparison context.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
-from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...utils.agent_builder import MuffinAgentBuilder
@@ -25,22 +26,24 @@ from ..data_collection import (
     create_discovery_screening_data_collection_agent,
     create_web_search_data_collection_agent,
 )
-from ._node_helpers import invoke_structured_agent
-from .schemas import ValuationMethodologyOutput
+from .schemas import ValuationMethodologyNodeOutput
 
-# ── Input state schema ────────────────────────────────────────────────────────
+# ── Agent state schema ────────────────────────────────────────────────────────
 
 
-class ValuationMethodologyInputState(TypedDict, total=False):
-    """Fields read by ``valuation_methodology_node``."""
+class ValuationMethodologyAgentState(DeepAgentState):
+    """State schema for the Stage 3 methodology agent as a graph node."""
 
-    ticker: str
-    query: str
-    sector: str
-    sub_sector: str
-    market: str
-    stock_type: str
-    classification: dict[str, Any]
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    sector: Annotated[str, OmitFromSchema(input=False, output=True)]
+    sub_sector: Annotated[str, OmitFromSchema(input=False, output=True)]
+    market: Annotated[str, OmitFromSchema(input=False, output=True)]
+    stock_type: Annotated[str, OmitFromSchema(input=False, output=True)]
+    classification: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    valuation_methodology: Annotated[
+        dict[str, Any], OmitFromSchema(input=True, output=False)
+    ]
 
 
 # ── Subagent builder ──────────────────────────────────────────────────────────
@@ -84,7 +87,7 @@ async def create_valuation_methodology_agent(
     config: RunnableConfig,
     store: BaseStore | None = None,
 ):
-    """Build the valuation methodology deep agent."""
+    """Build the valuation methodology deep agent (compiled graph node)."""
     subagents = await _build_methodology_subagents(config)
     configuration = ModelConfiguration.from_runnable_config(config)
     primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
@@ -92,39 +95,17 @@ async def create_valuation_methodology_agent(
 
     builder = (
         MuffinAgentBuilder(primary, name="valuation_methodology")
-        .with_system_prompt_template("criteria_analysis/valuation_methodology.jinja")
+        .with_state_schema(ValuationMethodologyAgentState)
+        .with_runtime_system_prompt_template(
+            "criteria_analysis/valuation_methodology.jinja"
+        )
         .with_fallback_models(*fallbacks)
         .with_short_term_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=ValuationMethodologyOutput))
+        .with_response_format(AutoStrategy(schema=ValuationMethodologyNodeOutput))
     )
     if store is not None:
         builder = builder.with_store(store)
     if summariser is not None:
         builder = builder.with_tool_knowledge(summariser)
     return builder.build_deep_agent()
-
-
-# ── Node ──────────────────────────────────────────────────────────────────────
-
-
-async def valuation_methodology_node(
-    state: ValuationMethodologyInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 3: research the valuation methodology and surface extra criteria.
-
-    Runs in parallel with Stage 2 (``criteria_definition_node``).  Output
-    written to ``valuation_methodology`` state key.
-    """
-    return await invoke_structured_agent(
-        state=dict(state),
-        config=config,
-        agent_factory=create_valuation_methodology_agent,
-        input_state_type=ValuationMethodologyInputState,
-        state_key="valuation_methodology",
-        error_fallback={"additional_criteria": []},
-        store=store,
-    )

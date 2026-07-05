@@ -34,6 +34,7 @@ from muffin_agent.utils._structured_response_to_state_middleware import (
 from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
 _REACT_PATCH = "muffin_agent.utils.agent_builder.create_agent"
+_DEEP_PATCH = "muffin_agent.utils.agent_builder.create_deep_agent"
 
 
 def _react_kwargs(mock_create_agent):
@@ -60,6 +61,37 @@ class _SampleOutput(BaseModel):
     report: str
 
 
+class _FakeRequest:
+    """Minimal ``ModelRequest`` stand-in with a working ``override``.
+
+    ``_RuntimePromptMiddleware`` now calls ``request.override(system_message=...)``
+    (direct attribute assignment is deprecated), so the test double must return a
+    NEW request carrying the override rather than mutating in place.
+    """
+
+    def __init__(self, state, system_message=None):
+        self.state = state
+        self.system_message = system_message
+
+    def override(self, **kwargs):
+        new = _FakeRequest(self.state, self.system_message)
+        for key, value in kwargs.items():
+            setattr(new, key, value)
+        return new
+
+
+async def _run_and_capture(mw, request):
+    """Invoke ``awrap_model_call`` and return the request the handler received."""
+    captured = {}
+
+    async def handler(req):
+        captured["req"] = req
+        return "done"
+
+    result = await mw.awrap_model_call(request, handler)
+    return captured["req"], result
+
+
 # ── Builder integration tests ─────────────────────────────────────────────
 
 
@@ -78,6 +110,49 @@ class TestWithStateSchema:
             MuffinAgentBuilder(MagicMock()).build_react_agent()
         kwargs = _react_kwargs(mock_create_agent)
         assert kwargs["state_schema"] is None
+
+
+@pytest.mark.unit
+class TestDeepAgentStateAware:
+    """Deep agents support the same state-aware composition as ReAct agents."""
+
+    def test_forwards_state_schema_to_create_deep_agent(self):
+        with patch(_DEEP_PATCH) as mock_create_deep:
+            MuffinAgentBuilder(MagicMock()).with_state_schema(
+                _SampleAgentState
+            ).build_deep_agent()
+        _, kwargs = mock_create_deep.call_args
+        assert kwargs["state_schema"] is _SampleAgentState
+
+    def test_runtime_template_clears_static_system_prompt(self):
+        with patch(_DEEP_PATCH) as mock_create_deep:
+            MuffinAgentBuilder(MagicMock()).with_system_prompt(
+                "static prompt"
+            ).with_runtime_system_prompt_template("some.jinja").build_deep_agent()
+        _, kwargs = mock_create_deep.call_args
+        assert kwargs["system_prompt"] is None
+        types_in_stack = [type(m).__name__ for m in kwargs["middleware"]]
+        assert "_RuntimePromptMiddleware" in types_in_stack
+
+    def test_static_prompt_kept_without_runtime_template(self):
+        with patch(_DEEP_PATCH) as mock_create_deep:
+            MuffinAgentBuilder(MagicMock()).with_system_prompt(
+                "static prompt"
+            ).build_deep_agent()
+        _, kwargs = mock_create_deep.call_args
+        assert kwargs["system_prompt"] == "static prompt"
+
+    def test_wires_unpacker_when_state_schema_and_response_format_set(self):
+        with patch(_DEEP_PATCH) as mock_create_deep:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_state_schema(_SampleAgentState)
+                .with_response_format(_SampleOutput)
+                .build_deep_agent()
+            )
+        _, kwargs = mock_create_deep.call_args
+        types_in_stack = [type(m).__name__ for m in kwargs["middleware"]]
+        assert "_StructuredResponseToStateMiddleware" in types_in_stack
 
 
 @pytest.mark.unit
@@ -160,7 +235,7 @@ class TestRuntimePromptMiddleware:
 
     @pytest.mark.asyncio
     async def test_awrap_renders_template_and_sets_system_message(self):
-        """Render integrates with state and writes ``request.system_message``."""
+        """Render integrates with state and sets the overridden system message."""
         with patch(
             "muffin_agent.utils._runtime_prompt_middleware.render_template",
             return_value="rendered: AAPL on 2026-05-23",
@@ -170,24 +245,19 @@ class TestRuntimePromptMiddleware:
                 state_schema=_SampleAgentState,
                 static_partials=(),
             )
-            request = MagicMock()
-            request.state = {
-                "messages": [HumanMessage("hi")],
-                "ticker": "AAPL",
-                "decision_date": "2026-05-23",
-                "report": "already produced",  # output-only; must NOT be passed
-            }
-            handler = MagicMock()
-
-            async def fake_handler(req):
-                handler(req)
-                return "done"
-
-            result = await mw.awrap_model_call(request, fake_handler)
+            request = _FakeRequest(
+                state={
+                    "messages": [HumanMessage("hi")],
+                    "ticker": "AAPL",
+                    "decision_date": "2026-05-23",
+                    "report": "already produced",  # output-only; must NOT be passed
+                }
+            )
+            handled, result = await _run_and_capture(mw, request)
 
         assert result == "done"
-        assert isinstance(request.system_message, SystemMessage)
-        assert request.system_message.content == "rendered: AAPL on 2026-05-23"
+        assert isinstance(handled.system_message, SystemMessage)
+        assert handled.system_message.content == "rendered: AAPL on 2026-05-23"
         # Confirm the template received only input fields (no report, no messages).
         _, kwargs = mock_render.call_args
         assert kwargs == {"ticker": "AAPL", "decision_date": "2026-05-23"}
@@ -203,17 +273,10 @@ class TestRuntimePromptMiddleware:
                 state_schema=None,
                 static_partials=(),
             )
-            request = MagicMock()
-            request.state = {
-                "messages": [HumanMessage("hi")],
-                "foo": "bar",
-                "baz": 1,
-            }
-
-            async def fake_handler(_req):
-                return "ok"
-
-            await mw.awrap_model_call(request, fake_handler)
+            request = _FakeRequest(
+                state={"messages": [HumanMessage("hi")], "foo": "bar", "baz": 1}
+            )
+            await _run_and_capture(mw, request)
         _, kwargs = mock_render.call_args
         # `messages` reserved → excluded; foo + baz pass through.
         assert kwargs == {"foo": "bar", "baz": 1}
@@ -234,17 +297,69 @@ class TestRuntimePromptMiddleware:
                 state_schema=_SampleAgentState,
                 static_partials=("p1.jinja", "p2.jinja"),
             )
-            request = MagicMock()
-            request.state = {"ticker": "AAPL", "decision_date": "2026-05-23"}
+            request = _FakeRequest(state={"ticker": "AAPL", "decision_date": "x"})
+            handled, _ = await _run_and_capture(mw, request)
 
-            async def fake_handler(_req):
-                return "ok"
+        assert "MAIN" in handled.system_message.content
+        assert "PARTIAL[p1.jinja]" in handled.system_message.content
+        assert "PARTIAL[p2.jinja]" in handled.system_message.content
 
-            await mw.awrap_model_call(request, fake_handler)
+    @pytest.mark.asyncio
+    async def test_awrap_composes_with_existing_str_system_message(self):
+        """Existing system content (e.g. injected lessons) must survive."""
+        with patch(
+            "muffin_agent.utils._runtime_prompt_middleware.render_template",
+            return_value="RENDERED",
+        ):
+            mw = _RuntimePromptMiddleware(
+                template="main.jinja", state_schema=None, static_partials=()
+            )
+            request = _FakeRequest(
+                state={"foo": "bar"},
+                system_message=SystemMessage(content="## Lessons learned\n- x"),
+            )
+            handled, _ = await _run_and_capture(mw, request)
 
-        assert "MAIN" in request.system_message.content
-        assert "PARTIAL[p1.jinja]" in request.system_message.content
-        assert "PARTIAL[p2.jinja]" in request.system_message.content
+        content = handled.system_message.content
+        assert content.startswith("RENDERED")
+        assert "## Lessons learned" in content
+
+    @pytest.mark.asyncio
+    async def test_awrap_composes_with_existing_content_blocks(self):
+        """deepagents base prompts arrive as content blocks — never wipe them."""
+        with patch(
+            "muffin_agent.utils._runtime_prompt_middleware.render_template",
+            return_value="RENDERED",
+        ):
+            mw = _RuntimePromptMiddleware(
+                template="main.jinja", state_schema=None, static_partials=()
+            )
+            request = _FakeRequest(
+                state={"foo": "bar"},
+                system_message=SystemMessage(
+                    content=[{"type": "text", "text": "DEEP AGENT BASE"}]
+                ),
+            )
+            handled, _ = await _run_and_capture(mw, request)
+
+        content = handled.system_message.content
+        assert isinstance(content, list)
+        assert "RENDERED" in content[0]["text"]
+        assert content[-1] == {"type": "text", "text": "DEEP AGENT BASE"}
+
+    @pytest.mark.asyncio
+    async def test_awrap_renders_alone_when_no_existing_message(self):
+        with patch(
+            "muffin_agent.utils._runtime_prompt_middleware.render_template",
+            return_value="RENDERED",
+        ):
+            mw = _RuntimePromptMiddleware(
+                template="main.jinja", state_schema=None, static_partials=()
+            )
+            request = _FakeRequest(state={"foo": "bar"}, system_message=None)
+            handled, _ = await _run_and_capture(mw, request)
+
+        assert handled.system_message.content == "RENDERED"
 
 
 @pytest.mark.unit

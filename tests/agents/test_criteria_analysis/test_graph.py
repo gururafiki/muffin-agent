@@ -1,6 +1,6 @@
 """Smoke tests for the criteria-analysis graph builder."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
@@ -10,34 +10,73 @@ from langgraph.store.memory import InMemoryStore
 from muffin_agent.agents.criteria_analysis.graph import (
     _fan_out_criteria,
     build_criteria_analysis_graph,
-    graph,
+    make_graph,
 )
+
+_CONFIG = {"configurable": {"thread_id": "t"}}
+
+# The five stage-agent factories are heavy (MCP subagents, deep-agent middleware
+# stacks). Stub them at the factory seam so the graph builder can be exercised
+# without building real agents — mirrors how the trading tests stub the analyst
+# builders. Each stub returns a MagicMock the StateGraph treats as a node.
+_GRAPH_MOD = "muffin_agent.agents.criteria_analysis.graph"
+_FACTORY_NAMES = (
+    "create_ticker_classification_agent",
+    "create_criteria_definition_agent",
+    "create_valuation_methodology_agent",
+    "build_criterion_evaluation_worker",
+    "create_synthesis_agent",
+)
+_FACTORY_PATCHES = {
+    f"{_GRAPH_MOD}.{name}": AsyncMock(return_value=MagicMock())
+    for name in _FACTORY_NAMES
+}
+
+
+def _patch_factories():
+    """Context-manager stack patching every stage-agent factory."""
+    from contextlib import ExitStack
+
+    stack = ExitStack()
+    for target, mock in _FACTORY_PATCHES.items():
+        stack.enter_context(patch(target, mock))
+    return stack
 
 
 @pytest.mark.unit
 class TestBuildGraph:
-    def test_module_level_graph_is_compiled(self):
-        assert isinstance(graph, CompiledStateGraph)
-
-    def test_compiles_without_checkpointer_or_store(self):
-        g = build_criteria_analysis_graph()
+    @pytest.mark.asyncio
+    async def test_compiles_without_checkpointer_or_store(self):
+        with _patch_factories():
+            g = await build_criteria_analysis_graph(_CONFIG)
         assert isinstance(g, CompiledStateGraph)
 
-    def test_compiles_with_checkpointer(self):
-        cp = MemorySaver()
-        g = build_criteria_analysis_graph(checkpointer=cp)
+    @pytest.mark.asyncio
+    async def test_compiles_with_checkpointer(self):
+        with _patch_factories():
+            g = await build_criteria_analysis_graph(_CONFIG, checkpointer=MemorySaver())
         assert isinstance(g, CompiledStateGraph)
 
-    def test_compiles_with_store(self):
-        store = InMemoryStore()
-        g = build_criteria_analysis_graph(store=store)
+    @pytest.mark.asyncio
+    async def test_compiles_with_store(self):
+        with _patch_factories():
+            g = await build_criteria_analysis_graph(_CONFIG, store=InMemoryStore())
         assert isinstance(g, CompiledStateGraph)
 
-    def test_expected_nodes(self):
-        g = build_criteria_analysis_graph()
+    @pytest.mark.asyncio
+    async def test_make_graph_factory_compiles(self):
+        with _patch_factories():
+            g = await make_graph(_CONFIG)
+        assert isinstance(g, CompiledStateGraph)
+
+    @pytest.mark.asyncio
+    async def test_expected_nodes(self):
+        with _patch_factories():
+            g = await build_criteria_analysis_graph(_CONFIG)
         names = set(g.nodes.keys())
         assert {
             "ticker_classification",
+            "lift_classification",
             "criteria_definition",
             "valuation_methodology",
             "merge_criteria",
@@ -78,7 +117,8 @@ class TestFanOut:
         assert payload["query"] == "growth thesis"
         assert payload["classification"]["sector"] == "consumer-discretionary"
         assert payload["criterion"]["name"] == "Services Mix"
-        assert payload["criterion_evaluations"] == []
+        # The reducer seed is no longer sent — the worker subgraph owns it.
+        assert "criterion_evaluations" not in payload
 
     def test_no_merged_criteria_sends_nothing(self):
         state: dict = {
@@ -92,10 +132,10 @@ class TestFanOut:
 
 
 @pytest.mark.unit
-class TestTickerClassificationShortCircuit:
-    def test_short_circuit_when_all_flat_keys_supplied(self):
+class TestClassificationRoutingAndLift:
+    def test_route_to_lift_when_all_flat_keys_supplied(self):
         from muffin_agent.agents.criteria_analysis.ticker_classification import (
-            _shortcircuit,
+            route_classification_entry,
         )
 
         state = {
@@ -104,26 +144,60 @@ class TestTickerClassificationShortCircuit:
             "market": "developed",
             "stock_type": "value",
         }
-        update = _shortcircuit(state)
-        assert update is not None
-        assert update["sector"] == "banking"
-        assert update["classification"]["confidence"] == 1.0
+        assert route_classification_entry(state) == "lift_classification"
 
-    def test_no_short_circuit_when_missing_flat_keys(self):
+    def test_route_to_agent_when_missing_flat_keys(self):
         from muffin_agent.agents.criteria_analysis.ticker_classification import (
-            _shortcircuit,
+            route_classification_entry,
         )
 
-        # Missing stock_type
         state = {"ticker": "JPM", "sector": "banking", "market": "developed"}
-        assert _shortcircuit(state) is None
+        assert route_classification_entry(state) == "ticker_classification"
 
-    def test_no_short_circuit_when_empty(self):
+    def test_lift_assembles_classification_from_flat_keys(self):
         from muffin_agent.agents.criteria_analysis.ticker_classification import (
-            _shortcircuit,
+            lift_classification_node,
         )
 
-        assert _shortcircuit({"ticker": "JPM"}) is None
+        state = {
+            "ticker": "JPM",
+            "sector": "banking",
+            "market": "developed",
+            "stock_type": "value",
+        }
+        update = lift_classification_node(state)
+        assert update["classification"]["confidence"] == 1.0
+        assert update["classification"]["sector"] == "banking"
+        assert update["classification"]["ticker"] == "JPM"
+
+    def test_lift_flattens_agent_classification(self):
+        from muffin_agent.agents.criteria_analysis.ticker_classification import (
+            lift_classification_node,
+        )
+
+        state = {
+            "ticker": "JPM",
+            "classification": {
+                "ticker": "JPM",
+                "sector": "banking",
+                "sub_sector": None,
+                "market": "developed",
+                "stock_type": "value",
+            },
+        }
+        update = lift_classification_node(state)
+        assert update["sector"] == "banking"
+        assert update["market"] == "developed"
+        assert update["stock_type"] == "value"
+        assert "classification" not in update  # doesn't re-emit the payload
+
+    def test_lift_raises_when_nothing_to_lift(self):
+        from muffin_agent.agents.criteria_analysis.ticker_classification import (
+            lift_classification_node,
+        )
+
+        with pytest.raises(ValueError, match="no classification"):
+            lift_classification_node({"ticker": "JPM"})
 
 
 @pytest.mark.unit

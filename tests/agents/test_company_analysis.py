@@ -466,7 +466,7 @@ class TestCompanyAnalysisNodeJsonInput:
             state = {"ticker": "AAPL", "query": "quality compounder"}
             await company_analysis_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert ctx["ticker"] == "AAPL"
         assert ctx["query"] == "quality compounder"
@@ -494,7 +494,7 @@ class TestCompanyAnalysisNodeJsonInput:
             state = {"query": "quality software companies"}
             await company_analysis_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert "ticker" not in ctx
         assert ctx["query"] == "quality software companies"
@@ -530,7 +530,7 @@ class TestCompanyAnalysisNodeJsonInput:
             }
             await company_analysis_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert set(ctx.keys()) <= set(CompanyAnalysisInputState.__annotations__)
         assert "market_regime" not in ctx
@@ -808,7 +808,7 @@ class TestCompanyAnalysisNode:
                 MagicMock(),  # type: ignore[arg-type]
             )
 
-        task_input = mock_agent.ainvoke.call_args[0][0]["input"]
+        task_input = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         assert "AAPL" in task_input
 
     @pytest.mark.asyncio

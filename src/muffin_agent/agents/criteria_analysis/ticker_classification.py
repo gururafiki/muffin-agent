@@ -1,20 +1,26 @@
 """Stage 1: ticker classification.
 
-Lightweight deep agent that produces sector / sub_sector / market /
-stock_type for the orchestrator's downstream stages.  When the caller
-already supplies all four flat keys (CLI flags), the node short-circuits
-and skips the LLM entirely.
+Lightweight deep agent compiled with a state schema + runtime prompt so
+it is added DIRECTLY to the orchestrator graph as a node (the
+analyst/council pattern).  The task context (ticker, query) flows in via
+the graph's ``input_schema`` and is rendered into the system prompt per
+model call; the structured response unpacks into the ``classification``
+channel via the single-field wrapper output model.
+
+The pure :func:`lift_classification_node` runs after the agent (or
+instead of it, when the caller pre-supplied the flat classification
+keys) to keep ``classification`` and the flat ``sector`` / ``sub_sector``
+/ ``market`` / ``stock_type`` keys in sync.
 """
 
-import json
 import logging
-from typing import Any
+from typing import Annotated, Any
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
-from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...utils.agent_builder import MuffinAgentBuilder
@@ -24,22 +30,28 @@ from ..data_collection import (
     create_etf_index_data_collection_agent,
 )
 from ..subagents import build_validation_subagent
-from .schemas import TickerClassificationOutput
+from .schemas import TickerClassificationNodeOutput
+from .state import CriteriaAnalysisState
 
 logger = logging.getLogger(__name__)
 
-# ── Input state schema ────────────────────────────────────────────────────────
+_FLAT_KEYS = ("sector", "sub_sector", "market", "stock_type")
 
 
-class TickerClassificationInputState(TypedDict, total=False):
-    """Fields read by ``ticker_classification_node`` from the outer state."""
+# ── Agent state schema ────────────────────────────────────────────────────────
 
-    ticker: str
-    query: str
-    sector: str
-    sub_sector: str
-    market: str
-    stock_type: str
+
+class TickerClassificationAgentState(DeepAgentState):
+    """State schema for the Stage 1 classification agent.
+
+    Inputs flow IN from the parent graph (``OmitFromSchema(output=True)``
+    keeps them out of the node's output); ``classification`` is written by
+    the structured-response unpacker and flows OUT to the parent channel.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    classification: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
 
 
 # ── Subagent builder ──────────────────────────────────────────────────────────
@@ -95,7 +107,7 @@ async def create_ticker_classification_agent(
     config: RunnableConfig,
     store: BaseStore | None = None,
 ):
-    """Build the ticker classification deep agent."""
+    """Build the ticker classification deep agent (compiled graph node)."""
     subagents = await _build_classification_subagents(config)
     configuration = ModelConfiguration.from_runnable_config(config)
     primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
@@ -103,11 +115,14 @@ async def create_ticker_classification_agent(
 
     builder = (
         MuffinAgentBuilder(primary, name="ticker_classification")
-        .with_system_prompt_template("criteria_analysis/ticker_classification.jinja")
+        .with_state_schema(TickerClassificationAgentState)
+        .with_runtime_system_prompt_template(
+            "criteria_analysis/ticker_classification.jinja"
+        )
         .with_fallback_models(*fallbacks)
         .with_short_term_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=TickerClassificationOutput))
+        .with_response_format(AutoStrategy(schema=TickerClassificationNodeOutput))
     )
     if store is not None:
         builder = builder.with_store(store)
@@ -116,84 +131,52 @@ async def create_ticker_classification_agent(
     return builder.build_deep_agent()
 
 
-# ── Node ──────────────────────────────────────────────────────────────────────
+# ── Pure graph nodes / routing ────────────────────────────────────────────────
 
 
-_FLAT_KEYS = ("sector", "sub_sector", "market", "stock_type")
-
-
-def _shortcircuit(state: dict[str, Any]) -> dict[str, Any] | None:
-    """Return a fully-formed state update if the caller pre-supplied all flat keys."""
+def route_classification_entry(state: CriteriaAnalysisState) -> str:
+    """Route START: skip the LLM when all flat keys were pre-supplied."""
     if all(state.get(k) for k in ("sector", "market", "stock_type")):
-        classification = {
-            "ticker": state.get("ticker", ""),
-            "sector": state["sector"],
-            "sub_sector": state.get("sub_sector"),
-            "market": state["market"],
-            "stock_type": state["stock_type"],
-            "rationale": "Pre-supplied via input state — classification skipped.",
-            "confidence": 1.0,
-            "data_sources": [],
-            "limitations": [],
-        }
-        return {
-            "sector": state["sector"],
-            "sub_sector": state.get("sub_sector"),
-            "market": state["market"],
-            "stock_type": state["stock_type"],
-            "classification": classification,
-        }
-    return None
+        return "lift_classification"
+    return "ticker_classification"
 
 
-async def ticker_classification_node(
-    state: TickerClassificationInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 1: classify the ticker.
+def lift_classification_node(state: CriteriaAnalysisState) -> dict[str, Any]:
+    """Keep ``classification`` and the flat keys consistent.
 
-    Short-circuits when the caller already pre-supplied
-    ``sector`` + ``market`` + ``stock_type``.  Otherwise builds a
-    classification deep agent, invokes it, and lifts its structured
-    output into both the full ``classification`` payload and the four
-    flat state keys read by ``SkillFilterMiddleware`` downstream.
+    Two entry paths:
+
+    * After the classification agent ran — lift the flat keys OUT of the
+      ``classification`` payload (read downstream by
+      ``SkillFilterMiddleware[TickerClassification]``).
+    * Pre-supplied short-circuit (CLI flags) — assemble the
+      ``classification`` payload FROM the flat keys without an LLM call.
     """
-    short = _shortcircuit(dict(state))
-    if short is not None:
-        return short
-
-    fallback: dict[str, Any] = {"classification": {"error": "Classification failed."}}
-
-    try:
-        agent = await create_ticker_classification_agent(config, store=store)
-        state_dict: dict[str, Any] = dict(state)
-        context = {
-            k: state_dict[k]
-            for k in TickerClassificationInputState.__annotations__
-            if state_dict.get(k)
-        }
-        result = await agent.ainvoke({"input": json.dumps(context)})
-        structured = (
-            result.get("structured_response") if isinstance(result, dict) else None
-        )
-        if structured is None:
-            raw = result.get("output", "") if isinstance(result, dict) else str(result)
-            return {
-                "classification": {
-                    "error": "Agent did not produce structured output",
-                    "raw_output": raw,
-                },
-            }
-
-        payload = structured.model_dump()
-        update: dict[str, Any] = {"classification": payload}
+    classification = state.get("classification") or {}
+    if classification:
+        update: dict[str, Any] = {}
         for key in _FLAT_KEYS:
-            value = payload.get(key)
+            value = classification.get(key)
             if value is not None:
                 update[key] = value
         return update
-    except Exception:
-        logger.exception("ticker_classification_node failed")
-        return fallback
+
+    if all(state.get(k) for k in ("sector", "market", "stock_type")):
+        return {
+            "classification": {
+                "ticker": state.get("ticker", ""),
+                "sector": state["sector"],
+                "sub_sector": state.get("sub_sector"),
+                "market": state["market"],
+                "stock_type": state["stock_type"],
+                "rationale": "Pre-supplied via input state — classification skipped.",
+                "confidence": 1.0,
+                "data_sources": [],
+                "limitations": [],
+            }
+        }
+
+    raise ValueError(
+        "ticker_classification produced no classification and no flat keys "
+        "were pre-supplied"
+    )

@@ -29,12 +29,12 @@ _INTEGRATION_DIR = Path(__file__).resolve().parent
 COVERED_GRAPHS: dict[str, str] = {
     "council": "test_council_graph_e2e.py",
     "trading_decision": "test_trading_decision.py",
+    "criteria_analysis": "test_criteria_analysis.py",
 }
 
 # Deployable graphs awaiting integration coverage. Tracked in roadmap.md.
 PENDING_INTEGRATION_COVERAGE: set[str] = {
     "stock_evaluation",
-    "criteria_analysis",
     "research",
 }
 

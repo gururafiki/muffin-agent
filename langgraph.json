@@ -2,7 +2,7 @@
   "dependencies": ["."],
   "graphs": {
     "stock_evaluation": "muffin_agent.graph:graph",
-    "criteria_analysis": "muffin_agent.agents.criteria_analysis.graph:graph",
+    "criteria_analysis": "muffin_agent.agents.criteria_analysis.graph:make_graph",
     "research": "muffin_agent.agents.research.graph:graph",
     "council": "muffin_agent.agents.personas_council.council_graph:make_graph",
     "trading_decision": "muffin_agent.agents.trading_decision.graph:make_graph"

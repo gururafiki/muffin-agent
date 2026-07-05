@@ -40,8 +40,16 @@ class TestAppendBlock:
         assert "BLOCK" in msg.content
         assert msg.content.index("base prompt") < msg.content.index("BLOCK")
 
-    def test_non_string_existing_content_is_replaced(self):
-        # Anthropic-style content blocks: we don't try to merge into a list.
+    def test_content_blocks_are_preserved_and_block_appended(self):
+        # deepagents composes the system prompt as content blocks — the
+        # existing blocks MUST survive (a wipe here deletes the whole base
+        # prompt whenever any lesson exists).
         existing = SystemMessage(content=[{"type": "text", "text": "structured"}])
         msg = append_block(existing, "BLOCK")
+        assert isinstance(msg.content, list)
+        assert msg.content[0] == {"type": "text", "text": "structured"}
+        assert "BLOCK" in msg.content[-1]["text"]
+
+    def test_empty_list_content_returns_block_only(self):
+        msg = append_block(SystemMessage(content=[]), "BLOCK")
         assert msg.content == "BLOCK"

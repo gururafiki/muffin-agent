@@ -59,11 +59,10 @@ class CriteriaAnalysisState(TypedDict):
 
 
 class CriterionEvaluationSendPayload(TypedDict):
-    """Payload shape for one ``Send`` to the ``criterion_evaluation`` node.
+    """Payload shape for one ``Send`` to the ``criterion_evaluation`` worker.
 
     Carries everything needed to evaluate a single criterion in
-    isolation.  ``criterion_evaluations`` is included as an empty list so
-    the LangGraph reducer recognises the field on the per-Send substate.
+    isolation.  Doubles as the worker subgraph's input schema.
     """
 
     ticker: str
@@ -75,4 +74,57 @@ class CriterionEvaluationSendPayload(TypedDict):
     classification: dict[str, Any]
     """Full classification payload for context."""
 
+
+# ── Explicit node input schemas (compiled-agent-as-node pattern) ─────────────
+#
+# Each compiled stage agent is added via ``graph.add_node(name, agent,
+# input_schema=<one of these>)``.  NEVER pass ``agent.input_schema`` — it is
+# a property-less ``RootModel`` that maps ``{}`` and raises at coercion (see
+# the compiled-subagent composition rules in CLAUDE.md).
+
+
+class TickerClassificationInput(TypedDict, total=False):
+    """Fields the Stage 1 classification agent reads from the outer state."""
+
+    ticker: str
+    query: str
+
+
+class CriteriaDefinitionInput(TypedDict, total=False):
+    """Fields the Stage 2 criteria definition agent reads from the outer state.
+
+    The flat classification keys feed both the runtime prompt and
+    ``SkillFilterMiddleware[TickerClassification]`` (which reads them off
+    the agent's own state).
+    """
+
+    ticker: str
+    query: str
+    sector: str
+    sub_sector: str
+    market: str
+    stock_type: str
+
+
+class ValuationMethodologyInput(TypedDict, total=False):
+    """Fields the Stage 3 methodology agent reads from the outer state."""
+
+    ticker: str
+    query: str
+    sector: str
+    sub_sector: str
+    market: str
+    stock_type: str
+    classification: dict[str, Any]
+
+
+class SynthesisInput(TypedDict, total=False):
+    """Fields the Stage 5 synthesis agent reads from the outer state."""
+
+    ticker: str
+    query: str
+    classification: dict[str, Any]
+    criteria_definition: dict[str, Any]
+    valuation_methodology: dict[str, Any]
+    merged_criteria: list[dict[str, Any]]
     criterion_evaluations: list[dict[str, Any]]

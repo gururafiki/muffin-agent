@@ -517,7 +517,7 @@ class TestForecastingNodeJsonInput:
                 MagicMock(),  # type: ignore[arg-type]
             )
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert ctx["ticker"] == "AAPL"
         assert ctx["query"] == "AI compounder thesis"
@@ -554,7 +554,7 @@ class TestForecastingNodeJsonInput:
                 MagicMock(),  # type: ignore[arg-type]
             )
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert ctx["company_analysis"]["company_signal"] == "pass"
         assert ctx["market_regime"]["regime_label"] == "Goldilocks expansion"
@@ -580,7 +580,7 @@ class TestForecastingNodeJsonInput:
         ):
             await forecasting_node({"query": "tech sector"}, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert "ticker" not in ctx
         assert "company_analysis" not in ctx
@@ -618,7 +618,7 @@ class TestForecastingNodeJsonInput:
             }
             await forecasting_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert set(ctx.keys()) <= set(ForecastingInputState.__annotations__)
         assert "sector_view" not in ctx

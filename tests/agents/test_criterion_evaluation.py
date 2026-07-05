@@ -258,13 +258,15 @@ class TestCreateCriterionEvaluationAgent:
             assert subagents[14]["runnable"] is mock_validation_agent
             assert agent is mock_create.return_value
 
-            # Structured output via AutoStrategy(CriterionEvaluationOutput).
+            # Structured output via AutoStrategy(CriterionEvaluationNodeOutput) —
+            # the node wraps the domain output so it unpacks into the worker's
+            # ``evaluation`` channel.
             from langchain.agents.structured_output import AutoStrategy
 
             from muffin_agent.agents.criterion_evaluation import (
-                CriterionEvaluationOutput,
+                CriterionEvaluationNodeOutput,
             )
 
             response_format = call_kwargs.kwargs["response_format"]
             assert isinstance(response_format, AutoStrategy)
-            assert response_format.schema is CriterionEvaluationOutput
+            assert response_format.schema is CriterionEvaluationNodeOutput

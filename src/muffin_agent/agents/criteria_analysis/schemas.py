@@ -16,8 +16,22 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..criteria_definition import ValuationCriterion
+from ..criteria_definition import CriteriaDefinitionNodeOutput, ValuationCriterion
+from ..criterion_evaluation import CriterionEvaluationNodeOutput
 from ..investment.schemas import DataSource
+
+__all__ = [
+    "CriteriaAnalysisSynthesis",
+    "CriteriaDefinitionNodeOutput",
+    "CriterionEvaluationNodeOutput",
+    "SynthesisNodeOutput",
+    "SynthesisSignal",
+    "TickerClassificationNodeOutput",
+    "TickerClassificationOutput",
+    "ValuationMethodologyNodeOutput",
+    "ValuationMethodologyOutput",
+    "WeightedBreakdownEntry",
+]
 
 # ── Stage 1: ticker classification ────────────────────────────────────────────
 
@@ -129,3 +143,31 @@ class CriteriaAnalysisSynthesis(BaseModel):
 
     thesis_paragraph: str
     """1–2 paragraph investment thesis."""
+
+
+# ── Node-output wrappers (compiled-agent-as-node pattern) ─────────────────────
+#
+# Each stage agent is added DIRECTLY to the orchestrator graph as a node
+# (``MuffinAgentBuilder.with_state_schema + with_response_format`` — the
+# analyst/council pattern).  ``_StructuredResponseToStateMiddleware`` unpacks
+# the structured response by Pydantic field name, so a single-field wrapper
+# whose field name equals the parent state channel writes the exact nested
+# dict the graph / UI / CLI already consume.
+
+
+class TickerClassificationNodeOutput(BaseModel):
+    """Stage 1 node output — unpacks into the ``classification`` channel."""
+
+    classification: TickerClassificationOutput
+
+
+class ValuationMethodologyNodeOutput(BaseModel):
+    """Stage 3 node output — unpacks into the ``valuation_methodology`` channel."""
+
+    valuation_methodology: ValuationMethodologyOutput
+
+
+class SynthesisNodeOutput(BaseModel):
+    """Stage 5 node output — unpacks into the ``synthesis`` channel."""
+
+    synthesis: CriteriaAnalysisSynthesis

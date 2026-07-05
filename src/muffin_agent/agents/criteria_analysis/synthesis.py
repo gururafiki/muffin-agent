@@ -1,37 +1,47 @@
 """Stage 5: synthesis.
 
-Reasoning-only deep agent (no subagents, no tools, no sandbox).
-Reads classification, criteria_definition, valuation_methodology, and
-the per-criterion evaluations and produces a final
-``CriteriaAnalysisSynthesis`` with composite score, signal, weighted
-breakdown, and thesis paragraph.
+Reasoning-only ReAct agent (no subagents, no tools, no sandbox) compiled
+with a state schema + runtime prompt so it is added directly to the
+orchestrator graph as a node.  Reads classification, criteria_definition,
+valuation_methodology, merged_criteria, and the per-criterion evaluations
+and produces a final ``CriteriaAnalysisSynthesis`` (composite score,
+signal, weighted breakdown, thesis paragraph).
 """
 
-from typing import Any
+from typing import Annotated, Any
 
+from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
-from typing_extensions import TypedDict
 
 from ...model_config import ModelConfiguration
 from ...utils.agent_builder import MuffinAgentBuilder
-from ._node_helpers import invoke_structured_agent
-from .schemas import CriteriaAnalysisSynthesis
+from .schemas import SynthesisNodeOutput
 
-# ── Input state schema ────────────────────────────────────────────────────────
+# ── Agent state schema ────────────────────────────────────────────────────────
 
 
-class SynthesisInputState(TypedDict, total=False):
-    """Fields read by ``synthesis_node`` from the outer state."""
+class SynthesisAgentState(AgentState):
+    """State schema for the Stage 5 synthesis agent as a graph node."""
 
-    ticker: str
-    query: str
-    classification: dict[str, Any]
-    criteria_definition: dict[str, Any]
-    valuation_methodology: dict[str, Any]
-    merged_criteria: list[dict[str, Any]]
-    criterion_evaluations: list[dict[str, Any]]
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    classification: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    criteria_definition: Annotated[
+        dict[str, Any], OmitFromSchema(input=False, output=True)
+    ]
+    valuation_methodology: Annotated[
+        dict[str, Any], OmitFromSchema(input=False, output=True)
+    ]
+    merged_criteria: Annotated[
+        list[dict[str, Any]], OmitFromSchema(input=False, output=True)
+    ]
+    criterion_evaluations: Annotated[
+        list[dict[str, Any]], OmitFromSchema(input=False, output=True)
+    ]
+    synthesis: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
 
 
 # ── Agent factory ─────────────────────────────────────────────────────────────
@@ -41,38 +51,17 @@ async def create_synthesis_agent(
     config: RunnableConfig,
     store: BaseStore | None = None,
 ):
-    """Build the synthesis deep agent — reasoning only, no subagents/tools."""
+    """Build the synthesis agent — reasoning only, no subagents/tools."""
     configuration = ModelConfiguration.from_runnable_config(config)
     primary, *fallbacks = configuration.get_llm_for_role("reasoner")
 
     builder = (
         MuffinAgentBuilder(primary, name="criteria_analysis_synthesis")
-        .with_system_prompt_template("criteria_analysis/synthesis.jinja")
+        .with_state_schema(SynthesisAgentState)
+        .with_runtime_system_prompt_template("criteria_analysis/synthesis.jinja")
         .with_fallback_models(*fallbacks)
-        .with_short_term_memory()
-        .with_response_format(AutoStrategy(schema=CriteriaAnalysisSynthesis))
+        .with_response_format(AutoStrategy(schema=SynthesisNodeOutput))
     )
     if store is not None:
         builder = builder.with_store(store)
-    return builder.build_deep_agent()
-
-
-# ── Node ──────────────────────────────────────────────────────────────────────
-
-
-async def synthesis_node(
-    state: SynthesisInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 5: synthesise the final investment view."""
-    return await invoke_structured_agent(
-        state=dict(state),
-        config=config,
-        agent_factory=create_synthesis_agent,
-        input_state_type=SynthesisInputState,
-        state_key="synthesis",
-        error_fallback={"signal": "hold", "composite_score": 0.0},
-        store=store,
-    )
+    return builder.build_react_agent()
