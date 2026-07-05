@@ -98,6 +98,8 @@ from ..middlewares import (
     SubagentTranscriptParentMiddleware,
     ToolKnowledgeMiddleware,
     ToolResultCacheMiddleware,
+    ToolTelemetryMiddleware,
+    ToolTelemetryParentMiddleware,
 )
 from ..middlewares.tool_result_cache.tools import (
     discover_cached_tool_outputs,
@@ -1041,6 +1043,13 @@ class MuffinAgentBuilder:
             )
         else:
             stack.append(SubagentTranscriptMiddleware(name=self._name))
+        # Tool-execution telemetry (off unless ``tool_telemetry_enabled``): EVERY
+        # agent captures its own tool runs (unlike the subagent-only transcript
+        # capturer above), and nested subagents' records merge up via the same
+        # reducer-channel + task-tool mechanism. The parent middleware declares
+        # the channel so merged-up records survive on the parent's state.
+        stack.append(ToolTelemetryParentMiddleware())
+        stack.append(ToolTelemetryMiddleware(name=self._name))
         if self._skills.filter_middleware is not None:
             stack.append(self._skills.filter_middleware)
         # Runtime prompt + structured-response unpacking middlewares
