@@ -45,6 +45,10 @@ class _CriterionWorkerState(TypedDict, total=False):
     classification: dict[str, Any]
     evaluation: dict[str, Any]
     criterion_evaluations: Annotated[list[dict[str, Any]], operator.add]
+    # Written by the evaluate agent's ToolTelemetryMiddleware (its own +
+    # nested subagents' records); the package node moves it onto the
+    # evaluation dict so it rides into the parent per-criterion, not top-level.
+    tool_runs: Annotated[list[dict[str, Any]], operator.add]
 
 
 class _CriterionWorkerOutput(TypedDict):
@@ -73,6 +77,11 @@ def package_evaluation_node(state: _CriterionWorkerState) -> dict[str, Any]:
     )
     evaluation["weight"] = criterion.get("weight", 0.0)
     evaluation["source"] = criterion.get("source", "skill")
+    # Attach this criterion's tool-execution records (empty unless telemetry
+    # was enabled). Kept per-criterion rather than surfaced at the top level.
+    tool_runs = state.get("tool_runs") or []
+    if tool_runs:
+        evaluation["tool_runs"] = tool_runs
     return {"criterion_evaluations": [evaluation]}
 
 

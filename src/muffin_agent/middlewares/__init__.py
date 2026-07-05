@@ -15,6 +15,10 @@ from .tool_knowledge import ToolKnowledgeMiddleware
 from .tool_result_cache import (
     ToolResultCacheMiddleware,
 )
+from .tool_telemetry import (
+    ToolTelemetryMiddleware,
+    ToolTelemetryParentMiddleware,
+)
 
 __all__ = [
     "CollectionFindings",
@@ -26,4 +30,6 @@ __all__ = [
     "SubagentTranscriptParentMiddleware",
     "ToolKnowledgeMiddleware",
     "ToolResultCacheMiddleware",
+    "ToolTelemetryMiddleware",
+    "ToolTelemetryParentMiddleware",
 ]

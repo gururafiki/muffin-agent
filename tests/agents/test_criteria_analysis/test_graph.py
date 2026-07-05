@@ -201,6 +201,42 @@ class TestClassificationRoutingAndLift:
 
 
 @pytest.mark.unit
+class TestPackageEvaluationNode:
+    def test_augments_and_appends_evaluation(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            package_evaluation_node,
+        )
+
+        state = {
+            "criterion": {"name": "ROE", "weight": 0.4, "source": "skill"},
+            "evaluation": {"score": 0.7, "signal": "positive"},
+        }
+        update = package_evaluation_node(state)  # type: ignore[arg-type]
+        evals = update["criterion_evaluations"]
+        assert len(evals) == 1
+        assert evals[0]["criterion_name"] == "ROE"
+        assert evals[0]["weight"] == 0.4
+        assert evals[0]["source"] == "skill"
+        assert "tool_runs" not in evals[0]  # none captured → not attached
+
+    def test_attaches_per_criterion_tool_runs(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            package_evaluation_node,
+        )
+
+        state = {
+            "criterion": {"name": "ROE", "weight": 0.4, "source": "skill"},
+            "evaluation": {"score": 0.7},
+            "tool_runs": [{"tool": "equity_fundamentals", "status": "ok"}],
+        }
+        update = package_evaluation_node(state)  # type: ignore[arg-type]
+        evaluation = update["criterion_evaluations"][0]
+        assert evaluation["tool_runs"] == [
+            {"tool": "equity_fundamentals", "status": "ok"}
+        ]
+
+
+@pytest.mark.unit
 class TestMergeCriteriaNode:
     @pytest.mark.asyncio
     async def test_merge_node_reads_upstream_state(self):
