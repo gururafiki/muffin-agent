@@ -379,7 +379,7 @@ class TestSectorAnalysisNodeJsonInput:
             state = {"ticker": "NVDA", "query": "AI infrastructure stocks"}
             await sector_analysis_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert ctx["ticker"] == "NVDA"
         assert ctx["query"] == "AI infrastructure stocks"
@@ -407,7 +407,7 @@ class TestSectorAnalysisNodeJsonInput:
             state = {"query": "semiconductor stocks"}
             await sector_analysis_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert "ticker" not in ctx
         assert ctx["query"] == "semiconductor stocks"
@@ -439,7 +439,7 @@ class TestSectorAnalysisNodeJsonInput:
             }
             await sector_analysis_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert ctx["sector"] == "Information Technology"
         assert ctx["industry"] == "Semiconductors"
@@ -476,7 +476,7 @@ class TestSectorAnalysisNodeJsonInput:
             }
             await sector_analysis_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert set(ctx.keys()) <= set(SectorAnalysisInputState.__annotations__)
         assert "market_regime" not in ctx
@@ -753,7 +753,7 @@ class TestSectorAnalysisNode:
                 MagicMock(),  # type: ignore[arg-type]
             )
 
-        task_input = mock_agent.ainvoke.call_args[0][0]["input"]
+        task_input = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         assert "NVDA" in task_input
 
     @pytest.mark.asyncio

@@ -5,10 +5,11 @@ and loads the matching valuation skill(s) to produce sector-specific
 evaluation criteria with target ranges and methodology guidance.
 """
 
-from typing import Literal, NotRequired
+from typing import Annotated, Any, Literal, NotRequired
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
 from langchain.agents import AgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
@@ -41,6 +42,27 @@ class TickerClassification(AgentState):
     sub_sector: NotRequired[str]
     market: NotRequired[str]
     stock_type: NotRequired[str]
+
+
+class CriteriaDefinitionAgentState(DeepAgentState):
+    """State schema for the criteria definition agent as a graph node.
+
+    Inputs flow IN from the parent graph (task context for the runtime
+    prompt AND the flat keys read by
+    ``SkillFilterMiddleware[TickerClassification]``);
+    ``criteria_definition`` is written by the structured-response
+    unpacker and flows OUT to the parent channel.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    sector: Annotated[str, OmitFromSchema(input=False, output=True)]
+    sub_sector: Annotated[str, OmitFromSchema(input=False, output=True)]
+    market: Annotated[str, OmitFromSchema(input=False, output=True)]
+    stock_type: Annotated[str, OmitFromSchema(input=False, output=True)]
+    criteria_definition: Annotated[
+        dict[str, Any], OmitFromSchema(input=True, output=False)
+    ]
 
 
 # ── Output schema ─────────────────────────────────────────────────────────────
@@ -103,6 +125,17 @@ class CriteriaDefinitionOutput(BaseModel):
 
     limitations: list[str] = Field(default_factory=list)
     """Data gaps or uncertainties."""
+
+
+class CriteriaDefinitionNodeOutput(BaseModel):
+    """Wrapper output for the criteria definition agent as a graph node.
+
+    Single-field wrapper so ``_StructuredResponseToStateMiddleware``
+    unpacks the structured response into the ``criteria_definition``
+    parent-state channel (as a dict) by field name.
+    """
+
+    criteria_definition: CriteriaDefinitionOutput
 
 
 # ── Subagent builder ──────────────────────────────────────────────────────────
@@ -199,7 +232,8 @@ async def create_criteria_definition_agent(
 
     builder = (
         MuffinAgentBuilder(primary, name="criteria_definition")
-        .with_system_prompt_template("criteria_definition.jinja")
+        .with_state_schema(CriteriaDefinitionAgentState)
+        .with_runtime_system_prompt_template("criteria_definition.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
@@ -212,7 +246,7 @@ async def create_criteria_definition_agent(
             ),
         )
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=CriteriaDefinitionOutput))
+        .with_response_format(AutoStrategy(schema=CriteriaDefinitionNodeOutput))
         .with_store(store)
     )
     if summariser is not None:

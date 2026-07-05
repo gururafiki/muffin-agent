@@ -91,5 +91,28 @@ class _RuntimePromptMiddleware(AgentMiddleware[AgentState[Any], Any, Any]):
         rendered = render_template(self._template, **jinja_vars)
         for partial in self._static_partials:
             rendered = f"{rendered}\n\n{render_template(partial)}"
-        request.system_message = SystemMessage(rendered)
-        return await handler(request)
+        composed = self._compose(rendered, request.system_message)
+        return await handler(request.override(system_message=composed))
+
+    @staticmethod
+    def _compose(rendered: str, existing: SystemMessage | None) -> SystemMessage:
+        """Prepend *rendered* to the existing system message, never replace.
+
+        The request may already carry content that must survive: the
+        deepagents base prompt (composed as content blocks — a list) when
+        the agent is a deep agent built with ``system_prompt=None``, and
+        any addenda injected by outer middleware (e.g. the
+        ``ToolKnowledgeMiddleware`` lessons block). Replacing the message
+        wholesale silently deletes both.
+        """
+        if existing is None:
+            return SystemMessage(content=rendered)
+        content = existing.content
+        if isinstance(content, str):
+            combined = f"{rendered}\n\n{content}" if content else rendered
+            return SystemMessage(content=combined)
+        if isinstance(content, list) and content:
+            return SystemMessage(
+                content=[{"type": "text", "text": f"{rendered}\n\n"}, *content]
+            )
+        return SystemMessage(content=rendered)

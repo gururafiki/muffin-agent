@@ -144,7 +144,7 @@ class TestPromptTemplate:
 
     def test_template_contains_workflow_steps(self):
         result = render_template("criteria_definition.jinja")
-        assert "Parse Context" in result
+        assert "Confirm Context" in result
         assert "Collect Contextualization Data" in result
         assert "Validate" in result
         assert "Load Skills" in result
@@ -588,7 +588,13 @@ class TestCreateCriteriaDefinitionAgent:
             from langchain.agents.structured_output import AutoStrategy
 
             assert isinstance(response_format, AutoStrategy)
-            assert response_format.schema is CriteriaDefinitionOutput
+            # The node wraps the domain output so the response unpacks into the
+            # ``criteria_definition`` parent-state channel.
+            from muffin_agent.agents.criteria_definition import (
+                CriteriaDefinitionNodeOutput,
+            )
+
+            assert response_format.schema is CriteriaDefinitionNodeOutput
 
     @pytest.mark.asyncio
     async def test_passes_skills_param(self):
@@ -694,14 +700,30 @@ class TestCreateCriteriaDefinitionAgent:
                 ToolKnowledgeMiddleware,
                 ToolResultCacheMiddleware,
             )
+            from muffin_agent.utils._runtime_prompt_middleware import (
+                _RuntimePromptMiddleware,
+            )
+            from muffin_agent.utils._structured_response_to_state_middleware import (
+                _StructuredResponseToStateMiddleware,
+            )
 
-            assert len(middleware) == 5
-            assert isinstance(middleware[0], ModelRetryMiddleware)
-            assert isinstance(middleware[1], ToolKnowledgeMiddleware)
-            assert isinstance(middleware[2], ToolResultCacheMiddleware)
-            assert isinstance(middleware[3], ToolRetryMiddleware)
-            assert isinstance(middleware[4], SkillFilterMiddleware)
-            assert middleware[4].state_schema is TickerClassification
+            types = [type(m) for m in middleware]
+            # Universal reliability middlewares (outermost first).
+            assert types.index(ModelRetryMiddleware) < types.index(
+                ToolKnowledgeMiddleware
+            )
+            assert ToolResultCacheMiddleware in types
+            assert ToolRetryMiddleware in types
+            # Skill filtering reads the flat classification state keys.
+            skill = next(m for m in middleware if isinstance(m, SkillFilterMiddleware))
+            assert skill.state_schema is TickerClassification
+            # Native-composition additions: runtime prompt + response unpacking.
+            assert _RuntimePromptMiddleware in types
+            assert _StructuredResponseToStateMiddleware in types
+            # Response unpacking runs after the runtime prompt (last two).
+            assert types.index(_StructuredResponseToStateMiddleware) > types.index(
+                _RuntimePromptMiddleware
+            )
 
 
 # ── Classification schema tests ──────────────────────────────────────────────

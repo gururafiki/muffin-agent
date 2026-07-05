@@ -1205,20 +1205,19 @@ async def _stream_criteria(
     from langchain_core.runnables import RunnableConfig
 
     from muffin_agent.agents.criteria_definition import create_criteria_definition_agent
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    run_config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
-    agent = await create_criteria_definition_agent(config)
+    # The criteria-definition agent renders its task context from state via a
+    # runtime system prompt — pass ticker/query/classification as state fields,
+    # NOT a seeded human message (which the runtime prompt would ignore).
+    agent = await create_criteria_definition_agent(run_config)
 
-    prompt = (
-        f"Ticker: {ticker}. {query}"
-        if query
-        else f"Define valuation criteria for {ticker}"
-    )
-
-    state: dict = {"messages": [HumanMessage(prompt)]}
+    state: dict = {
+        "ticker": ticker,
+        "query": query or f"Define valuation criteria for {ticker}",
+    }
     if sector:
         state["sector"] = sector
     if sub_sector:
@@ -1291,7 +1290,9 @@ async def _run_criteria_analyze(
 
     callbacks = setup_tracing(session_id=ticker)
     store = InMemoryStore()
-    graph = build_criteria_analysis_graph(
+    build_config = RunnableConfig(configurable={"thread_id": ticker, "user_id": user})
+    graph = await build_criteria_analysis_graph(
+        build_config,
         checkpointer=_get_checkpointer(),
         store=store,
     )

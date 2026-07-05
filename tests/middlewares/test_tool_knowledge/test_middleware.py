@@ -296,3 +296,105 @@ class TestPromptInjection:
         assert sys_text.count("lesson #") == 3
         assert "lesson #9" in sys_text
         assert "lesson #0" not in sys_text
+
+
+def _runtime_with_mode(mode: str, store: AsyncMock | None) -> SimpleNamespace:
+    """A runtime whose ``config`` carries a ``tool_lessons_mode`` configurable."""
+    return SimpleNamespace(
+        config={"configurable": {"tool_lessons_mode": mode}}, store=store
+    )
+
+
+@pytest.mark.unit
+class TestLessonsMode:
+    """The ``tool_lessons_mode`` configurable gates reading and recording."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_env(self, monkeypatch):
+        # Env wins over configurable — clear it so the configurable is honoured.
+        monkeypatch.delenv("TOOL_LESSONS_MODE", raising=False)
+
+    @pytest.mark.asyncio
+    async def test_off_does_not_record_on_tool_error(self):
+        store = _make_store()
+        request = _make_request("tool_x", store=store)
+        request.runtime = _runtime_with_mode("off", store)
+        handler = AsyncMock(side_effect=Exception("boom"))
+
+        mw = ToolKnowledgeMiddleware()
+        await mw.awrap_tool_call(request, handler)
+
+        store.aput.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_read_only_does_not_record_on_tool_error(self):
+        store = _make_store()
+        request = _make_request("tool_x", store=store)
+        request.runtime = _runtime_with_mode("read_only", store)
+        handler = AsyncMock(side_effect=Exception("boom"))
+
+        mw = ToolKnowledgeMiddleware()
+        await mw.awrap_tool_call(request, handler)
+
+        store.aput.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_read_and_record_records_on_tool_error(self):
+        store = _make_store()
+        request = _make_request("tool_x", store=store)
+        request.runtime = _runtime_with_mode("read_and_record", store)
+        handler = AsyncMock(side_effect=Exception("Missing credential 'x_api_key'"))
+
+        mw = ToolKnowledgeMiddleware()
+        await mw.awrap_tool_call(request, handler)
+
+        store.aput.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_off_skips_prompt_injection(self):
+        store = _make_store()
+        item = MagicMock()
+        item.value = {"lesson": "known lesson", "created_at": "2026-04-26T10:00:00Z"}
+        store.asearch = AsyncMock(return_value=[item])
+
+        async def fake_handler(req):
+            return req
+
+        mw = ToolKnowledgeMiddleware()
+        request = MagicMock()
+        request.runtime = _runtime_with_mode("off", store)
+        request.system_message = SystemMessage(content="base prompt")
+        request.tools = [SimpleNamespace(name="tool_x")]
+        request.override = MagicMock()
+
+        await mw.awrap_model_call(request, fake_handler)
+        request.override.assert_not_called()  # off = no read, no inject
+
+    @pytest.mark.asyncio
+    async def test_read_only_still_injects_existing_lessons(self):
+        store = _make_store()
+        item = MagicMock()
+        item.value = {"lesson": "known lesson", "created_at": "2026-04-26T10:00:00Z"}
+        store.asearch = AsyncMock(return_value=[item])
+
+        captured: dict = {}
+
+        async def fake_handler(req):
+            captured["system"] = req.system_message
+            return MagicMock()
+
+        mw = ToolKnowledgeMiddleware()
+        request = MagicMock()
+        request.runtime = _runtime_with_mode("read_only", store)
+        request.system_message = SystemMessage(content="base prompt")
+        request.tools = [SimpleNamespace(name="tool_x")]
+        request.override = MagicMock(
+            side_effect=lambda **kw: SimpleNamespace(
+                system_message=kw.get("system_message", request.system_message),
+                tools=request.tools,
+                runtime=request.runtime,
+            )
+        )
+
+        await mw.awrap_model_call(request, fake_handler)
+        assert "known lesson" in captured["system"].content

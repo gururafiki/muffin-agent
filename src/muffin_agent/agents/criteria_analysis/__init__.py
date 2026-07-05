@@ -6,7 +6,7 @@ fans each merged criterion out to ``criterion_evaluation``, and
 synthesises a final investment view.
 """
 
-from .graph import build_criteria_analysis_graph
+from .graph import build_criteria_analysis_graph, make_graph
 from .schemas import (
     CriteriaAnalysisSynthesis,
     TickerClassificationOutput,
@@ -20,4 +20,5 @@ __all__ = [
     "ValuationMethodologyOutput",
     "WeightedBreakdownEntry",
     "build_criteria_analysis_graph",
+    "make_graph",
 ]

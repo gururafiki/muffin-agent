@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 
@@ -55,7 +56,13 @@ async def run_deep_agent_node(
         context = {
             k: state[k] for k in input_state_type.__annotations__ if state.get(k)
         }
-        result = await agent.ainvoke({"input": json.dumps(context)})
+        # Agents read the conversation from ``messages`` — a bare ``input``
+        # key is silently ignored and the model would see zero messages.
+        # ``config`` must flow through so callbacks (tracing) and
+        # per-run configurable reach the agent's internals.
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(content=json.dumps(context))]}, config
+        )
 
         structured = (
             result.get("structured_response") if isinstance(result, dict) else None

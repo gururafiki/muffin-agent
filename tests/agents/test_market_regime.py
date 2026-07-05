@@ -313,10 +313,43 @@ class TestMarketRegimeNodeJsonInput:
             state = {"ticker": "AAPL", "query": "Quality tech stock"}
             await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert ctx["ticker"] == "AAPL"
         assert ctx["query"] == "Quality tech stock"
+
+    @pytest.mark.asyncio
+    async def test_node_invokes_agent_with_messages_and_config(self):
+        """Regression: agents read ``messages`` (a bare ``input`` key is
+        silently ignored → the model sees zero messages and hallucinates),
+        and ``config`` must be passed so callbacks/configurable propagate."""
+        mock_structured = MagicMock(spec=MarketRegimeOutput)
+        mock_structured.model_dump.return_value = _VALID_REGIME_DICT
+        mock_agent = AsyncMock()
+        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
+
+        with (
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".create_market_regime_agent",
+                new_callable=AsyncMock,
+                return_value=mock_agent,
+            ),
+            patch(
+                "muffin_agent.agents.investment.market_regime"
+                ".ModelConfiguration.from_runnable_config",
+                return_value=MagicMock(),
+            ),
+        ):
+            from muffin_agent.agents.investment.market_regime import market_regime_node
+
+            node_config = MagicMock()
+            await market_regime_node({"ticker": "AAPL"}, node_config)  # type: ignore[arg-type]
+
+        call_args = mock_agent.ainvoke.call_args
+        assert "input" not in call_args[0][0]
+        assert call_args[0][0]["messages"][0].content
+        assert call_args[0][1] is node_config
 
     @pytest.mark.asyncio
     async def test_node_omits_ticker_when_absent(self):
@@ -343,7 +376,7 @@ class TestMarketRegimeNodeJsonInput:
             state = {"query": "Defensive value stocks"}
             await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert "ticker" not in ctx
         assert ctx["query"] == "Defensive value stocks"
@@ -378,7 +411,7 @@ class TestMarketRegimeNodeJsonInput:
             }
             await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert ctx["sector"] == "Financials"
         assert ctx["industry"] == "Banks"
@@ -417,7 +450,7 @@ class TestMarketRegimeNodeJsonInput:
             }
             await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
 
-        raw = mock_agent.ainvoke.call_args[0][0]["input"]
+        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
         ctx = json.loads(raw)
         assert set(ctx.keys()) <= set(MarketRegimeInputState.__annotations__)
         assert "market_regime" not in ctx
@@ -596,7 +629,7 @@ class TestMarketRegimeNode:
             await market_regime_node(state, MagicMock())  # type: ignore[arg-type]
 
         call_args = mock_agent.ainvoke.call_args
-        task_input = call_args[0][0]["input"]
+        task_input = call_args[0][0]["messages"][0].content
         assert "NVDA" in task_input
 
     @pytest.mark.asyncio

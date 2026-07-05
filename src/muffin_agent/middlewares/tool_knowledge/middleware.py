@@ -22,14 +22,16 @@ from __future__ import annotations
 import json
 import operator
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Annotated, Any, NotRequired
+from typing import TYPE_CHECKING, Annotated, Any, NotRequired, cast
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
+from .config import ToolKnowledgeConfiguration, ToolLessonsMode
 from .errors import duplicate_key, is_permanent_error
 from .lessons import LessonCatalog
 from .prompt import append_block, render_lessons_block
@@ -86,6 +88,23 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
         self._per_tool_cap = per_tool_cap
         self._loop_warning_threshold = loop_warning_threshold
         self.tools: list[Any] = []
+
+    # ── Policy ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _mode(runtime: Any) -> ToolLessonsMode:
+        """Resolve the tool-lessons mode from the runtime config.
+
+        Falls back to ``read_and_record`` when config is unavailable so the
+        middleware keeps its historical behaviour by default.
+        """
+        try:
+            config = cast("RunnableConfig", getattr(runtime, "config", None) or {})
+            return ToolKnowledgeConfiguration.from_runnable_config(
+                config
+            ).tool_lessons_mode
+        except Exception:
+            return "read_and_record"
 
     # ── History helpers ──────────────────────────────────────────────
 
@@ -195,12 +214,16 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
             assert result is not None
             return result
 
-        await self._record(
-            runtime=request.runtime,
-            tool_name=tool_name,
-            args=request.tool_call.get("args", {}),
-            error_message=error_msg,
-        )
+        # Record new lessons only in the default mode. Duplicate-blocking of
+        # permanent failures (below) stays active in ALL modes — that is
+        # per-thread correctness, not the cross-run lessons store.
+        if self._mode(request.runtime) == "read_and_record":
+            await self._record(
+                runtime=request.runtime,
+                tool_name=tool_name,
+                args=request.tool_call.get("args", {}),
+                error_message=error_msg,
+            )
 
         permanent = is_permanent_error(error_msg)
         if isinstance(result, ToolMessage):
@@ -311,7 +334,15 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
 
         Records loop-pattern lessons for overused tools BEFORE reading the
         catalog so the just-persisted lesson appears in the same call's block.
+
+        Mode-gated: ``off`` short-circuits entirely (no read, no inject, no
+        record); ``read_only`` injects existing lessons but records no new
+        loop-pattern lessons; ``read_and_record`` (default) does both.
         """
+        mode = self._mode(request.runtime)
+        if mode == "off":
+            return await handler(request)
+
         catalog = LessonCatalog(getattr(request.runtime, "store", None))
         tool_names = [
             n
@@ -320,15 +351,16 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
         ]
 
         # Record loop-pattern lessons first so they're included this turn.
-        tool_counts = self._count_tool_calls_in_history(request.messages)
-        for t_name, count in tool_counts.items():
-            if count >= self._loop_warning_threshold:
-                await self._record_loop_lesson(
-                    runtime=request.runtime,
-                    tool_name=t_name,
-                    count=count,
-                    messages=request.messages,
-                )
+        if mode == "read_and_record":
+            tool_counts = self._count_tool_calls_in_history(request.messages)
+            for t_name, count in tool_counts.items():
+                if count >= self._loop_warning_threshold:
+                    await self._record_loop_lesson(
+                        runtime=request.runtime,
+                        tool_name=t_name,
+                        count=count,
+                        messages=request.messages,
+                    )
 
         lessons = await catalog.latest_per_tool(tool_names, cap=self._per_tool_cap)
         block = render_lessons_block(lessons)

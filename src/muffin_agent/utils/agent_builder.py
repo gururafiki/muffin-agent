@@ -781,11 +781,12 @@ class MuffinAgentBuilder:
         return self
 
     def with_state_schema(self, schema: type) -> Self:
-        """Forward a custom state schema to ``create_agent``.
+        """Forward a custom state schema to the underlying factory.
 
-        The schema must extend
-        :class:`langchain.agents.middleware.types.AgentState` so the
-        ReAct loop's ``messages`` reducer is preserved. Annotate fields
+        For ReAct agents the schema must extend
+        :class:`langchain.agents.middleware.types.AgentState`; for deep
+        agents it must extend :class:`deepagents.graph.DeepAgentState`
+        (which adds the filesystem/todos channels). Annotate fields
         with ``Annotated[T, OmitFromSchema(input=..., output=...)]`` to
         control which fields flow IN from a parent graph vs OUT to a
         parent when the compiled agent is added directly as a
@@ -797,9 +798,6 @@ class MuffinAgentBuilder:
         response is unpacked into per-field state updates (each
         Pydantic-model field maps to a same-named state field, ready
         for the parent graph to read by name).
-
-        ReAct-only — ``build_deep_agent`` does not currently forward
-        this parameter.
         """
         self._state_schema = schema
         return self
@@ -817,17 +815,28 @@ class MuffinAgentBuilder:
         When :meth:`with_persistent_memory` was called, ``memory=`` is
         forwarded to ``create_deep_agent``, which installs the stock
         :class:`MemoryMiddleware` implicitly.
+
+        When :meth:`with_state_schema` was called the schema is forwarded
+        to ``create_deep_agent`` — deep-agent state schemas must extend
+        :class:`deepagents.graph.DeepAgentState` (not plain ``AgentState``)
+        so the filesystem/todos channels survive.
         """
+        # When a runtime-rendered prompt is configured, the base prompt is
+        # injected per call by _RuntimePromptMiddleware (composed ONTO the
+        # deepagents base prompt). Forward ``system_prompt=None`` so
+        # create_deep_agent doesn't double-inject the static render.
+        system_prompt = None if self._runtime_prompt_template else self._prompt.render()
         return create_deep_agent(
             model=self._model,
             tools=self._tools.tools or None,
-            system_prompt=self._prompt.render(),
+            system_prompt=system_prompt,
             middleware=self._assemble_middleware(is_deep=True, backend_factory=None),
             subagents=self._subagents or None,
             skills=self._skills.paths or None,
             permissions=self._permissions or None,
             response_format=self._effective_response_format(),
             context_schema=self._context_schema,
+            state_schema=self._state_schema,
             checkpointer=self._checkpointer,
             store=self._store,
             backend=self._backend.factory(),
@@ -857,9 +866,7 @@ class MuffinAgentBuilder:
         # When a runtime-rendered prompt is configured, the base prompt
         # is injected per call by _RuntimePromptMiddleware. Forward
         # ``system_prompt=None`` so create_agent doesn't double-inject.
-        system_prompt = (
-            None if self._runtime_prompt_template else self._prompt.render()
-        )
+        system_prompt = None if self._runtime_prompt_template else self._prompt.render()
         return create_agent(
             model=self._model,
             tools=self._tools.tools or None,

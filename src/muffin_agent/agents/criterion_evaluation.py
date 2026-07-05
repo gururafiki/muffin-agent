@@ -8,8 +8,10 @@ upstream orchestrators can consume the result programmatically without
 parsing a free-text block.
 """
 
-from typing import Literal
+from typing import Annotated, Any, Literal
 
+from deepagents import DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
@@ -71,20 +73,48 @@ class CriterionEvaluationOutput(BaseModel):
     data_sources: list[DataSource] = Field(default_factory=list)
 
 
+class CriterionEvaluationNodeOutput(BaseModel):
+    """Wrapper output for the criterion evaluation agent as a graph node.
+
+    Single-field wrapper so ``_StructuredResponseToStateMiddleware``
+    unpacks the structured response into the worker-local ``evaluation``
+    channel; the worker's ``package`` node augments it with ``weight`` /
+    ``source`` and appends it to the parent ``criterion_evaluations``
+    accumulator.
+    """
+
+    evaluation: CriterionEvaluationOutput
+
+
+# ── Agent state schema ────────────────────────────────────────────────────────
+
+
+class CriterionEvaluationAgentState(DeepAgentState):
+    """State schema for the criterion evaluation agent as a graph node.
+
+    ``criterion`` and ``classification`` arrive as dicts from the Send
+    payload; ``evaluation`` is written by the structured-response unpacker
+    and flows OUT to the worker subgraph's ``package`` node.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    criterion: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    classification: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    evaluation: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
+
+
 # ── Agent factory ─────────────────────────────────────────────────────────────
 
 
 async def create_criterion_evaluation_agent(config: RunnableConfig):
-    """Build the criterion evaluation deep agent.
+    """Build the criterion evaluation deep agent (compiled graph node).
 
-    Create a deep agent that evaluates a single investment criterion by
-    collecting targeted data, validating it, scoring the criterion, and
-    reflecting on the evaluation quality.
-
-    ``response_format=AutoStrategy(CriterionEvaluationOutput)`` instructs
-    the agent to call a structured output tool as its final act so callers
-    receive a validated Pydantic model in
-    ``result["structured_response"]``.
+    Added directly to the per-criterion worker subgraph as a node with
+    ``input_schema=CriterionEvaluationSendPayload``. The task context
+    (criterion, classification, ticker, query) is rendered into the system
+    prompt per model call; the structured response unpacks into the
+    ``evaluation`` channel.
     """
     subagents = await build_analysis_subagents(config)
     configuration = ModelConfiguration.from_runnable_config(config)
@@ -93,13 +123,14 @@ async def create_criterion_evaluation_agent(config: RunnableConfig):
 
     builder = (
         MuffinAgentBuilder(primary, name="criterion_evaluation")
-        .with_system_prompt_template("criterion_evaluation.jinja")
+        .with_state_schema(CriterionEvaluationAgentState)
+        .with_runtime_system_prompt_template("criterion_evaluation.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=CriterionEvaluationOutput))
+        .with_response_format(AutoStrategy(schema=CriterionEvaluationNodeOutput))
     )
     if summariser is not None:
         builder = builder.with_tool_knowledge(summariser)
