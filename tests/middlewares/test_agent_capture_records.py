@@ -1,4 +1,4 @@
-"""Tests for tool-execution telemetry: the record builder + live capture."""
+"""Tests for the unified agent-capture middleware (tool-records channel)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
-from muffin_agent.middlewares.tool_telemetry.records import (
+from muffin_agent.middlewares.agent_capture.records import (
     MAX_RECORDS_PER_CAPTURE,
     OUTPUT_PREVIEW,
     build_tool_records,
@@ -30,9 +30,7 @@ class TestBuildToolRecords:
             _ai("etf_equity_exposure", {"ticker": "AAPL"}, "c1"),
             ToolMessage(content='{"sector": "tech"}', tool_call_id="c1"),
         ]
-        records = build_tool_records(
-            messages, agent_name="ticker_classification", is_subagent=False
-        )
+        records = build_tool_records(messages, agent_name="ticker_classification")
         assert len(records) == 1
         r = records[0]
         assert r["tool"] == "etf_equity_exposure"
@@ -48,7 +46,7 @@ class TestBuildToolRecords:
             _ai("equity_estimates", {}, "c1"),
             ToolMessage(content="boom", tool_call_id="c1", status="error"),
         ]
-        records = build_tool_records(messages, agent_name="a", is_subagent=False)
+        records = build_tool_records(messages, agent_name="a")
         assert records[0]["status"] == "error"
         assert records[0]["error"] == "boom"
         assert records[0]["output_preview"] == ""  # no output preview on failure
@@ -58,7 +56,7 @@ class TestBuildToolRecords:
             _ai("equity_estimates", {}, "c1"),
             ToolMessage(content="Error (permanent): missing key", tool_call_id="c1"),
         ]
-        records = build_tool_records(messages, agent_name="a", is_subagent=False)
+        records = build_tool_records(messages, agent_name="a")
         assert records[0]["status"] == "error"
 
     def test_duplicate_blocked(self):
@@ -68,7 +66,7 @@ class TestBuildToolRecords:
                 content="DUPLICATE CALL BLOCKED: previously failed", tool_call_id="c1"
             ),
         ]
-        records = build_tool_records(messages, agent_name="a", is_subagent=False)
+        records = build_tool_records(messages, agent_name="a")
         assert records[0]["status"] == "duplicate_blocked"
         assert "DUPLICATE" in records[0]["error"]
 
@@ -81,7 +79,7 @@ class TestBuildToolRecords:
                 additional_kwargs={"cache": {"hit": True}},
             ),
         ]
-        records = build_tool_records(messages, agent_name="a", is_subagent=False)
+        records = build_tool_records(messages, agent_name="a")
         assert records[0]["cache_hit"] is True
 
     def test_task_call_tagged_as_subagent(self):
@@ -89,7 +87,7 @@ class TestBuildToolRecords:
             _ai("task", {"subagent_type": "equity-fundamentals"}, "c1"),
             ToolMessage(content="collected", tool_call_id="c1"),
         ]
-        records = build_tool_records(messages, agent_name="a", is_subagent=False)
+        records = build_tool_records(messages, agent_name="a")
         assert records[0]["tool"] == "task"
         assert records[0]["is_subagent_call"] is True
 
@@ -100,7 +98,7 @@ class TestBuildToolRecords:
             _ai("etf_equity_exposure", {}, "c2"),
             ToolMessage(content="{}", tool_call_id="c2"),
         ]
-        records = build_tool_records(messages, agent_name="a", is_subagent=False)
+        records = build_tool_records(messages, agent_name="a")
         assert [r["tool"] for r in records] == ["etf_equity_exposure"]
 
     def test_output_preview_capped(self):
@@ -109,7 +107,7 @@ class TestBuildToolRecords:
             _ai("equity_price", {}, "c1"),
             ToolMessage(content=big, tool_call_id="c1"),
         ]
-        records = build_tool_records(messages, agent_name="a", is_subagent=False)
+        records = build_tool_records(messages, agent_name="a")
         assert len(records[0]["output_preview"]) <= OUTPUT_PREVIEW + 1  # + ellipsis
 
     def test_cap_appends_truncated_marker(self):
@@ -117,13 +115,13 @@ class TestBuildToolRecords:
         for i in range(MAX_RECORDS_PER_CAPTURE + 5):
             messages.append(_ai("equity_price", {"i": i}, f"c{i}"))
             messages.append(ToolMessage(content="{}", tool_call_id=f"c{i}"))
-        records = build_tool_records(messages, agent_name="a", is_subagent=False)
+        records = build_tool_records(messages, agent_name="a")
         assert len(records) == MAX_RECORDS_PER_CAPTURE + 1
         assert records[-1]["status"] == "truncated"
 
     def test_unmatched_tool_message_ignored(self):
         messages = [ToolMessage(content="orphan", tool_call_id="unknown")]
-        assert build_tool_records(messages, agent_name="a", is_subagent=False) == []
+        assert build_tool_records(messages, agent_name="a") == []
 
 
 @pytest.mark.unit
@@ -171,16 +169,20 @@ def _scripted_probe_agent():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_middleware_emits_tool_runs_on_agent_output():
-    """A telemetry-enabled agent surfaces `tool_runs` on its output state.
+    """Capture is unconditional: `tool_runs` surfaces on the agent's output.
 
     This is the propagation contract: the middleware writes `tool_runs` into
     the agent's own state, so a parent graph declaring the same channel (with a
-    reducer) receives it when the compiled agent is added as a node.
+    reducer) receives it when the compiled agent is added as a node. No config
+    flag is required — graphs opt in by declaring the channel, and parents that
+    don't declare it drop the records at their boundary. (The previous
+    ``tool_telemetry_enabled`` gate read the ambient ``get_config()`` inside
+    ``aafter_agent``, which proved unreliable on the deployed runtime.)
     """
     agent = _scripted_probe_agent()
     result = await agent.ainvoke(
         {"messages": [HumanMessage("look up AAPL")]},
-        config={"configurable": {"thread_id": "t1", "tool_telemetry_enabled": True}},
+        config={"configurable": {"thread_id": "t1"}},
     )
 
     runs = result.get("tool_runs") or []
@@ -192,12 +194,40 @@ async def test_middleware_emits_tool_runs_on_agent_output():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_disabled_by_default_emits_no_tool_runs():
-    """Without the flag, the middleware is a no-op (no `tool_runs`)."""
-    agent = _scripted_probe_agent()
+async def test_response_format_schema_call_is_not_recorded():
+    """The synthetic structured-output tool call must not appear in tool_runs.
+
+    The builder excludes the response schema's class name from capture — the
+    final ``Out`` tool call is plumbing, not a data-collection step.
+    """
+    from pydantic import BaseModel
+
+    from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+    from tests.integration._harness.scripted_model import (
+        Script,
+        ScriptedChatModel,
+        tool_turn,
+    )
+
+    class Out(BaseModel):
+        answer: str
+
+    cursor = Script(
+        [
+            tool_turn("fake_probe", {"ticker": "AAPL"}),
+            tool_turn("Out", {"answer": "done"}),
+        ]
+    )
+    agent = (
+        MuffinAgentBuilder(ScriptedChatModel(script=cursor), name="probe")
+        .with_tool(fake_probe)
+        .with_response_format(Out)
+        .build_react_agent()
+    )
     result = await agent.ainvoke(
         {"messages": [HumanMessage("look up AAPL")]},
         config={"configurable": {"thread_id": "t1"}},
     )
 
-    assert not result.get("tool_runs")
+    tools = [r["tool"] for r in result.get("tool_runs") or []]
+    assert tools == ["fake_probe"]  # the Out schema call is excluded

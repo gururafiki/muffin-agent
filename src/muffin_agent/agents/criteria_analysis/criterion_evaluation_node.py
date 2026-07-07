@@ -45,7 +45,7 @@ class _CriterionWorkerState(TypedDict, total=False):
     classification: dict[str, Any]
     evaluation: dict[str, Any]
     criterion_evaluations: Annotated[list[dict[str, Any]], operator.add]
-    # Written by the evaluate agent's ToolTelemetryMiddleware (its own +
+    # Written by the evaluate agent's AgentCaptureMiddleware (its own +
     # nested subagents' records); the package node moves it onto the
     # evaluation dict so it rides into the parent per-criterion, not top-level.
     tool_runs: Annotated[list[dict[str, Any]], operator.add]

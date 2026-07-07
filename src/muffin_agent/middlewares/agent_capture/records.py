@@ -1,4 +1,4 @@
-"""Tool-telemetry record schema, state channel, and message-walk builder.
+"""Tool-execution record schema, state channel, and message-walk builder.
 
 Records are reconstructed from the agent's message history in
 ``aafter_agent`` (no per-call state writes). They propagate from nested
@@ -10,10 +10,11 @@ tool merges up automatically.
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, NotRequired
+from typing import Any
 
-from langchain.agents import AgentState
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
+
+from .serialize import cache_hit, flatten_content
 
 # Field caps (chars) — keep per-thread state bounded even for chatty runs.
 ARGS_PREVIEW = 300
@@ -50,29 +51,8 @@ def merge_tool_runs(
     return [*(left or []), *(right or [])]
 
 
-class ToolTelemetryState(AgentState):
-    """Adds the ``tool_runs`` channel — a flat list of tool-execution records."""
-
-    tool_runs: NotRequired[Annotated[list[dict[str, Any]], merge_tool_runs]]
-
-
 def _cap(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
-
-
-def _flatten(content: Any) -> str:
-    """Flatten message content (str | content blocks | other) to plain text."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and isinstance(block.get("text"), str):
-                parts.append(block["text"])
-        return "".join(parts)
-    return str(content) if content is not None else ""
 
 
 def _args_preview(args: Any) -> str:
@@ -91,17 +71,10 @@ def _classify(msg: ToolMessage, content: str) -> tuple[str, str | None]:
     return "ok", None
 
 
-def _cache_hit(msg: ToolMessage) -> bool:
-    cache = getattr(msg, "additional_kwargs", {}) or {}
-    meta = cache.get("cache") if isinstance(cache, dict) else None
-    return bool(isinstance(meta, dict) and meta.get("hit"))
-
-
 def build_tool_records(
     messages: list[AnyMessage],
     *,
     agent_name: str,
-    is_subagent: bool,
     exclude_tools: frozenset[str] = DEFAULT_EXCLUDE_TOOLS,
 ) -> list[dict[str, Any]]:
     """Reconstruct one record per completed tool call from *messages*.
@@ -132,7 +105,7 @@ def build_tool_records(
         tool_name, args = pair
         if tool_name in exclude_tools:
             continue
-        content = _flatten(getattr(msg, "content", ""))
+        content = flatten_content(getattr(msg, "content", ""), cap=10_000)
         status, error = _classify(msg, content)
         output_preview = "" if status != "ok" else _cap(content, OUTPUT_PREVIEW)
         if len(records) >= MAX_RECORDS_PER_CAPTURE:
@@ -155,7 +128,7 @@ def build_tool_records(
                 "agent": agent_name,
                 "is_subagent_call": tool_name == "task",
                 "status": status,
-                "cache_hit": _cache_hit(msg),
+                "cache_hit": cache_hit(msg),
                 "args_preview": _args_preview(args),
                 "output_preview": output_preview,
                 "error": error,

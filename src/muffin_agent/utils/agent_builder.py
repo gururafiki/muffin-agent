@@ -91,15 +91,16 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
 
 from ..middlewares import (
+    AgentCaptureMiddleware,
+    AgentCaptureParentMiddleware,
     CollectionFindings,
     SubagentRefinementMiddleware,
     SubagentRefinementParentMiddleware,
-    SubagentTranscriptMiddleware,
-    SubagentTranscriptParentMiddleware,
     ToolKnowledgeMiddleware,
     ToolResultCacheMiddleware,
-    ToolTelemetryMiddleware,
-    ToolTelemetryParentMiddleware,
+)
+from ..middlewares.agent_capture import (
+    DEFAULT_EXCLUDE_TOOLS as _CAPTURE_EXCLUDE_TOOLS,
 )
 from ..middlewares.tool_result_cache.tools import (
     discover_cached_tool_outputs,
@@ -900,6 +901,28 @@ class MuffinAgentBuilder:
             return AutoStrategy(schema=CollectionFindings)
         return None
 
+    def _response_schema_name(self) -> str | None:
+        """Return the structured response schema's class name, if any.
+
+        The structured-output strategies surface the schema as a tool whose
+        name is the schema class name; ``AgentCaptureMiddleware`` excludes it
+        from ``tool_runs`` so the synthetic final call isn't recorded as a
+        data-collection step.
+        """
+        response_format = self._effective_response_format()
+        if response_format is None:
+            return None
+        # A raw schema class first (``getattr(cls, "schema")`` would hit
+        # Pydantic's deprecated ``.schema()`` classmethod), then the strategy
+        # wrappers (AutoStrategy/ToolStrategy/ProviderStrategy carry ``.schema``).
+        schema = (
+            response_format
+            if isinstance(response_format, type)
+            else getattr(response_format, "schema", None)
+        )
+        name = getattr(schema, "__name__", None)
+        return name if isinstance(name, str) else None
+
     # ─── Internals ───────────────────────────────────────────────────────
 
     def _assemble_middleware(
@@ -1029,27 +1052,27 @@ class MuffinAgentBuilder:
                             backend_factory=refinement_factory,
                         )
                     )
-        # Subagent-transcript capture: children (ReAct) write their own
-        # transcript into ``subagent_runs``; deep agents declare the channel so
-        # merged-up child records land in thread state AND carry a guarded
-        # child capturer of their own — it only fires when the deep agent is
-        # itself task-invoked as a subagent (``ls_agent_type == "subagent"``),
-        # so a top-level orchestrator never duplicates its thread messages but
-        # a deep agent wrapped in ``CompiledSubAgent`` still leaves a transcript.
-        if is_deep:
-            stack.append(SubagentTranscriptParentMiddleware())
-            stack.append(
-                SubagentTranscriptMiddleware(name=self._name, subagent_only=True)
+        # Unified agent capture (one message-walk): the transcript channel
+        # (``subagent_runs``) is captured by ReAct subagents always and by deep
+        # agents only when task-invoked (``ls_agent_type == "subagent"``), so a
+        # top-level orchestrator never duplicates its thread messages; the
+        # tool-execution channel (``tool_runs``) is captured by EVERY agent —
+        # graphs opt in by declaring the channel on their state, and parents
+        # that don't declare it drop the records at their boundary for free.
+        # The structured response-format schema name is excluded so the
+        # synthetic final tool call isn't recorded as a data-collection step.
+        capture_excludes = _CAPTURE_EXCLUDE_TOOLS
+        schema_name = self._response_schema_name()
+        if schema_name:
+            capture_excludes = capture_excludes | {schema_name}
+        stack.append(AgentCaptureParentMiddleware())
+        stack.append(
+            AgentCaptureMiddleware(
+                name=self._name,
+                transcript_subagent_only=is_deep,
+                exclude_tools=capture_excludes,
             )
-        else:
-            stack.append(SubagentTranscriptMiddleware(name=self._name))
-        # Tool-execution telemetry (off unless ``tool_telemetry_enabled``): EVERY
-        # agent captures its own tool runs (unlike the subagent-only transcript
-        # capturer above), and nested subagents' records merge up via the same
-        # reducer-channel + task-tool mechanism. The parent middleware declares
-        # the channel so merged-up records survive on the parent's state.
-        stack.append(ToolTelemetryParentMiddleware())
-        stack.append(ToolTelemetryMiddleware(name=self._name))
+        )
         if self._skills.filter_middleware is not None:
             stack.append(self._skills.filter_middleware)
         # Runtime prompt + structured-response unpacking middlewares
