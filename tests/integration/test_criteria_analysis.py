@@ -134,20 +134,17 @@ def _schema_responses() -> dict[Any, Any]:
 async def test_criteria_analysis_runs_end_to_end(config, store):
     """Full graph: requested ticker flows through every stage; fan-in is complete.
 
-    Telemetry is enabled to exercise the ``tool_runs`` plumbing through every
+    Capture is always on, exercising the ``tool_runs`` plumbing through every
     node (incl. the worker subgraph's restricted ``output_schema``) — it must
     not break the run. (The schema-routed model ends each agent on its first
-    call, so no tool calls fire here; capture itself is covered by
-    ``tests/middlewares/test_tool_telemetry.py``.)
+    call, so no data-collection tool calls fire here; capture semantics are
+    covered by ``tests/middlewares/test_agent_capture_records.py``.)
     """
     responses = _schema_responses()
-    telemetry_config = {
-        "configurable": {**config["configurable"], "tool_telemetry_enabled": True}
-    }
     with patch_mcp(scenario="aapl"), patch_sandbox(), patch_llm_by_schema(responses):
-        graph = await build_criteria_analysis_graph(telemetry_config, store=store)
+        graph = await build_criteria_analysis_graph(config, store=store)
         result = await graph.ainvoke(
-            {"ticker": "AAPL", "query": "Long-term hold?"}, config=telemetry_config
+            {"ticker": "AAPL", "query": "Long-term hold?"}, config=config
         )
 
     # The requested ticker reached classification — NOT a hallucinated one.

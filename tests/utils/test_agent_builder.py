@@ -33,12 +33,10 @@ class TestMinimalBuilders:
         )
 
         from muffin_agent.middlewares import (
-            SubagentTranscriptMiddleware,
-            SubagentTranscriptParentMiddleware,
+            AgentCaptureMiddleware,
+            AgentCaptureParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
-            ToolTelemetryMiddleware,
-            ToolTelemetryParentMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
@@ -51,18 +49,16 @@ class TestMinimalBuilders:
         assert kwargs["backend"] is None
         assert kwargs["system_prompt"] is None
         mw = kwargs["middleware"]
-        assert len(mw) == 8
+        assert len(mw) == 6
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], ToolKnowledgeMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert mw[2]._cacheable_tools is None
         assert isinstance(mw[3], ToolRetryMiddleware)
-        assert isinstance(mw[4], SubagentTranscriptParentMiddleware)
-        # Deep agents also carry a guarded child capturer (fires only when the
-        # deep agent is itself task-invoked as a subagent).
-        assert isinstance(mw[5], SubagentTranscriptMiddleware)
-        assert isinstance(mw[6], ToolTelemetryParentMiddleware)
-        assert isinstance(mw[7], ToolTelemetryMiddleware)
+        assert isinstance(mw[4], AgentCaptureParentMiddleware)
+        # Deep agents carry a guarded capturer: the transcript channel fires
+        # only when the deep agent is itself task-invoked as a subagent.
+        assert isinstance(mw[5], AgentCaptureMiddleware)
 
     def test_minimal_react_agent_no_filesystem_middleware(self):
         """No routes → no ``FilesystemMiddleware`` wired on a ReAct agent."""
@@ -210,8 +206,8 @@ class TestSkills:
         )
 
         from muffin_agent.middlewares import (
-            SubagentTranscriptMiddleware,
-            SubagentTranscriptParentMiddleware,
+            AgentCaptureMiddleware,
+            AgentCaptureParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
@@ -225,15 +221,14 @@ class TestSkills:
             )
 
         mw = _deep_kwargs(mock_cda)["middleware"]
-        # Universal middlewares + the subagent-transcript + tool-telemetry pairs,
-        # no skill filter.
-        assert len(mw) == 8
+        # Universal middlewares + the agent-capture pair, no skill filter.
+        assert len(mw) == 6
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], ToolKnowledgeMiddleware)
         assert isinstance(mw[2], ToolResultCacheMiddleware)
         assert isinstance(mw[3], ToolRetryMiddleware)
-        assert isinstance(mw[4], SubagentTranscriptParentMiddleware)
-        assert isinstance(mw[5], SubagentTranscriptMiddleware)
+        assert isinstance(mw[4], AgentCaptureParentMiddleware)
+        assert isinstance(mw[5], AgentCaptureMiddleware)
 
     def test_with_skills_called_twice_raises(self, tmp_path):
         """Calling ``with_skills`` twice raises ``ValueError``."""
@@ -970,11 +965,10 @@ class TestMiddlewareOrder:
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
-            SubagentTranscriptMiddleware,
+            AgentCaptureMiddleware,
+            AgentCaptureParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
-            ToolTelemetryMiddleware,
-            ToolTelemetryParentMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
@@ -995,10 +989,9 @@ class TestMiddlewareOrder:
         assert isinstance(mw[3], ToolRetryMiddleware)
         assert isinstance(mw[4], FilesystemMiddleware)
         assert isinstance(mw[5], MemoryMiddleware)
-        assert isinstance(mw[6], SubagentTranscriptMiddleware)
-        assert isinstance(mw[7], ToolTelemetryParentMiddleware)
-        assert isinstance(mw[8], ToolTelemetryMiddleware)
-        assert mw[9] is caller_mw
+        assert isinstance(mw[6], AgentCaptureParentMiddleware)
+        assert isinstance(mw[7], AgentCaptureMiddleware)
+        assert mw[8] is caller_mw
 
     def test_full_order_with_all_optionals(self):
         """All optional middleware land in the documented order."""
@@ -1052,11 +1045,10 @@ class TestMiddlewareOrder:
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
-            SubagentTranscriptMiddleware,
+            AgentCaptureMiddleware,
+            AgentCaptureParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
-            ToolTelemetryMiddleware,
-            ToolTelemetryParentMiddleware,
         )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
@@ -1079,10 +1071,9 @@ class TestMiddlewareOrder:
         assert isinstance(mw[4], ToolRetryMiddleware)
         assert isinstance(mw[5], FilesystemMiddleware)
         assert isinstance(mw[6], MemoryMiddleware)
-        assert isinstance(mw[7], SubagentTranscriptMiddleware)
-        assert isinstance(mw[8], ToolTelemetryParentMiddleware)
-        assert isinstance(mw[9], ToolTelemetryMiddleware)
-        assert mw[10] is caller_mw
+        assert isinstance(mw[7], AgentCaptureParentMiddleware)
+        assert isinstance(mw[8], AgentCaptureMiddleware)
+        assert mw[9] is caller_mw
 
 
 @pytest.mark.unit

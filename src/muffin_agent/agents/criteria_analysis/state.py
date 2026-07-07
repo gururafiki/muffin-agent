@@ -57,9 +57,9 @@ class CriteriaAnalysisState(TypedDict):
     synthesis: dict[str, Any]
     """``CriteriaAnalysisSynthesis.model_dump()``."""
 
-    # ── Tool telemetry (opt-in via configurable.tool_telemetry_enabled) ──────
+    # ── Tool-execution capture (declaring the channel opts this graph in) ────
     tool_runs: NotRequired[Annotated[list[dict[str, Any]], operator.add]]
-    """Stage-level tool-execution records captured by ``ToolTelemetryMiddleware``
+    """Stage-level tool-execution records captured by ``AgentCaptureMiddleware``
     (classification / criteria_definition / valuation_methodology / synthesis).
     Per-criterion records ride inside each ``criterion_evaluations`` entry as
     its own ``tool_runs`` list (attached by the worker's ``package`` node)."""

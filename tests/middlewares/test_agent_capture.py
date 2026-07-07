@@ -1,4 +1,4 @@
-"""Tests for the subagent-transcript capture middleware."""
+"""Tests for the unified agent-capture middleware (transcript channel)."""
 
 from typing import Any
 from unittest.mock import MagicMock
@@ -13,10 +13,10 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 
 from muffin_agent.middlewares import (
-    SubagentTranscriptMiddleware,
-    SubagentTranscriptParentMiddleware,
+    AgentCaptureMiddleware,
+    AgentCaptureParentMiddleware,
 )
-from muffin_agent.middlewares.subagent_transcript import merge_subagent_runs
+from muffin_agent.middlewares.agent_capture import merge_subagent_runs
 
 
 class _Scripted(BaseChatModel):
@@ -44,7 +44,7 @@ def test_merge_reducer_accumulates() -> None:
 
 @pytest.mark.unit
 def test_child_after_agent_captures_transcript() -> None:
-    mw = SubagentTranscriptMiddleware(name="equity_fundamentals")
+    mw = AgentCaptureMiddleware(name="equity_fundamentals")
     state = {
         "messages": [
             HumanMessage("get AAPL fundamentals"),
@@ -72,7 +72,7 @@ def test_child_after_agent_captures_transcript() -> None:
 
 @pytest.mark.unit
 def test_child_after_agent_ignores_empty() -> None:
-    mw = SubagentTranscriptMiddleware(name="x")
+    mw = AgentCaptureMiddleware(name="x")
     assert mw.after_agent({"messages": []}, MagicMock()) is None
 
 
@@ -81,7 +81,7 @@ def test_transcript_merges_up_into_parent_state() -> None:
     """The child's transcript reaches parent thread state via the task tool."""
     child = create_agent(
         model=_Scripted(responses=[AIMessage("fetched revenue=100")]),
-        middleware=[SubagentTranscriptMiddleware(name="equity_fundamentals")],
+        middleware=[AgentCaptureMiddleware(name="equity_fundamentals")],
     )
     subagent = CompiledSubAgent(
         name="equity-fundamentals", description="fundamentals", runnable=child
@@ -106,7 +106,7 @@ def test_transcript_merges_up_into_parent_state() -> None:
             ]
         ),
         subagents=[subagent],
-        middleware=[SubagentTranscriptParentMiddleware()],
+        middleware=[AgentCaptureParentMiddleware()],
         checkpointer=InMemorySaver(),
     )
     cfg = {"configurable": {"thread_id": "T"}}
@@ -125,8 +125,10 @@ def test_guarded_capture_noop_when_not_subagent() -> None:
     agent = create_deep_agent(
         model=_Scripted(responses=[AIMessage("orchestrator answer")]),
         middleware=[
-            SubagentTranscriptParentMiddleware(),
-            SubagentTranscriptMiddleware(name="stock_evaluation", subagent_only=True),
+            AgentCaptureParentMiddleware(),
+            AgentCaptureMiddleware(
+                name="stock_evaluation", transcript_subagent_only=True
+            ),
         ],
         checkpointer=InMemorySaver(),
     )
@@ -142,8 +144,8 @@ def test_guarded_capture_fires_for_deep_agent_as_subagent() -> None:
     child_deep = create_deep_agent(
         model=_Scripted(responses=[AIMessage("nested deep agent worked")]),
         middleware=[
-            SubagentTranscriptParentMiddleware(),
-            SubagentTranscriptMiddleware(name="nested_deep", subagent_only=True),
+            AgentCaptureParentMiddleware(),
+            AgentCaptureMiddleware(name="nested_deep", transcript_subagent_only=True),
         ],
     )
     subagent = CompiledSubAgent(
@@ -171,7 +173,7 @@ def test_guarded_capture_fires_for_deep_agent_as_subagent() -> None:
             ]
         ),
         subagents=[subagent],
-        middleware=[SubagentTranscriptParentMiddleware()],
+        middleware=[AgentCaptureParentMiddleware()],
         checkpointer=InMemorySaver(),
     )
     cfg = {"configurable": {"thread_id": "T-nested"}}
