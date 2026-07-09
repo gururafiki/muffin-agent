@@ -218,6 +218,7 @@ class TestPackageEvaluationNode:
         assert evals[0]["weight"] == 0.4
         assert evals[0]["source"] == "skill"
         assert "tool_runs" not in evals[0]  # none captured → not attached
+        assert evals[0]["data_collected"] is False  # no tool runs → flagged
 
     def test_attaches_per_criterion_tool_runs(self):
         from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
@@ -234,6 +235,153 @@ class TestPackageEvaluationNode:
         assert evaluation["tool_runs"] == [
             {"tool": "equity_fundamentals", "status": "ok"}
         ]
+        assert evaluation["data_collected"] is True
+
+
+@pytest.mark.unit
+class TestReconcileDataSources:
+    """Deterministic anti-hallucination pass over LLM-claimed data_sources."""
+
+    @staticmethod
+    def _evaluation(**overrides):
+        base = {
+            "criterion_name": "ROE",
+            "score": 0.7,
+            "confidence": 0.8,
+            "data_sources": [
+                {
+                    "subagent": "equity-fundamentals",
+                    "data_retrieved": "key ratios",
+                    "period": "FY2024",
+                }
+            ],
+            "limitations": [],
+        }
+        base.update(overrides)
+        return base
+
+    def test_no_tool_runs_strips_sources_and_caps_confidence(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            _NO_DATA_LIMITATION,
+            _reconcile_data_sources,
+        )
+
+        evaluation = _reconcile_data_sources(self._evaluation(), [])
+        assert evaluation["data_collected"] is False
+        assert evaluation["data_sources"] == []
+        assert evaluation["confidence"] == 0.3
+        assert _NO_DATA_LIMITATION in evaluation["limitations"]
+
+    def test_no_tool_runs_keeps_already_low_confidence(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            _reconcile_data_sources,
+        )
+
+        evaluation = _reconcile_data_sources(self._evaluation(confidence=0.15), [])
+        assert evaluation["confidence"] == 0.15
+
+    def test_corroborated_sources_are_kept(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            _reconcile_data_sources,
+        )
+
+        tool_runs = [
+            {
+                "agent": "equity-fundamentals",
+                "tool": "equity_fundamental_ratios",
+                "status": "ok",
+            }
+        ]
+        evaluation = _reconcile_data_sources(self._evaluation(), tool_runs)
+        assert evaluation["data_collected"] is True
+        assert len(evaluation["data_sources"]) == 1
+        assert evaluation["confidence"] == 0.8  # untouched
+        assert evaluation["limitations"] == []
+
+    def test_task_args_preview_corroborates(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            _reconcile_data_sources,
+        )
+
+        tool_runs = [
+            {
+                "agent": "criterion-evaluation",
+                "tool": "task",
+                "args_preview": '{"subagent_type": "equity-fundamentals"}',
+                "status": "ok",
+            }
+        ]
+        evaluation = _reconcile_data_sources(self._evaluation(), tool_runs)
+        assert len(evaluation["data_sources"]) == 1
+
+    def test_uncorroborated_sources_dropped_with_limitation(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            _reconcile_data_sources,
+        )
+
+        sources = [
+            {"subagent": "equity-fundamentals", "data_retrieved": "r", "period": "24"},
+            {"subagent": "news", "data_retrieved": "headlines", "period": "30d"},
+        ]
+        tool_runs = [{"agent": "equity-fundamentals", "tool": "x", "status": "ok"}]
+        evaluation = _reconcile_data_sources(
+            self._evaluation(data_sources=sources), tool_runs
+        )
+        assert [s["subagent"] for s in evaluation["data_sources"]] == [
+            "equity-fundamentals"
+        ]
+        assert any("news" in item for item in evaluation["limitations"])
+
+    def test_nameless_sources_are_kept(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            _reconcile_data_sources,
+        )
+
+        evaluation = _reconcile_data_sources(
+            self._evaluation(data_sources=["10-K filing"]),
+            [{"agent": "equity-fundamentals", "tool": "x", "status": "ok"}],
+        )
+        assert evaluation["data_sources"] == ["10-K filing"]
+
+
+@pytest.mark.unit
+class TestCriterionEvaluatedEvent:
+    @pytest.mark.asyncio
+    async def test_package_node_emits_custom_stream_event(self):
+        """The package node emits one ``criterion_evaluated`` custom event."""
+        from langgraph.graph import END, START, StateGraph
+
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            _CriterionWorkerState,
+            package_evaluation_node,
+        )
+
+        graph = StateGraph(_CriterionWorkerState)
+        graph.add_node("package", package_evaluation_node)
+        graph.add_edge(START, "package")
+        graph.add_edge("package", END)
+        compiled = graph.compile()
+
+        events = []
+        async for mode, chunk in compiled.astream(
+            {
+                "criterion": {"name": "ROE", "weight": 0.4, "source": "skill"},
+                "evaluation": {"score": 0.7},
+            },
+            stream_mode=["custom", "values"],
+        ):
+            if mode == "custom":
+                events.append(chunk)
+        assert len(events) == 1
+        assert events[0]["type"] == "criterion_evaluated"
+        assert events[0]["evaluation"]["criterion_name"] == "ROE"
+
+    def test_emit_is_noop_outside_runnable_context(self):
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            _emit_criterion_evaluated,
+        )
+
+        _emit_criterion_evaluated({"criterion_name": "ROE"})  # must not raise
 
 
 @pytest.mark.unit

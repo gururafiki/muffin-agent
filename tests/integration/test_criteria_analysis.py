@@ -162,6 +162,10 @@ async def test_criteria_analysis_runs_end_to_end(config, store):
     for e in evals:
         assert "weight" in e and "source" in e
         assert e["source"] in {"skill", "web"}
+        # The schema-routed model made zero tool calls, so the package node's
+        # data-source reconciliation flags every evaluation as prior-knowledge.
+        assert e["data_collected"] is False
+        assert e["data_sources"] == []
 
     # Synthesis produced a final view; no stage left an error payload.
     assert result["synthesis"]["ticker"] == "AAPL"
