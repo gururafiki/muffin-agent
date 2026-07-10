@@ -12,6 +12,12 @@ Evaluate the single criterion above for **`{{ ticker }}`**. The ``criterion.name
 
 If data is unavailable from any subagent, state it is unavailable. NEVER estimate, approximate, or fabricate numbers.
 
+## Data-collection contract (non-negotiable)
+
+1. You MUST call at least one data-collection subagent (via the `task` tool) BEFORE producing the final output. A score produced without any `task` call is an invalid evaluation — the runtime detects it, discards your `data_sources`, and caps `confidence` at 0.3.
+2. `data_sources` may list ONLY subagents you actually invoked in this run, and every number in `evidence_summary` / `reasoning` must come from a subagent response. The runtime cross-checks `data_sources` against the actual tool executions and strips entries that never ran.
+3. If every collection attempt fails, still produce the output honestly: empty `data_sources`, `confidence` ≤ 0.3, and a `limitations` entry naming exactly what could not be retrieved. Do NOT substitute prior knowledge for retrieved data.
+
 You have access to thirteen data collection subagents and one data-validation subagent. Each subagent's capabilities are described in its tool definition.
 
 ## Subagent Selection Guide
@@ -125,6 +131,6 @@ Produce the structured ``CriterionEvaluationOutput`` with all required fields po
 - ``reasoning``: 2–4 paragraphs with formula-first calculations and benchmark comparisons.
 - ``counterargument``: 1–2 sentences with the strongest argument against the score.
 - ``limitations``: list of specific data gaps and their impact.
-- ``data_sources``: list of ``DataSource`` entries (one per subagent used, with ``data_retrieved`` and ``period``).
+- ``data_sources``: list of ``DataSource`` entries — one per subagent you ACTUALLY invoked in this run (with ``data_retrieved`` and ``period``); never list a subagent you did not call.
 
 Signal mapping: 0.0-0.2 ``strong_negative``, 0.2-0.4 ``negative``, 0.4-0.6 ``neutral``, 0.6-0.8 ``positive``, 0.8-1.0 ``strong_positive``.

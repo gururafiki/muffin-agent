@@ -14,6 +14,8 @@ Define criteria for **`{{ ticker }}`**. The classification above is authoritativ
 
 If data is unavailable from any subagent, state it is unavailable. NEVER estimate, approximate, or fabricate numbers.
 
+**Skill-grounding contract (non-negotiable):** your criteria MUST come from the matching `/skills/valuation/` files — read them BEFORE producing the final output; a criteria list produced without reading any skill file is invalid. Collect contextualization data via ``task`` as instructed below; if a skill or subagent is unavailable, record the gap in ``limitations`` instead of inventing criteria from prior knowledge.
+
 You have access to four data collection subagents and one data-validation subagent. Each subagent's capabilities are described in its tool definition.
 
 ## Subagent Usage

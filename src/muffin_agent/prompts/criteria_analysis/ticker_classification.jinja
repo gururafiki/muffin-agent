@@ -17,6 +17,8 @@ If the ticker's sector is outside the supported list above, **do not force-fit**
 
 NEVER estimate, approximate, or fabricate numbers. If a subagent fails, state it is unavailable and proceed with what you have.
 
+**Data-collection contract (non-negotiable):** you MUST invoke the data subagents below (via ``task``) BEFORE producing the final classification — a classification produced without any ``task`` call is invalid. ``data_sources`` may list only subagents you actually invoked in this run; if collection fails, lower ``confidence`` and record the gap in ``limitations`` instead of answering from prior knowledge.
+
 ## Subagents
 
 | Subagent | Purpose |
