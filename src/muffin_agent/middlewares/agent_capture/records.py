@@ -14,6 +14,8 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 
+from muffin_agent.middlewares.tool_result_cache.cache import get_args_hash
+
 from .serialize import cache_hit, flatten_content
 
 # Field caps (chars) — keep per-thread state bounded even for chatty runs.
@@ -60,6 +62,21 @@ def _args_preview(args: Any) -> str:
         return _cap(json.dumps(args, default=str), ARGS_PREVIEW)
     except (TypeError, ValueError):
         return _cap(str(args), ARGS_PREVIEW)
+
+
+def _args_hash(args: Any) -> str | None:
+    """Return the tool-result-cache store key for *args*, or ``None``.
+
+    Matches ``ToolResultCacheMiddleware``'s ``get_args_hash`` exactly (the store
+    key IS this hash), so the UI can join a tool-run to its cached payload under
+    ``("cache", tool)`` by ``args_hash`` alone — no client-side rehashing.
+    """
+    if not isinstance(args, dict):
+        return None
+    try:
+        return get_args_hash(args)
+    except (TypeError, ValueError):
+        return None
 
 
 def _classify(msg: ToolMessage, content: str) -> tuple[str, str | None]:
@@ -119,6 +136,7 @@ def build_tool_records(
                     "args_preview": "",
                     "output_preview": "",
                     "error": None,
+                    "args_hash": None,
                 }
             )
             break
@@ -132,6 +150,7 @@ def build_tool_records(
                 "args_preview": _args_preview(args),
                 "output_preview": output_preview,
                 "error": error,
+                "args_hash": _args_hash(args),
             }
         )
     return records

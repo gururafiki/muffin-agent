@@ -12,6 +12,7 @@ from muffin_agent.middlewares.agent_capture.records import (
     build_tool_records,
     merge_tool_runs,
 )
+from muffin_agent.middlewares.tool_result_cache.cache import get_args_hash
 
 
 def _ai(tool_name: str, args: dict, call_id: str) -> AIMessage:
@@ -40,6 +41,9 @@ class TestBuildToolRecords:
         assert '"ticker": "AAPL"' in r["args_preview"]
         assert "tech" in r["output_preview"]
         assert r["error"] is None
+        # args_hash IS the tool-result-cache store key — lets the UI join a
+        # tool-run to its cached payload under ("cache", tool) with no rehashing.
+        assert r["args_hash"] == get_args_hash({"ticker": "AAPL"})
 
     def test_error_status_message(self):
         messages = [
@@ -118,6 +122,7 @@ class TestBuildToolRecords:
         records = build_tool_records(messages, agent_name="a")
         assert len(records) == MAX_RECORDS_PER_CAPTURE + 1
         assert records[-1]["status"] == "truncated"
+        assert records[-1]["args_hash"] is None
 
     def test_unmatched_tool_message_ignored(self):
         messages = [ToolMessage(content="orphan", tool_call_id="unknown")]
