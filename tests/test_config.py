@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from muffin_agent.model_config import ModelConfiguration
+from muffin_agent.model_config import ModelConfiguration, _shared_rate_limiter
 
 
 @pytest.mark.unit
@@ -67,6 +67,127 @@ class TestOpenRouterProvider:
         config = ModelConfiguration(llm_provider="openrouter", openrouter_api_key=None)
         with pytest.raises(ValueError, match="OpenRouter API key not configured"):
             config.get_llm()
+
+
+@pytest.mark.unit
+class TestOllamaProvider:
+    """The ollama branch — Ollama Cloud / local over the native /api/chat API."""
+
+    def test_ollama_instantiates_chat_ollama_with_bearer_header(self):
+        config = ModelConfiguration(
+            llm_provider="ollama",
+            ollama_api_key="oll-secret",
+            model="minimax-m3:cloud",
+        )
+        with patch("langchain_ollama.ChatOllama") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            config.get_llm()
+        _, kwargs = mock_cls.call_args
+        assert kwargs["model"] == "minimax-m3:cloud"
+        # Cloud default host, native path — never the OpenAI-compat /v1 suffix.
+        assert kwargs["base_url"] == "https://ollama.com"
+        assert (
+            kwargs["client_kwargs"]["headers"]["Authorization"] == "Bearer oll-secret"
+        )
+        # ChatOllama has no max_retries param — it must NOT be forwarded.
+        assert "max_retries" not in kwargs
+
+    def test_ollama_local_base_url_and_keyless(self):
+        config = ModelConfiguration(
+            llm_provider="ollama",
+            ollama_base_url="http://localhost:11434",
+            model="llama3.1",
+        )
+        with patch("langchain_ollama.ChatOllama") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            config.get_llm()
+        _, kwargs = mock_cls.call_args
+        assert kwargs["base_url"] == "http://localhost:11434"
+        # Keyless (local) → no auth header injected.
+        assert kwargs["client_kwargs"] == {}
+
+
+@pytest.mark.unit
+class TestLLMChain:
+    """The cross-provider ``llm_chain`` (Ollama primary → OpenRouter fallback)."""
+
+    def _chain_cfg(self, **overrides):
+        base = dict(
+            llm_chain=[
+                {"provider": "ollama", "model": "minimax-m3:cloud"},
+                {
+                    "provider": "openrouter",
+                    "model": "nvidia/nemotron-3-super-120b-a12b:free",
+                    "requests_per_second": 0.3,
+                },
+            ],
+            ollama_api_key="oll",
+            openrouter_api_key="or",
+        )
+        base.update(overrides)
+        return ModelConfiguration(**base)
+
+    def test_chain_builds_primary_then_fallback(self):
+        chain = self._chain_cfg().get_llm_for_role("orchestrator")
+        assert [type(m).__name__ for m in chain] == ["ChatOllama", "ChatOpenRouter"]
+
+    def test_per_profile_rate_limiters(self):
+        chain = self._chain_cfg().get_llm_for_role("reasoner")
+        # Primary (Ollama) has NO limiter — relaxed, as configured.
+        assert chain[0].rate_limiter is None
+        # Fallback (OpenRouter free) carries its own 0.3 = 18/min limiter.
+        assert chain[1].rate_limiter is _shared_rate_limiter(0.3)
+
+    def test_chain_supersedes_per_role_models(self):
+        cfg = self._chain_cfg(orchestrator_models=["should/be:ignored"])
+        chain = cfg.get_llm_for_role("orchestrator")
+        assert [type(m).__name__ for m in chain] == ["ChatOllama", "ChatOpenRouter"]
+
+    def test_get_llm_derives_primary_from_chain(self):
+        # The single-model path uses chain[0] (Ollama) as the default.
+        assert type(self._chain_cfg().get_llm()).__name__ == "ChatOllama"
+
+    def test_json_env_string_parses(self, monkeypatch):
+        monkeypatch.setenv(
+            "LLM_CHAIN",
+            '[{"provider":"ollama","model":"minimax-m3:cloud"},'
+            '{"provider":"openrouter","model":"x/y:free","requests_per_second":0.3}]',
+        )
+        cfg = ModelConfiguration.from_runnable_config({"configurable": {}})
+        assert [(p.provider, p.requests_per_second) for p in cfg.llm_chain] == [
+            ("ollama", None),
+            ("openrouter", 0.3),
+        ]
+
+    def test_blank_env_string_means_unset(self, monkeypatch):
+        monkeypatch.setenv("LLM_CHAIN", "")
+        cfg = ModelConfiguration.from_runnable_config({"configurable": {}})
+        assert cfg.llm_chain == []
+
+    def test_unbuildable_fallback_is_warn_skipped(self):
+        # BYO caller with ONLY the primary key: the OpenRouter fallback can't
+        # build, so it's skipped and the primary alone is returned.
+        cfg = ModelConfiguration(
+            llm_chain=[
+                {"provider": "ollama", "model": "minimax-m3:cloud"},
+                {"provider": "openrouter", "model": "x/y:free"},
+            ],
+            ollama_api_key="oll",  # no openrouter key
+        )
+        chain = cfg.get_llm_for_role("reasoner")
+        assert len(chain) == 1
+        assert type(chain[0]).__name__ == "ChatOllama"
+
+    def test_unbuildable_primary_raises(self):
+        cfg = ModelConfiguration(
+            llm_chain=[
+                {"provider": "openrouter", "model": "x/y:free"},  # no key
+                {"provider": "ollama", "model": "minimax-m3:cloud"},
+            ],
+            ollama_api_key="oll",
+        )
+        with pytest.raises(ValueError, match="OpenRouter API key not configured"):
+            cfg.get_llm_for_role("reasoner")
 
 
 @pytest.mark.unit

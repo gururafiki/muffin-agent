@@ -20,7 +20,7 @@ Muffin Agent is a production-ready, multi-agent stock analysis system that funct
 - **🎯 Multi-Timeframe Targets**: Price targets for 1m, 3m, 6m, 1y, 3y horizons
 - **✅ Structured Outputs**: Type-safe Pydantic models throughout
 - **🔄 Graceful Degradation**: Continues with partial agent failures
-- **🔌 Multi-LLM Support**: OpenAI, Anthropic, OpenRouter
+- **🔌 Multi-LLM Support**: OpenAI, Anthropic, OpenRouter, Ollama (Cloud/local) — with cross-provider primary→fallback chains (`LLM_CHAIN`)
 - **🆓 Free Data Sources**: OpenBB (free tier), yfinance, SEC Edgar
 - **🔧 MCP Integration**: Data collection agents use OpenBB MCP tools with configurable tool subsets per agent
 
@@ -644,14 +644,17 @@ cp .env.example .env
 | `OPENAI_SITE_URL` | Legacy: only for OpenRouter via `ChatOpenAI` | Base URL override | Set to `https://openrouter.ai/api/v1`. **New deployments** should set `LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY` instead — `ChatOpenRouter` knows the base URL. |
 | `OPENROUTER_API_KEY` | Yes when `LLM_PROVIDER=openrouter` | OpenRouter API key for `ChatOpenRouter` | [OpenRouter](https://openrouter.ai/keys) |
 | `ANTHROPIC_API_KEY` | Yes (if using Anthropic) | Anthropic API key | [Anthropic Console](https://console.anthropic.com/settings/keys) |
-| `MODEL` | No | Model in `provider/model` format. Used by the legacy single-model `get_llm()` path. | Default: `openai/gpt-oss-120b` (note: no `:free` suffix — free OpenRouter routes are unsafe as production default). Browse [OpenRouter models](https://openrouter.ai/models). |
-| `LLM_PROVIDER` | No | `openai`, `anthropic`, or `openrouter` | Default: `openai` |
-| `ORCHESTRATOR_MODELS` | No | Comma-separated model chain for orchestrator-role agents (first = primary, rest become `ModelFallbackMiddleware` chain). Each entry passed to `langchain.chat_models.init_chat_model`, so cross-provider chains work (e.g. `anthropic:claude-sonnet-4-6,openrouter:nvidia/nemotron-...:free`). | Default: empty (falls back to `MODEL`) |
-| `COLLECTOR_MODELS` | No | Same shape as `ORCHESTRATOR_MODELS`, for data-collection ReAct subagents. | Default: empty |
-| `REASONER_MODELS` | No | Same shape as `ORCHESTRATOR_MODELS`, for pure-reasoning agents (validation, valuation, risk). | Default: empty |
+| `OLLAMA_API_KEY` | Yes (if a chain profile uses `ollama` against Ollama Cloud) | Ollama Cloud API key (sent as a bearer header on the native `/api/chat` API) | [Ollama keys](https://ollama.com/settings/keys) |
+| `OLLAMA_BASE_URL` | No | Ollama host for the `ollama` provider. **Never append `/v1`** — the OpenAI-compat path has unreliable tool calling. | Default: `https://ollama.com` (Cloud). Local: `http://localhost:11434` |
+| `LLM_CHAIN` | No (recommended) | **Cross-provider** model chain as a JSON array — `[{provider, model, api_key?, base_url?, requests_per_second?}, …]`; index 0 = primary, rest = fallbacks. When set, it supersedes `LLM_PROVIDER`/`MODEL` and the per-role chains for every role, and supplies the single-model default. Profiles usually omit `api_key` (resolves the provider's key var); `requests_per_second` is per-profile. Example: `[{"provider":"ollama","model":"minimax-m3:cloud"},{"provider":"openrouter","model":"nvidia/nemotron-3-super-120b-a12b:free","requests_per_second":0.3}]` | Default: empty (legacy behaviour) |
+| `MODEL` | No | Model in `provider/model` format. Used by the legacy single-model `get_llm()` path (ignored when `LLM_CHAIN` is set). | Default: `openai/gpt-oss-120b` (note: no `:free` suffix — free OpenRouter routes are unsafe as production default). Browse [OpenRouter models](https://openrouter.ai/models). |
+| `LLM_PROVIDER` | No | `openai`, `anthropic`, `openrouter`, or `ollama` (legacy single-provider path; ignored when `LLM_CHAIN` is set) | Default: `openai` |
+| `ORCHESTRATOR_MODELS` | No (legacy) | Comma-separated model chain for orchestrator-role agents (first = primary, rest become `ModelFallbackMiddleware` chain). Each entry reuses `get_llm(model=entry)` so it shares ONE provider (`LLM_PROVIDER`) — for **cross-provider** fallback use `LLM_CHAIN` (which supersedes this). | Default: empty (falls back to `MODEL`) |
+| `COLLECTOR_MODELS` | No (legacy) | Same shape as `ORCHESTRATOR_MODELS`, for data-collection ReAct subagents. | Default: empty |
+| `REASONER_MODELS` | No (legacy) | Same shape as `ORCHESTRATOR_MODELS`, for pure-reasoning agents (validation, valuation, risk). | Default: empty |
 | `SUMMARISER_MODEL` | No | Cheap fast model used by `ToolKnowledgeMiddleware` to LLM-summarise tool failures into one-line lessons. When unset, the middleware falls back to deterministic `<tool>: previous call failed — <error>` lesson strings. Recommended: `anthropic/claude-haiku-4-5`. | Default: empty |
 | `TEMPERATURE` | No | LLM temperature (0.0–2.0) | Default: `0.1` |
-| `LLM_SDK_RETRIES` | No | SDK-level retries for connect-time errors (network, timeouts, 5xx/429 before any response body arrives). Forwarded to `ChatOpenAI`/`ChatAnthropic`/`ChatOpenRouter` as `max_retries=`. Mid-stream errors are retried separately by LangChain's `ModelRetryMiddleware` (hardcoded defaults in `MuffinAgentBuilder`); transient tool errors are retried by `ToolRetryMiddleware`. | Default: `6` |
+| `LLM_SDK_RETRIES` | No | SDK-level retries for connect-time errors (network, timeouts, 5xx/429 before any response body arrives). Forwarded to `ChatOpenAI`/`ChatAnthropic`/`ChatOpenRouter` as `max_retries=` (`ChatOllama` has no such param — its retries rely on `ModelRetryMiddleware`). Mid-stream errors are retried separately by LangChain's `ModelRetryMiddleware` (hardcoded defaults in `MuffinAgentBuilder`); transient tool errors are retried by `ToolRetryMiddleware`. | Default: `6` |
 | `OPENBB_MCP_URL` | No | OpenBB MCP server URL | Default: `http://127.0.0.1:8001/mcp` |
 | `OPENSANDBOX_URL` | No | OpenSandbox server address (`host:port`) | Default: `localhost:8080` |
 | `OPENSANDBOX_API_KEY` | No | OpenSandbox API key (omit if no auth) | — |

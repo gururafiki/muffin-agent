@@ -14,6 +14,9 @@ dependencies = [
     "langchain-openai>=1.3.3",
     "langchain-anthropic>=1.4.6",
     "langchain-openrouter>=0.2.4",
+    # Ollama Cloud / local Ollama via the native /api/chat API (reliable tool
+    # calling; the OpenAI-compat /v1 path is not) — see model_config.py.
+    "langchain-ollama>=1.1.0",
     "python-dotenv>=1.0",
     "langgraph-sdk>=0.4.2",
     # auth.py JWT verification (Supabase HS256; Cloudflare Access additionally

@@ -30,7 +30,9 @@ class BaseConfiguration(BaseModel):
         """Create Configuration from a LangGraph RunnableConfig.
 
         Extracts known fields from config["configurable"], ignoring unknown
-        keys. Comma-separated env-var strings populate ``list[...]`` fields.
+        keys. Comma-separated env-var strings populate ``list[...]`` fields; a
+        JSON-array string (``[...]``, e.g. ``LLM_CHAIN``) is passed through
+        verbatim for the field's own validator to parse.
         """
         configurable = config.get("configurable", {})
 
@@ -40,7 +42,14 @@ class BaseConfiguration(BaseModel):
             if raw is None:
                 continue
             if isinstance(raw, str) and _is_list_field(field.annotation):
-                raw = [item.strip() for item in raw.split(",") if item.strip()]
+                stripped = raw.strip()
+                # A JSON array is left for the field's before-validator (e.g.
+                # llm_chain); only simple "a,b,c" strings are comma-split here.
+                raw = (
+                    stripped
+                    if stripped.startswith("[")
+                    else [item.strip() for item in raw.split(",") if item.strip()]
+                )
             values[name] = raw
 
         return cls(**values)

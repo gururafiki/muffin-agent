@@ -1,15 +1,19 @@
 """Configuration and LLM provider management."""
 
+import json
+import logging
 from functools import lru_cache
 from typing import Any, Literal, overload
 
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import AIMessage
-from langchain_core.rate_limiters import BaseRateLimiter, InMemoryRateLimiter
+from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_core.runnables import Runnable, RunnableConfig
 from pydantic import BaseModel, Field, field_validator
 
 from .utils.base_config import BaseConfiguration
+
+logger = logging.getLogger(__name__)
 
 # NOTE: do NOT default to a `:free` OpenRouter route. Free routes have
 # aggressive rate limits, frequent mid-stream chunk-merge bugs, and no
@@ -18,7 +22,32 @@ from .utils.base_config import BaseConfiguration
 # ``ORCHESTRATOR_MODELS`` / ``COLLECTOR_MODELS`` / ``REASONER_MODELS``).
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 
+# Ollama Cloud's remote host. Reached over the NATIVE ``/api/chat`` API (NOT the
+# OpenAI-compat ``/v1`` path, whose tool calling is unreliable) — see the
+# ``ollama`` branch of :meth:`ModelConfiguration._build_chat_model`.
+DEFAULT_OLLAMA_BASE_URL = "https://ollama.com"
+
+Provider = Literal["openai", "anthropic", "openrouter", "ollama"]
 Role = Literal["orchestrator", "collector", "reasoner"]
+
+
+class LLMProfile(BaseModel):
+    """One entry in the ordered :attr:`ModelConfiguration.llm_chain`.
+
+    Index 0 is the primary; the rest are fallbacks. A profile is **non-secret
+    by design** — ``api_key`` is normally omitted so it resolves the provider's
+    top-level key (``ollama_api_key`` / ``openrouter_api_key`` / …), keeping
+    keys out of the ``LLM_CHAIN`` blob. ``requests_per_second`` is per-profile:
+    a relaxed primary (Ollama, unset) and a rate-limited fallback (OpenRouter
+    free = 0.3) coexist because each chat model gets its own shared limiter
+    keyed by this value (:func:`_shared_rate_limiter`).
+    """
+
+    provider: Provider
+    model: str
+    api_key: str | None = None
+    base_url: str | None = None
+    requests_per_second: float | None = Field(default=None, gt=0)
 
 
 @lru_cache(maxsize=8)
@@ -54,8 +83,20 @@ class ModelConfiguration(BaseConfiguration):
 
     model: str = Field(default=DEFAULT_MODEL)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
-    llm_provider: Literal["openai", "anthropic", "openrouter"] = "openai"
+    llm_provider: Provider = "openai"
     llm_sdk_retries: int = Field(default=6, ge=0, le=10)
+    llm_chain: list[LLMProfile] = Field(
+        default_factory=list,
+        description=(
+            "Ordered cross-provider model chain (primary first, rest fallbacks). "
+            "When set it is authoritative for EVERY role — supersedes llm_provider/"
+            "model and the per-role *_models chains — and its primary (index 0) "
+            "also supplies the default for the single-model get_llm() path. Env "
+            "LLM_CHAIN is a JSON array of {provider, model, api_key?, base_url?, "
+            "requests_per_second?}; profiles usually omit api_key and resolve the "
+            "provider's top-level key. Unset = legacy llm_provider/model behaviour."
+        ),
+    )
     llm_requests_per_second: float | None = Field(
         default=None,
         gt=0,
@@ -72,6 +113,16 @@ class ModelConfiguration(BaseConfiguration):
     anthropic_api_key: str | None = None
     openrouter_api_key: str | None = None
     openai_site_url: str | None = None
+    ollama_api_key: str | None = None
+    ollama_base_url: str | None = Field(
+        default=None,
+        description=(
+            "Ollama host reached over the native /api/chat API. Unset defaults "
+            "to Ollama Cloud (https://ollama.com); set to e.g. "
+            "http://localhost:11434 for a local server. Never append /v1 "
+            "(the OpenAI-compat path has unreliable tool calling)."
+        ),
+    )
 
     orchestrator_models: list[str] = Field(default_factory=list)
     collector_models: list[str] = Field(default_factory=list)
@@ -97,61 +148,153 @@ class ModelConfiguration(BaseConfiguration):
             return None
         return v
 
-    def _rate_limiter(self) -> BaseRateLimiter | None:
-        """Shared process-wide rate limiter (or None) from llm_requests_per_second."""
-        rps = self.llm_requests_per_second
-        return _shared_rate_limiter(rps) if rps else None
+    @field_validator("llm_chain", mode="before")
+    @classmethod
+    def _parse_llm_chain(cls, v: Any) -> Any:
+        """Parse the ``LLM_CHAIN`` env var (a JSON array) into profiles.
 
-    def get_llm(
-        self, model: str | None = None, temperature: float | None = None, **kwargs: Any
+        ``configurable`` may already supply a native list — passed through
+        untouched. A blank/empty env string means "unset" (legacy behaviour).
+        """
+        if isinstance(v, str):
+            stripped = v.strip()
+            return json.loads(stripped) if stripped else []
+        return v
+
+    def _build_chat_model(
+        self,
+        *,
+        provider: str,
+        model: str,
+        api_key: str | None,
+        base_url: str | None,
+        requests_per_second: float | None,
+        temperature: float,
+        **kwargs: Any,
     ) -> BaseChatModel:
-        """Get a single LLM instance based on ``llm_provider``."""
-        model = model or self.model
-        temperature = temperature if temperature is not None else self.temperature
-        rate_limiter = self._rate_limiter()
+        """Construct one chat model for *provider*, with its own rate limiter.
 
-        if self.llm_provider == "openai":
+        Single dispatch point for every provider. ``api_key`` / ``base_url`` fall
+        back to the matching top-level config field when ``None``, so a chain
+        profile can omit them and still resolve the deployment's key. Raises
+        ``ValueError`` when the provider's key is absent.
+        """
+        rate_limiter = (
+            _shared_rate_limiter(requests_per_second) if requests_per_second else None
+        )
+        if provider == "openai":
             from langchain_openai import ChatOpenAI
 
-            if not self.openai_api_key:
+            key = api_key or self.openai_api_key
+            if not key:
                 raise ValueError("OpenAI API key not configured")
+            site_url = base_url or self.openai_site_url
             return ChatOpenAI(
                 model=model,
                 temperature=temperature,
-                api_key=self.openai_api_key,
-                base_url=self.openai_site_url,
-                default_headers={"HTTP-Referer": self.openai_site_url or ""},
+                api_key=key,
+                base_url=site_url,
+                default_headers={"HTTP-Referer": site_url or ""},
                 max_retries=self.llm_sdk_retries,
                 rate_limiter=rate_limiter,
                 **kwargs,
             )
-        if self.llm_provider == "anthropic":
+        if provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
 
-            if not self.anthropic_api_key:
+            key = api_key or self.anthropic_api_key
+            if not key:
                 raise ValueError("Anthropic API key not configured")
             return ChatAnthropic(
                 model=model,
                 temperature=temperature,
-                api_key=self.anthropic_api_key,
+                api_key=key,
                 max_retries=self.llm_sdk_retries,
                 rate_limiter=rate_limiter,
                 **kwargs,
             )
-        if self.llm_provider == "openrouter":
+        if provider == "openrouter":
             from langchain_openrouter import ChatOpenRouter
 
-            if not self.openrouter_api_key:
+            key = api_key or self.openrouter_api_key
+            if not key:
                 raise ValueError("OpenRouter API key not configured")
             return ChatOpenRouter(
                 model=model,
                 temperature=temperature,
-                openrouter_api_key=self.openrouter_api_key,
+                openrouter_api_key=key,
                 max_retries=self.llm_sdk_retries,
                 rate_limiter=rate_limiter,
                 **kwargs,
             )
-        raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
+        if provider == "ollama":
+            from langchain_ollama import ChatOllama
+
+            # Native /api/chat host (Ollama Cloud or local). Cloud requires the
+            # bearer header; local needs no key. ChatOllama has NO ``max_retries``
+            # param — connect-time + mid-stream retries are handled by the
+            # universal ModelRetryMiddleware in MuffinAgentBuilder.
+            key = api_key or self.ollama_api_key
+            client_kwargs: dict[str, Any] = {}
+            if key:
+                client_kwargs["headers"] = {"Authorization": f"Bearer {key}"}
+            return ChatOllama(
+                model=model,
+                temperature=temperature,
+                base_url=base_url or self.ollama_base_url or DEFAULT_OLLAMA_BASE_URL,
+                client_kwargs=client_kwargs,
+                rate_limiter=rate_limiter,
+                **kwargs,
+            )
+        raise ValueError(f"Unsupported LLM provider: {provider}")
+
+    def _build_from_profile(
+        self, profile: LLMProfile, *, temperature: float | None = None, **kwargs: Any
+    ) -> BaseChatModel:
+        """Build a chat model from one ``llm_chain`` profile.
+
+        Uses the profile's OWN ``api_key`` / ``base_url`` / ``requests_per_second``
+        (each with a top-level fallback), so per-provider rate limits are honoured.
+        """
+        return self._build_chat_model(
+            provider=profile.provider,
+            model=profile.model,
+            api_key=profile.api_key,
+            base_url=profile.base_url,
+            requests_per_second=profile.requests_per_second,
+            temperature=temperature if temperature is not None else self.temperature,
+            **kwargs,
+        )
+
+    def get_llm(
+        self,
+        model: str | None = None,
+        temperature: float | None = None,
+        *,
+        provider: str | None = None,
+        **kwargs: Any,
+    ) -> BaseChatModel:
+        """Get a single LLM instance (legacy single-model path).
+
+        When ``llm_chain`` is configured, its primary profile (index 0) supplies
+        the default provider + model so direct callers (e.g. the summariser) stay
+        consistent with the role-path primary. Top-level provider key / base_url /
+        ``llm_requests_per_second`` are used here — for per-profile base_url and
+        rate limits, go through :meth:`get_llm_for_role`.
+        """
+        primary = self.llm_chain[0] if self.llm_chain else None
+        provider = provider or (primary.provider if primary else self.llm_provider)
+        model = model or (primary.model if primary else self.model)
+        temperature = temperature if temperature is not None else self.temperature
+        return self._build_chat_model(
+            provider=provider,
+            model=model,
+            api_key=None,
+            base_url=None,
+            requests_per_second=self.llm_requests_per_second,
+            temperature=temperature,
+            **kwargs,
+        )
 
     def get_llm_for_role(
         self,
@@ -160,11 +303,34 @@ class ModelConfiguration(BaseConfiguration):
         temperature: float | None = None,
         **kwargs: Any,
     ) -> list[BaseChatModel]:
-        """Return the ordered model chain for *role*.
+        """Return the ordered model chain for *role* (primary first, fallbacks).
 
-        First entry is the primary; remainder are fallbacks. Always non-empty —
-        if the role chain is unset, returns ``[self.get_llm(...)]``.
+        Precedence: the cross-provider ``llm_chain`` (when set) is authoritative
+        for every role; else the per-role ``{role}_models`` chain (single
+        provider); else ``[get_llm()]``. Always non-empty.
+
+        A fallback profile that cannot be built (e.g. its provider key is absent
+        for a bring-your-own single-key caller) is warn-skipped; a primary that
+        cannot be built re-raises.
         """
+        if self.llm_chain:
+            models: list[BaseChatModel] = []
+            for index, profile in enumerate(self.llm_chain):
+                try:
+                    models.append(
+                        self._build_from_profile(
+                            profile, temperature=temperature, **kwargs
+                        )
+                    )
+                except ValueError:
+                    if index == 0:
+                        raise
+                    logger.warning(
+                        "Skipping llm_chain fallback #%d (%s): not configured",
+                        index,
+                        profile.provider,
+                    )
+            return models
         chain = getattr(self, f"{role}_models")
         if not chain:
             return [self.get_llm(temperature=temperature, **kwargs)]
