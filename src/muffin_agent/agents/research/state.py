@@ -16,6 +16,8 @@ from typing import Annotated, Any, Literal, NotRequired
 from langchain.agents import AgentState
 from langchain_core.messages import BaseMessage
 
+from muffin_agent.middlewares.agent_capture.records import merge_tool_runs
+
 TaskType = Literal[
     "research_report",
     "comparison",
@@ -61,6 +63,12 @@ class ResearchState(AgentState):
 
     # ── Final output ───────────────────────────────────────────────────
     output: NotRequired[dict[str, Any]]
+
+    # ── Tool-execution capture (declaring the channel opts this graph in) ─
+    tool_runs: NotRequired[Annotated[list[dict[str, Any]], merge_tool_runs]]
+    """Tool-execution records captured by ``AgentCaptureMiddleware``. The
+    researcher is a function node, so ``researcher_node`` forwards the deep
+    agent's ``tool_runs`` explicitly (see ``nodes/researcher.py``)."""
 
 
 class ResearchClassificationFilterState(AgentState):

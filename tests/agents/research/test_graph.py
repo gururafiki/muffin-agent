@@ -20,6 +20,11 @@ from muffin_agent.agents.research.schemas import (
     ResearchOutput,
 )
 
+#: One tool-execution record the researcher stub emits, mimicking
+#: ``AgentCaptureMiddleware`` output so the node's ``tool_runs`` forwarding + the
+#: ``ResearchState`` channel are exercised end-to-end.
+_STUB_TOOL_RUN = {"tool": "firecrawl_search", "agent": "deep-research", "status": "ok"}
+
 
 @pytest.mark.unit
 class TestBuildGraph:
@@ -59,7 +64,12 @@ def _patch_all_nodes(
 
     class _ResearcherStub:
         async def ainvoke(self, *_a: Any, **_kw: Any) -> dict[str, Any]:
-            return {"structured_response": findings}
+            # Mimic the deep agent's AgentCaptureMiddleware output so the node's
+            # tool_runs forwarding + the ResearchState channel are exercised.
+            return {
+                "structured_response": findings,
+                "tool_runs": [_STUB_TOOL_RUN],
+            }
 
     class _WriterStub:
         async def ainvoke(self, *_a: Any, **_kw: Any) -> dict[str, Any]:
@@ -115,6 +125,8 @@ class TestEndToEnd:
         # Flat classification keys are present.
         assert result["task_type"] == "how_to"
         assert result["mode"] == "balanced"
+        # The researcher's captured tool_runs surface for the "Tool execution" panel.
+        assert result["tool_runs"] == [_STUB_TOOL_RUN]
 
     async def test_skip_search_bypasses_researcher_and_rerank(
         self,
