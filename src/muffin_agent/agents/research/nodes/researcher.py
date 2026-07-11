@@ -164,4 +164,8 @@ async def researcher_node(
         return {"evidence": []}
 
     chunks = [chunk.model_dump() for chunk in structured.evidence_chunks]
-    return {"evidence": chunks}
+    # Forward the deep agent's captured tool_runs (its own + nested subagents')
+    # so the run view's "Tool execution" panel populates. It's a function node,
+    # so the records don't auto-propagate like a compiled-agent graph node.
+    tool_runs = result.get("tool_runs") if isinstance(result, dict) else None
+    return {"evidence": chunks, "tool_runs": tool_runs or []}

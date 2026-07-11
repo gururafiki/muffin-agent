@@ -32,6 +32,8 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
+from muffin_agent.middlewares.agent_capture.records import merge_tool_runs
+
 
 class AnalystInput(TypedDict, total=False):
     """Input contract for the four analyst nodes (market/fundamentals/news/social).
@@ -131,3 +133,10 @@ class TradingDecisionState(TypedDict, total=False):
 
     resolved_decisions: list[dict[str, Any]]
     """Observability: list of decisions the resolver resolved this run."""
+
+    # ── Tool-execution capture (declaring the channel opts this graph in) ────
+    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
+    """Tool-execution records captured by ``AgentCaptureMiddleware``. The four
+    analyst agents are added as parent-graph nodes (no ``output_schema``
+    restriction), so their records merge up here automatically; the downstream
+    Bull/Bear/Judge/Trader/PM nodes make no tool calls."""
