@@ -109,7 +109,8 @@ from ..middlewares.tool_result_cache.tools import (
 )
 from ..prompts import render_template
 from ..sandbox import get_backend
-from ._runtime_prompt_middleware import _RuntimePromptMiddleware
+from ._ensure_user_message_middleware import _EnsureUserMessageMiddleware
+from ._input_prompt_middleware import _InputPromptMiddleware
 from ._structured_response_to_state_middleware import (
     _StructuredResponseToStateMiddleware,
 )
@@ -377,7 +378,7 @@ class MuffinAgentBuilder:
         self._store: BaseStore | None = None
         self._context_schema: type | None = None
         self._state_schema: type | None = None
-        self._runtime_prompt_template: str | None = None
+        self._input_prompt_template: str | None = None
         self._checkpointer: Checkpointer | None = None
 
     # ─── System prompt ───────────────────────────────────────────────────
@@ -400,30 +401,30 @@ class MuffinAgentBuilder:
         self._prompt.base = render_template(template, **vars)
         return self
 
-    def with_runtime_system_prompt_template(self, template: str) -> Self:
-        """Render the system prompt from runtime state on each LLM call.
+    def with_input_prompt_template(self, template: str) -> Self:
+        """Render the task/input into the agent's FIRST human message.
 
-        Unlike :meth:`with_system_prompt_template` (which resolves
-        variables at build time), this method re-renders the template
-        per call from the agent's state.
+        For compiled-agent-as-node stages the task arrives via an explicit
+        ``input_schema`` (state fields), not as chat messages. This renders
+        *template* from those input fields into the first ``HumanMessage`` (once,
+        at agent start) — so the task is a proper user turn instead of being
+        baked into the system prompt. Keeping user input OUT of the system prompt
+        is also what stops Ollama Cloud from 500-ing on a system-only request.
 
-        When :meth:`with_state_schema` is also set, the middleware
-        introspects the schema's ``OmitFromSchema`` annotations and
-        passes ONLY the input-eligible fields as Jinja variables
-        (skipping reserved fields like ``messages`` /
-        ``structured_response``). Without a state schema, all
-        non-reserved state fields are passed.
-
-        Templates reference whichever fields they need; use
+        When :meth:`with_state_schema` is also set, only input-eligible fields
+        (skipping ``OmitFromSchema(input=True)`` and reserved fields like
+        ``messages`` / ``structured_response``) flow as Jinja variables. Without
+        a state schema, all non-reserved state fields are passed. Templates use
         ``{% if x %}`` to handle absent values.
 
-        Mutually exclusive with :meth:`with_system_prompt` /
-        :meth:`with_system_prompt_template` for the BASE prompt
-        (``system_prompt=None`` is forwarded to ``create_agent`` when
-        this method is used). Muffin-managed partials (sandbox, memory,
-        etc.) are still appended.
+        Seeding is skipped when the agent is invoked WITH a human message already
+        (e.g. a subagent spawned via the deepagents ``task`` tool) — the
+        caller-supplied turn IS the input. ``system_prompt=None`` is forwarded to
+        the terminal builder so the deepagents base survives; muffin-managed
+        partials (sandbox, memory, skills — no user input) still compose onto the
+        system message via ``_InputPromptMiddleware``.
         """
-        self._runtime_prompt_template = template
+        self._input_prompt_template = template
         return self
 
     # ─── Backend capabilities ────────────────────────────────────────────
@@ -824,11 +825,11 @@ class MuffinAgentBuilder:
         :class:`deepagents.graph.DeepAgentState` (not plain ``AgentState``)
         so the filesystem/todos channels survive.
         """
-        # When a runtime-rendered prompt is configured, the base prompt is
-        # injected per call by _RuntimePromptMiddleware (composed ONTO the
-        # deepagents base prompt). Forward ``system_prompt=None`` so
+        # With an input-prompt template the task goes to the first human message
+        # and the capability partials are composed onto the deepagents base by
+        # _InputPromptMiddleware. Forward ``system_prompt=None`` so
         # create_deep_agent doesn't double-inject the static render.
-        system_prompt = None if self._runtime_prompt_template else self._prompt.render()
+        system_prompt = None if self._input_prompt_template else self._prompt.render()
         return create_deep_agent(
             model=self._model,
             tools=self._tools.tools or None,
@@ -866,10 +867,11 @@ class MuffinAgentBuilder:
             )
         self._prompt.add_partial(_PARTIAL_FILESYSTEM)
         backend_factory = self._backend.factory()
-        # When a runtime-rendered prompt is configured, the base prompt
-        # is injected per call by _RuntimePromptMiddleware. Forward
-        # ``system_prompt=None`` so create_agent doesn't double-inject.
-        system_prompt = None if self._runtime_prompt_template else self._prompt.render()
+        # With an input-prompt template the task goes to the first human message
+        # and the capability partials are composed onto the system message by
+        # _InputPromptMiddleware. Forward ``system_prompt=None`` so create_agent
+        # doesn't double-inject the static render.
+        system_prompt = None if self._input_prompt_template else self._prompt.render()
         return create_agent(
             model=self._model,
             tools=self._tools.tools or None,
@@ -954,6 +956,12 @@ class MuffinAgentBuilder:
            (auth/perm/validation).  ``on_failure="error"`` propagates
            the exception after exhaustion so the outer fallback can
            switch models.
+        4a. :class:`_EnsureUserMessageMiddleware` (universal) — injects a
+            minimal ``HumanMessage`` when a model call would otherwise be
+            *system-only* (some providers, e.g. Ollama Cloud, 500 on it).
+            No-op for normal agents; inside the retry/fallback boundary so
+            every attempt carries a user turn.  The ordinary source of the
+            user turn is :class:`_InputPromptMiddleware` (step 12a).
         5. :class:`ContextEditingMiddleware` (conditional) — registered
            only when :meth:`with_context_editing` was called.  Runs
            inside the fallback/retry boundary so the same edited message
@@ -1007,6 +1015,10 @@ class MuffinAgentBuilder:
                 jitter=True,
             )
         )
+        # Universal guard: never send a system-only request (some providers,
+        # e.g. Ollama Cloud, 500 on it). No-op for normal agents. Inside the
+        # retry/fallback boundary so every model attempt carries a user turn.
+        stack.append(_EnsureUserMessageMiddleware())
         if self._context_editing is not None:
             stack.append(self._context_editing)
         if self._summarization is not None:
@@ -1075,14 +1087,14 @@ class MuffinAgentBuilder:
         )
         if self._skills.filter_middleware is not None:
             stack.append(self._skills.filter_middleware)
-        # Runtime prompt + structured-response unpacking middlewares
+        # Input-prompt + structured-response unpacking middlewares
         # (built into the builder for the compiled-agent-as-direct-node
         # pattern). Added just before caller-supplied middleware so
         # custom middleware can still override behaviour.
-        if self._runtime_prompt_template is not None:
+        if self._input_prompt_template is not None:
             stack.append(
-                _RuntimePromptMiddleware(
-                    template=self._runtime_prompt_template,
+                _InputPromptMiddleware(
+                    template=self._input_prompt_template,
                     state_schema=self._state_schema,
                     static_partials=tuple(self._prompt.partials),
                 )

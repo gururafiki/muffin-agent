@@ -233,7 +233,7 @@ async def create_criteria_definition_agent(
     builder = (
         MuffinAgentBuilder(primary, name="criteria_definition")
         .with_state_schema(CriteriaDefinitionAgentState)
-        .with_runtime_system_prompt_template("criteria_definition.jinja")
+        .with_input_prompt_template("criteria_definition.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()

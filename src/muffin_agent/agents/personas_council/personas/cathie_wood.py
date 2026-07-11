@@ -495,7 +495,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         MuffinAgentBuilder(primary, name="cathie_wood_data_collection")
         .with_fallback_models(*fallbacks)
         .with_state_schema(CathieWoodState)
-        .with_runtime_system_prompt_template(
+        .with_input_prompt_template(
             "personas_council/personas/cathie_wood_data_collection.jinja"
         )
         .with_response_format(CathieWoodRawData)

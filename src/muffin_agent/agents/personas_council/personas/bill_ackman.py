@@ -395,7 +395,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         MuffinAgentBuilder(primary, name="bill_ackman_data_collection")
         .with_fallback_models(*fallbacks)
         .with_state_schema(BillAckmanState)
-        .with_runtime_system_prompt_template(
+        .with_input_prompt_template(
             "personas_council/personas/bill_ackman_data_collection.jinja"
         )
         .with_response_format(BillAckmanRawData)

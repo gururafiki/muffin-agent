@@ -81,12 +81,23 @@ class Script:
 
     def last_system_prompt(self) -> str:
         """System-message content of the most recent model call (best effort)."""
+        return self._last_content_of_type("system")
+
+    def last_human_prompt(self) -> str:
+        """First human-message content of the most recent model call.
+
+        The task/input is seeded here by ``_InputPromptMiddleware`` (never baked
+        into the system prompt), so node-agent tests assert on this.
+        """
+        return self._last_content_of_type("human")
+
+    def _last_content_of_type(self, msg_type: str) -> str:
         if not self.inputs:
             return ""
         call_input = self.inputs[-1]
         if isinstance(call_input, (list, tuple)):
             for msg in call_input:
-                if getattr(msg, "type", None) == "system":
+                if getattr(msg, "type", None) == msg_type:
                     return str(getattr(msg, "content", ""))
         return ""
 

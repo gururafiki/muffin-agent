@@ -72,7 +72,7 @@ async def build_market_analyst_agent(
         MuffinAgentBuilder(primary, name="market_analyst")
         .with_fallback_models(*fallbacks)
         .with_state_schema(MarketAnalystState)
-        .with_runtime_system_prompt_template(
+        .with_input_prompt_template(
             "trading_decision/analysts/market.jinja",
         )
         .with_response_format(MarketAnalystOutput)

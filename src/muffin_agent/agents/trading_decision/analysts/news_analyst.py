@@ -53,7 +53,7 @@ async def build_news_analyst_agent(
         MuffinAgentBuilder(primary, name="news_analyst")
         .with_fallback_models(*fallbacks)
         .with_state_schema(NewsAnalystState)
-        .with_runtime_system_prompt_template(
+        .with_input_prompt_template(
             "trading_decision/analysts/news.jinja",
         )
         .with_response_format(NewsAnalystOutput)

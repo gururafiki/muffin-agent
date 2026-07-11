@@ -53,7 +53,7 @@ async def build_social_analyst_agent(
         MuffinAgentBuilder(primary, name="social_analyst")
         .with_fallback_models(*fallbacks)
         .with_state_schema(SocialAnalystState)
-        .with_runtime_system_prompt_template(
+        .with_input_prompt_template(
             "trading_decision/analysts/social.jinja",
         )
         .with_response_format(SocialAnalystOutput)

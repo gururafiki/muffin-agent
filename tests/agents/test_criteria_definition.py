@@ -700,8 +700,8 @@ class TestCreateCriteriaDefinitionAgent:
                 ToolKnowledgeMiddleware,
                 ToolResultCacheMiddleware,
             )
-            from muffin_agent.utils._runtime_prompt_middleware import (
-                _RuntimePromptMiddleware,
+            from muffin_agent.utils._input_prompt_middleware import (
+                _InputPromptMiddleware,
             )
             from muffin_agent.utils._structured_response_to_state_middleware import (
                 _StructuredResponseToStateMiddleware,
@@ -717,12 +717,12 @@ class TestCreateCriteriaDefinitionAgent:
             # Skill filtering reads the flat classification state keys.
             skill = next(m for m in middleware if isinstance(m, SkillFilterMiddleware))
             assert skill.state_schema is TickerClassification
-            # Native-composition additions: runtime prompt + response unpacking.
-            assert _RuntimePromptMiddleware in types
+            # Native-composition additions: input prompt + response unpacking.
+            assert _InputPromptMiddleware in types
             assert _StructuredResponseToStateMiddleware in types
-            # Response unpacking runs after the runtime prompt (last two).
+            # Response unpacking runs after the input prompt (last two).
             assert types.index(_StructuredResponseToStateMiddleware) > types.index(
-                _RuntimePromptMiddleware
+                _InputPromptMiddleware
             )
 
 
