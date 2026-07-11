@@ -491,7 +491,7 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
         MuffinAgentBuilder(primary, name="phil_fisher_data_collection")
         .with_fallback_models(*fallbacks)
         .with_state_schema(PhilFisherState)
-        .with_runtime_system_prompt_template(
+        .with_input_prompt_template(
             "personas_council/personas/phil_fisher_data_collection.jinja"
         )
         .with_response_format(PhilFisherRawData)

@@ -58,7 +58,7 @@ async def create_synthesis_agent(
     builder = (
         MuffinAgentBuilder(primary, name="criteria_analysis_synthesis")
         .with_state_schema(SynthesisAgentState)
-        .with_runtime_system_prompt_template("criteria_analysis/synthesis.jinja")
+        .with_input_prompt_template("criteria_analysis/synthesis.jinja")
         .with_fallback_models(*fallbacks)
         .with_response_format(AutoStrategy(schema=SynthesisNodeOutput))
     )

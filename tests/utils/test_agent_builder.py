@@ -38,6 +38,9 @@ class TestMinimalBuilders:
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
+        from muffin_agent.utils._ensure_user_message_middleware import (
+            _EnsureUserMessageMiddleware,
+        )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
         model = MagicMock(name="llm")
@@ -49,16 +52,17 @@ class TestMinimalBuilders:
         assert kwargs["backend"] is None
         assert kwargs["system_prompt"] is None
         mw = kwargs["middleware"]
-        assert len(mw) == 6
+        assert len(mw) == 7
         assert isinstance(mw[0], ModelRetryMiddleware)
-        assert isinstance(mw[1], ToolKnowledgeMiddleware)
-        assert isinstance(mw[2], ToolResultCacheMiddleware)
-        assert mw[2]._cacheable_tools is None
-        assert isinstance(mw[3], ToolRetryMiddleware)
-        assert isinstance(mw[4], AgentCaptureParentMiddleware)
+        assert isinstance(mw[1], _EnsureUserMessageMiddleware)
+        assert isinstance(mw[2], ToolKnowledgeMiddleware)
+        assert isinstance(mw[3], ToolResultCacheMiddleware)
+        assert mw[3]._cacheable_tools is None
+        assert isinstance(mw[4], ToolRetryMiddleware)
+        assert isinstance(mw[5], AgentCaptureParentMiddleware)
         # Deep agents carry a guarded capturer: the transcript channel fires
         # only when the deep agent is itself task-invoked as a subagent.
-        assert isinstance(mw[5], AgentCaptureMiddleware)
+        assert isinstance(mw[6], AgentCaptureMiddleware)
 
     def test_minimal_react_agent_no_filesystem_middleware(self):
         """No routes → no ``FilesystemMiddleware`` wired on a ReAct agent."""
@@ -211,6 +215,9 @@ class TestSkills:
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
+        from muffin_agent.utils._ensure_user_message_middleware import (
+            _EnsureUserMessageMiddleware,
+        )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
         with patch(_DEEP_PATCH) as mock_cda:
@@ -222,13 +229,14 @@ class TestSkills:
 
         mw = _deep_kwargs(mock_cda)["middleware"]
         # Universal middlewares + the agent-capture pair, no skill filter.
-        assert len(mw) == 6
+        assert len(mw) == 7
         assert isinstance(mw[0], ModelRetryMiddleware)
-        assert isinstance(mw[1], ToolKnowledgeMiddleware)
-        assert isinstance(mw[2], ToolResultCacheMiddleware)
-        assert isinstance(mw[3], ToolRetryMiddleware)
-        assert isinstance(mw[4], AgentCaptureParentMiddleware)
-        assert isinstance(mw[5], AgentCaptureMiddleware)
+        assert isinstance(mw[1], _EnsureUserMessageMiddleware)
+        assert isinstance(mw[2], ToolKnowledgeMiddleware)
+        assert isinstance(mw[3], ToolResultCacheMiddleware)
+        assert isinstance(mw[4], ToolRetryMiddleware)
+        assert isinstance(mw[5], AgentCaptureParentMiddleware)
+        assert isinstance(mw[6], AgentCaptureMiddleware)
 
     def test_with_skills_called_twice_raises(self, tmp_path):
         """Calling ``with_skills`` twice raises ``ValueError``."""
@@ -420,8 +428,8 @@ class TestPermissionsAndMiddleware:
 
         mw = _deep_kwargs(mock_cda)["middleware"]
         assert isinstance(mw[0], ModelRetryMiddleware)
-        assert isinstance(mw[1], ToolKnowledgeMiddleware)
-        assert isinstance(mw[2], ToolResultCacheMiddleware)
+        assert isinstance(mw[2], ToolKnowledgeMiddleware)
+        assert isinstance(mw[3], ToolResultCacheMiddleware)
         assert mw[-2] is x
         assert mw[-1] is y
 
@@ -970,6 +978,9 @@ class TestMiddlewareOrder:
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
+        from muffin_agent.utils._ensure_user_message_middleware import (
+            _EnsureUserMessageMiddleware,
+        )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
         caller_mw = MagicMock(spec=AgentMiddleware)
@@ -984,14 +995,15 @@ class TestMiddlewareOrder:
 
         mw = _react_kwargs(mock_ca)["middleware"]
         assert isinstance(mw[0], ModelRetryMiddleware)
-        assert isinstance(mw[1], ToolKnowledgeMiddleware)
-        assert isinstance(mw[2], ToolResultCacheMiddleware)
-        assert isinstance(mw[3], ToolRetryMiddleware)
-        assert isinstance(mw[4], FilesystemMiddleware)
-        assert isinstance(mw[5], MemoryMiddleware)
-        assert isinstance(mw[6], AgentCaptureParentMiddleware)
-        assert isinstance(mw[7], AgentCaptureMiddleware)
-        assert mw[8] is caller_mw
+        assert isinstance(mw[1], _EnsureUserMessageMiddleware)
+        assert isinstance(mw[2], ToolKnowledgeMiddleware)
+        assert isinstance(mw[3], ToolResultCacheMiddleware)
+        assert isinstance(mw[4], ToolRetryMiddleware)
+        assert isinstance(mw[5], FilesystemMiddleware)
+        assert isinstance(mw[6], MemoryMiddleware)
+        assert isinstance(mw[7], AgentCaptureParentMiddleware)
+        assert isinstance(mw[8], AgentCaptureMiddleware)
+        assert mw[9] is caller_mw
 
     def test_full_order_with_all_optionals(self):
         """All optional middleware land in the documented order."""
@@ -1009,6 +1021,9 @@ class TestMiddlewareOrder:
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
+        from muffin_agent.utils._ensure_user_message_middleware import (
+            _EnsureUserMessageMiddleware,
+        )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
         with patch(_REACT_PATCH) as mock_ca:
@@ -1025,13 +1040,14 @@ class TestMiddlewareOrder:
         mw = _react_kwargs(mock_ca)["middleware"]
         assert isinstance(mw[0], ModelFallbackMiddleware)
         assert isinstance(mw[1], ModelRetryMiddleware)
-        assert isinstance(mw[2], ContextEditingMiddleware)
-        assert isinstance(mw[3], SummarizationMiddleware)
-        assert isinstance(mw[4], ToolKnowledgeMiddleware)
-        assert isinstance(mw[5], ToolResultCacheMiddleware)
-        assert isinstance(mw[6], ToolRetryMiddleware)
-        assert isinstance(mw[7], FilesystemMiddleware)
-        assert isinstance(mw[8], MemoryMiddleware)
+        assert isinstance(mw[2], _EnsureUserMessageMiddleware)
+        assert isinstance(mw[3], ContextEditingMiddleware)
+        assert isinstance(mw[4], SummarizationMiddleware)
+        assert isinstance(mw[5], ToolKnowledgeMiddleware)
+        assert isinstance(mw[6], ToolResultCacheMiddleware)
+        assert isinstance(mw[7], ToolRetryMiddleware)
+        assert isinstance(mw[8], FilesystemMiddleware)
+        assert isinstance(mw[9], MemoryMiddleware)
 
     def test_react_order_with_fallback_models(self):
         """Fallback is outermost when configured."""
@@ -1050,6 +1066,9 @@ class TestMiddlewareOrder:
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
+        from muffin_agent.utils._ensure_user_message_middleware import (
+            _EnsureUserMessageMiddleware,
+        )
         from muffin_agent.utils.agent_builder import MuffinAgentBuilder
 
         caller_mw = MagicMock(spec=AgentMiddleware)
@@ -1066,14 +1085,15 @@ class TestMiddlewareOrder:
         mw = _react_kwargs(mock_ca)["middleware"]
         assert isinstance(mw[0], ModelFallbackMiddleware)
         assert isinstance(mw[1], ModelRetryMiddleware)
-        assert isinstance(mw[2], ToolKnowledgeMiddleware)
-        assert isinstance(mw[3], ToolResultCacheMiddleware)
-        assert isinstance(mw[4], ToolRetryMiddleware)
-        assert isinstance(mw[5], FilesystemMiddleware)
-        assert isinstance(mw[6], MemoryMiddleware)
-        assert isinstance(mw[7], AgentCaptureParentMiddleware)
-        assert isinstance(mw[8], AgentCaptureMiddleware)
-        assert mw[9] is caller_mw
+        assert isinstance(mw[2], _EnsureUserMessageMiddleware)
+        assert isinstance(mw[3], ToolKnowledgeMiddleware)
+        assert isinstance(mw[4], ToolResultCacheMiddleware)
+        assert isinstance(mw[5], ToolRetryMiddleware)
+        assert isinstance(mw[6], FilesystemMiddleware)
+        assert isinstance(mw[7], MemoryMiddleware)
+        assert isinstance(mw[8], AgentCaptureParentMiddleware)
+        assert isinstance(mw[9], AgentCaptureMiddleware)
+        assert mw[10] is caller_mw
 
 
 @pytest.mark.unit

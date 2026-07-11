@@ -174,9 +174,10 @@ async def test_criteria_analysis_runs_end_to_end(config, store):
         assert "error" not in result[key]
 
 
-async def test_classification_stage_renders_ticker_into_system_prompt(config, store):
-    """Regression: the requested ticker MUST reach the model (via the system
-    prompt now that context is rendered, not a dropped ``input`` key)."""
+async def test_classification_stage_renders_ticker_into_human_message(config, store):
+    """Regression: the requested ticker MUST reach the model — now via the FIRST
+    human message (input template), never baked into the system prompt (which
+    would make Ollama Cloud 500 on the system-only call)."""
     from muffin_agent.agents.criteria_analysis.ticker_classification import (
         create_ticker_classification_agent,
     )
@@ -207,8 +208,10 @@ async def test_classification_stage_renders_ticker_into_system_prompt(config, st
         await agent.ainvoke({"ticker": "AAPL", "query": "hold?"}, config=config)
 
     system = cursor.last_system_prompt().lower()
-    assert "aapl" in system  # the ticker was rendered into the prompt
-    assert "ticker classification agent" in system  # base prompt survived
+    human = cursor.last_human_prompt().lower()
+    assert "aapl" in human  # the ticker was rendered into the first human message
+    assert "ticker classification agent" in human  # the task template is the user turn
+    assert "aapl" not in system  # user input is NOT baked into the system prompt
 
 
 async def test_lessons_block_composes_not_replaces_system_prompt(config, store):
@@ -254,5 +257,9 @@ async def test_lessons_block_composes_not_replaces_system_prompt(config, store):
         await agent.ainvoke({"ticker": "AAPL", "query": "hold?"}, config=config)
 
     system = cursor.last_system_prompt()
-    assert "ticker classification agent" in system.lower()  # base prompt present
-    assert "SENTINEL-LESSON" in system  # AND the lesson was appended
+    human = cursor.last_human_prompt().lower()
+    assert "SENTINEL-LESSON" in system  # the lesson was appended to the system prompt
+    assert "ticker classification agent" in human  # the task template is the user turn
+    # The framework base (partials / deepagents base) survived the lesson compose
+    # — it was NOT wiped by a naive str-only append over content-blocks content.
+    assert "/scratch/" in system.lower()

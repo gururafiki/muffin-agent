@@ -116,7 +116,7 @@ async def create_ticker_classification_agent(
     builder = (
         MuffinAgentBuilder(primary, name="ticker_classification")
         .with_state_schema(TickerClassificationAgentState)
-        .with_runtime_system_prompt_template(
+        .with_input_prompt_template(
             "criteria_analysis/ticker_classification.jinja"
         )
         .with_fallback_models(*fallbacks)

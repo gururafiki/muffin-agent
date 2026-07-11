@@ -124,7 +124,7 @@ async def create_criterion_evaluation_agent(config: RunnableConfig):
     builder = (
         MuffinAgentBuilder(primary, name="criterion_evaluation")
         .with_state_schema(CriterionEvaluationAgentState)
-        .with_runtime_system_prompt_template("criterion_evaluation.jinja")
+        .with_input_prompt_template("criterion_evaluation.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
