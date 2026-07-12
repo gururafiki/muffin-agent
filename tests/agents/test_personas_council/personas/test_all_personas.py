@@ -107,11 +107,14 @@ async def test_persona_subgraph_compiles(slug, builder) -> None:
     assert {"ticker", "as_of_date"} <= input_props, (
         f"{slug} input schema missing ticker/as_of_date: {input_props}"
     )
-    # The persona graph's explicit ``output_schema=<Persona>Output`` must expose
-    # ONLY ``persona_signals`` to the council — no internal scratch fields
-    # (raw collect_data data, ``evidence``) may leak, regardless of the per-field
-    # ``OmitFromSchema(output=False)`` flags on the persona State (those govern the
-    # internal collect_data→compute_evidence boundary, NOT the council boundary).
-    assert output_props == {"persona_signals"}, (
+    # The persona graph's explicit ``output_schema=<Persona>Output`` exposes only
+    # ``persona_signals`` (the verdict) + ``tool_runs`` (collect_data's captured
+    # tool-execution records, for the council's "Tool execution" panel) to the
+    # council — no internal scratch fields (raw collect_data data, ``evidence``)
+    # may leak, regardless of the per-field ``OmitFromSchema(output=False)`` flags
+    # on the persona State (those govern the internal collect_data→compute_evidence
+    # boundary, NOT the council boundary). tool_runs on the output schema is the
+    # propagation proof: the persona subgraph surfaces it to CouncilState.
+    assert output_props == {"persona_signals", "tool_runs"}, (
         f"{slug} output schema leaks internal fields to the council: {output_props}"
     )

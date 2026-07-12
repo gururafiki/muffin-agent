@@ -19,6 +19,14 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+# Re-exported so persona files (which already import from here) can annotate their
+# `tool_runs` state channel with the SAME reducer the collect_data agent's
+# AgentCaptureState uses — a different reducer raises "Channel already exists with
+# a different type" when create_agent merges the schemas.
+from muffin_agent.middlewares.agent_capture.records import (
+    merge_tool_runs as merge_tool_runs,
+)
+
 # ── Shared node input contract ────────────────────────────────────────────────
 
 

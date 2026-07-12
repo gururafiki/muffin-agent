@@ -25,7 +25,7 @@ from ....prompts import render_template
 from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
-from ..schemas import AnalystSignal
+from ..schemas import AnalystSignal, merge_tool_runs
 from ..tools.scoring_helpers import score_insider_buy_ratio
 from ..tools.sentiment import aggregate_news_sentiment
 
@@ -135,6 +135,7 @@ class PhilFisherInput(TypedDict, total=False):
 
 class PhilFisherOutput(TypedDict, total=False):
     persona_signals: list[dict[str, Any]]
+    tool_runs: list[dict[str, Any]]
 
 
 class PhilFisherState(AgentState):
@@ -175,6 +176,7 @@ class PhilFisherState(AgentState):
         PhilFisherEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
 
 
 # ── Composite scorers ─────────────────────────────────────────────────────────
