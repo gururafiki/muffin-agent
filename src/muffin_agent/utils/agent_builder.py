@@ -111,6 +111,7 @@ from ..prompts import render_template
 from ..sandbox import get_backend
 from ._ensure_user_message_middleware import _EnsureUserMessageMiddleware
 from ._input_prompt_middleware import _InputPromptMiddleware
+from ._structured_output_retry_middleware import _StructuredOutputRetryMiddleware
 from ._structured_response_to_state_middleware import (
     _StructuredResponseToStateMiddleware,
 )
@@ -997,6 +998,15 @@ class MuffinAgentBuilder:
         13. Optional skill-filter middleware registered via
             :meth:`with_skills`.
         14. Caller-supplied middleware (via :meth:`with_middleware`).
+        15. *(conditional)* :class:`_StructuredOutputRetryMiddleware` when a
+            response format is configured.  Registered LAST so its
+            ``after_agent`` hook runs FIRST (reverse registration order):
+            when the loop ends without ``structured_response`` it jumps
+            back to the model — recovering the in-loop retry langchain
+            loses when a malformed structured-output call shares an
+            ``AIMessage`` with a regular tool call — and raises
+            :class:`StructuredOutputRetryExhaustedError` after 3 attempts
+            so the node-level ``RetryPolicy`` backstop can re-run the node.
         """
         stack: list[AnyMiddleware] = []
         if self._model_call_limit is not None:
@@ -1106,4 +1116,13 @@ class MuffinAgentBuilder:
         if self._state_schema is not None and self._response_format is not None:
             stack.append(_StructuredResponseToStateMiddleware())
         stack.extend(self._middleware)
+        # Structured-output completion guard — registered LAST so its
+        # after_agent hook runs FIRST (after_agent executes in reverse
+        # registration order): when the loop is about to end without a
+        # structured_response it jumps back to the model BEFORE the capture
+        # and unpacking hooks run, recovering the in-loop retry that
+        # langchain's tools_to_model edge loses when a malformed
+        # structured-output call shares an AIMessage with a regular tool call.
+        if schema_name:
+            stack.append(_StructuredOutputRetryMiddleware(schema_name=schema_name))
         return stack
