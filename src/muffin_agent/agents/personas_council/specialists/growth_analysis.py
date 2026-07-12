@@ -26,7 +26,7 @@ from ....model_config import ModelConfiguration
 from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
-from ..schemas import AnalystSignal, InvestmentSignal
+from ..schemas import AnalystSignal, InvestmentSignal, merge_tool_runs
 from ..tools.growth import GrowthResult, score_growth_signals
 
 logger = logging.getLogger(__name__)
@@ -89,6 +89,7 @@ class GrowthInput(TypedDict, total=False):
 
 class GrowthOutput(TypedDict, total=False):
     persona_signals: list[dict[str, Any]]
+    tool_runs: list[dict[str, Any]]
 
 
 class GrowthState(AgentState):
@@ -123,6 +124,7 @@ class GrowthState(AgentState):
         list[dict[str, Any]] | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
 
 
 # ── Mapping helper ────────────────────────────────────────────────────────────

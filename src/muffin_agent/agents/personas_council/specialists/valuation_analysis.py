@@ -26,7 +26,7 @@ from ....model_config import ModelConfiguration
 from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
-from ..schemas import AnalystSignal, InvestmentSignal
+from ..schemas import AnalystSignal, InvestmentSignal, merge_tool_runs
 from ..tools.valuation_signal import ValuationResult, score_valuation_signals
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,7 @@ class ValuationInput(TypedDict, total=False):
 
 class ValuationOutput(TypedDict, total=False):
     persona_signals: list[dict[str, Any]]
+    tool_runs: list[dict[str, Any]]
 
 
 class ValuationState(AgentState):
@@ -141,6 +142,7 @@ class ValuationState(AgentState):
     ]
     book_value_growth: Annotated[float | None, OmitFromSchema(input=True, output=False)]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
 
 
 # ── Mapping helper ────────────────────────────────────────────────────────────

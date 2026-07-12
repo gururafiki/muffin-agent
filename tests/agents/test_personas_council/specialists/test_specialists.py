@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -13,8 +14,12 @@ from muffin_agent.agents.personas_council.specialists import (
     SentimentSignal,
     TechnicalSignal,
     ValuationSignal,
+    build_fundamentals_analysis_agent,
+    build_growth_analysis_agent,
+    build_news_sentiment_analysis_agent,
     build_sentiment_analysis_agent,
     build_technical_analysis_agent,
+    build_valuation_analysis_agent,
 )
 from muffin_agent.agents.personas_council.specialists.fundamentals_analysis import (
     compute_fundamentals_signal_node,
@@ -317,3 +322,48 @@ class TestSpecialistSubgraphs:
         assert "fetch_insider_trades" in nodes
         assert "fetch_company_news" in nodes
         assert "compute_sentiment_signal" in nodes
+
+
+_REACT_SPECIALIST_BUILDERS = [
+    ("fundamentals", build_fundamentals_analysis_agent),
+    ("growth", build_growth_analysis_agent),
+    ("valuation", build_valuation_analysis_agent),
+    ("news_sentiment", build_news_sentiment_analysis_agent),
+]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("slug,builder", _REACT_SPECIALIST_BUILDERS)
+async def test_react_specialist_subgraph_output_contract(slug, builder) -> None:
+    """ReAct specialists surface ``persona_signals`` + ``tool_runs`` to the council.
+
+    Mirrors ``test_persona_subgraph_compiles``: the explicit
+    ``output_schema=<Specialist>Output`` must expose the collect_data agent's
+    captured ``tool_runs`` (the council "Tool execution" panel substrate) and
+    nothing else besides the verdict.
+    """
+    mock_client = AsyncMock()
+    mock_client.get_tools = AsyncMock(return_value=[])
+    with patch(
+        "muffin_agent.agents.data_collection.utils.MultiServerMCPClient",
+        return_value=mock_client,
+    ):
+        agent = await builder({})
+
+    def _flatten(schema):
+        props = set(schema.get("properties", {}).keys())
+        for defn in schema.get("$defs", {}).values():
+            if isinstance(defn, dict):
+                props.update(defn.get("properties", {}).keys())
+        return props
+
+    input_props = _flatten(agent.input_schema.model_json_schema())
+    output_props = _flatten(agent.output_schema.model_json_schema())
+
+    assert {"ticker", "as_of_date"} <= input_props, (
+        f"{slug} input schema missing ticker/as_of_date: {input_props}"
+    )
+    assert output_props == {"persona_signals", "tool_runs"}, (
+        f"{slug} output schema leaks internal fields to the council: {output_props}"
+    )
