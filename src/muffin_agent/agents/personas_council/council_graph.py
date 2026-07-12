@@ -104,6 +104,11 @@ class CouncilState(TypedDict, total=False):
     as_of_date: str
     persona_signals: Annotated[list[dict[str, Any]], operator.add]
     council_synthesis: dict[str, Any]
+    # Tool-execution capture: each persona subgraph surfaces its collect_data
+    # agent's tool_runs on its `<Persona>Output`; this channel accumulates them
+    # across all 13 personas (concurrent writers → operator.add). Drives the UI
+    # "Tool execution" panel.
+    tool_runs: Annotated[list[dict[str, Any]], operator.add]
 
 
 async def build_council_graph(

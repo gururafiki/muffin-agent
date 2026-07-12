@@ -27,7 +27,7 @@ from ....prompts import render_template
 from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
-from ..schemas import AnalystSignal
+from ..schemas import AnalystSignal, merge_tool_runs
 from ..tools.scoring_helpers import score_insider_buy_ratio
 
 logger = logging.getLogger(__name__)
@@ -139,6 +139,7 @@ class CharlieMungerInput(TypedDict, total=False):
 
 class CharlieMungerOutput(TypedDict, total=False):
     persona_signals: list[dict[str, Any]]
+    tool_runs: list[dict[str, Any]]
 
 
 class CharlieMungerState(AgentState):
@@ -192,6 +193,7 @@ class CharlieMungerState(AgentState):
         CharlieMungerEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
+    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
 
 
 # ── Composite scorers ─────────────────────────────────────────────────────────
