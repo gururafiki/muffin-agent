@@ -42,6 +42,7 @@ def build_conference_graph(
     terminator: Terminator,
     judge: Judge | None = None,
     state_schema: type = ConferenceState,
+    output_schema: type | None = None,
     messages_field: str = "messages",
     next_speaker_field: str = "next_speaker",
     agent_cursors_field: str = "agent_cursors",
@@ -79,6 +80,22 @@ def build_conference_graph(
         terminator: stop-decision policy.
         judge: optional post-conference synthesiser; runs once if set.
         state_schema: TypedDict the subgraph compiles against.
+        output_schema: optional TypedDict restricting which channels the
+            compiled subgraph EMITS to a parent graph. **Required whenever
+            the conference shares reducer-annotated channels with its
+            parent** (e.g. an ``operator.add`` list the parent also owns):
+            without it, the subgraph echoes the parent's own value for that
+            channel back through its final state and the parent's reducer
+            re-applies it — silently DOUBLING the channel. Restrict this to
+            the conference-owned fields (``messages_field`` /
+            ``agent_cursors_field`` / ``next_speaker_field`` / ``verdict_field``)
+            so shared parent channels never round-trip. This is the
+            conference-level counterpart to the "no leak invariant" (which
+            keeps a participant's *internal* messages out of conference
+            state); ``output_schema`` keeps *conference* state from
+            clobbering *parent* state. ``None`` (default) emits the full
+            ``state_schema`` — safe only for standalone use or a parent that
+            shares no reducer channels.
         messages_field: state key holding the shared ``list[BaseMessage]``.
         next_speaker_field: state key for routing (written by ``dispatch``).
         agent_cursors_field: state key for per-agent last-seen-id tracking.
@@ -88,7 +105,7 @@ def build_conference_graph(
     if not participants:
         raise ValueError("Conference must have at least one participant.")
 
-    builder: StateGraph = StateGraph(state_schema)
+    builder: StateGraph = StateGraph(state_schema, output_schema=output_schema)
 
     builder.add_node(
         "dispatch",
@@ -143,9 +160,7 @@ def build_conference_graph(
     return builder.compile(checkpointer=checkpointer)
 
 
-def _normalize_state(
-    state: dict[str, Any], messages_field: str
-) -> dict[str, Any]:
+def _normalize_state(state: dict[str, Any], messages_field: str) -> dict[str, Any]:
     """Return a state view with canonical ``messages`` key.
 
     When ``messages_field == "messages"`` this is a no-op; otherwise

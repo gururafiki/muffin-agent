@@ -54,11 +54,11 @@ def fake_model_config(response: Any) -> MagicMock:
     Usage::
 
         with patch.object(
-            bull_researcher_module.ModelConfiguration,
+            investment_judge.ModelConfiguration,
             "from_runnable_config",
-            return_value=fake_model_config(AIMessage("bull text")),
+            return_value=fake_model_config(judge_output),
         ):
-            update = await bull_researcher_node(state, {})
+            update = await investment_judge_node(state, {})
     """
     cfg = MagicMock()
     cfg.get_llm_for_role.return_value = [FakeLLM(response)]

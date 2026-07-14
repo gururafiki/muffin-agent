@@ -24,12 +24,12 @@ Public surface:
   :func:`build_news_analyst_agent`, :func:`build_social_analyst_agent`.
 
 * Per-role downstream nodes (each takes a typed input state, returns a
-  typed output state): ``bull_researcher_node``,
-  ``bear_researcher_node``, ``investment_judge_node``, ``trader_node``,
+  typed output state): ``investment_judge_node``, ``trader_node``,
   ``portfolio_manager_node``, ``reflector_resolve_node``,
-  ``decision_writeback_node``. The 3-way risk debate has migrated to
-  the multi_agent conference framework — it no longer exposes per-role
-  node functions; the conference subgraph is built inline in
+  ``decision_writeback_node``. Both debates (Bull/Bear and the 3-way risk
+  debate) have migrated to the multi_agent conference framework — they no
+  longer expose per-role node functions; the two conference subgraphs
+  (``investment_debate`` / ``risk_debate``) are built inline in
   :mod:`graph`.
 
 * Per-role state schemas (TypedDicts):
@@ -94,14 +94,8 @@ from .reflection import (
     render_reflections_block,
 )
 from .researchers import (
-    BearResearcherInputState,
-    BearResearcherOutputState,
-    BullResearcherInputState,
-    BullResearcherOutputState,
     InvestmentJudgeInputState,
     InvestmentJudgeOutputState,
-    bear_researcher_node,
-    bull_researcher_node,
     investment_judge_node,
 )
 from .schemas import (
@@ -157,18 +151,12 @@ __all__ = [
     "ReflectionMemory",
     "render_reflections_block",
     # Downstream nodes
-    "bear_researcher_node",
-    "bull_researcher_node",
     "decision_writeback_node",
     "investment_judge_node",
     "portfolio_manager_node",
     "reflector_resolve_node",
     "trader_node",
     # Per-role state TypedDicts
-    "BearResearcherInputState",
-    "BearResearcherOutputState",
-    "BullResearcherInputState",
-    "BullResearcherOutputState",
     "DecisionWritebackInputState",
     "DecisionWritebackOutputState",
     "InvestmentJudgeInputState",

@@ -1,15 +1,11 @@
-"""Bull / Bear / Judge researcher nodes for the trading_decision graphs."""
+"""Investment Judge node for the trading_decision graphs.
 
-from .bear_researcher import (
-    BearResearcherInputState,
-    BearResearcherOutputState,
-    bear_researcher_node,
-)
-from .bull_researcher import (
-    BullResearcherInputState,
-    BullResearcherOutputState,
-    bull_researcher_node,
-)
+The Bull/Bear debate itself has migrated to the multi_agent conference
+framework (built inline in :mod:`..graph` as the ``investment_debate``
+subgraph); the Judge stays a plain parent-graph node that synthesises the
+completed ``investment_debate_messages`` transcript.
+"""
+
 from .investment_judge import (
     InvestmentJudgeInputState,
     InvestmentJudgeOutputState,
@@ -17,13 +13,7 @@ from .investment_judge import (
 )
 
 __all__ = [
-    "BearResearcherInputState",
-    "BearResearcherOutputState",
-    "BullResearcherInputState",
-    "BullResearcherOutputState",
     "InvestmentJudgeInputState",
     "InvestmentJudgeOutputState",
-    "bear_researcher_node",
-    "bull_researcher_node",
     "investment_judge_node",
 ]

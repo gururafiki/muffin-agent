@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import operator
 from typing import Annotated, Any
 from unittest.mock import patch
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
@@ -281,9 +283,7 @@ class TestAgentParticipant:
         """Across two rounds, the agent's second invocation receives only the
         message added since its first turn — not its own prior turn."""
         recording: list[list[BaseMessage]] = []
-        agent = build_recording_stub_agent(
-            recording, response_text="bob's turn"
-        )
+        agent = build_recording_stub_agent(recording, response_text="bob's turn")
 
         participants = [
             LLMParticipant("alice", "multi_agent/_transcript.jinja"),
@@ -432,6 +432,91 @@ class TestConferenceWithCustomStateSchema:
         # Beta's system prompt should reference alpha's rendered turn.
         beta_system = fakes[1].invocations[0][0]
         assert "alpha: alpha-says" in beta_system.content
+
+
+class _EchoParentState(TypedDict, total=False):
+    """Parent state sharing an ``operator.add`` reducer channel the conference
+    does NOT own — the shape that doubled the trading_decision debate turns."""
+
+    shared_accumulator: Annotated[list[str], operator.add]
+    debate_messages: Annotated[list[BaseMessage], add_messages]
+    debate_agent_cursors: dict[str, str]
+    debate_next_speaker: str | None
+
+
+class _EchoOutputSchema(TypedDict, total=False):
+    """Restricts the conference's emissions to its own conference-owned fields."""
+
+    debate_messages: Annotated[list[BaseMessage], add_messages]
+    debate_agent_cursors: dict[str, str]
+    debate_next_speaker: str | None
+
+
+def _echo_conference(*, output_schema: type | None) -> CompiledStateGraph:
+    return build_conference_graph(
+        participants=[
+            LLMParticipant("alpha", "multi_agent/_transcript.jinja"),
+            LLMParticipant("beta", "multi_agent/_transcript.jinja"),
+        ],
+        moderator=AlternatingModerator("alpha", "beta"),
+        terminator=MaxRoundsTerminator(max_rounds=1, num_participants=2),
+        state_schema=_EchoParentState,
+        output_schema=output_schema,
+        messages_field="debate_messages",
+        agent_cursors_field="debate_agent_cursors",
+        next_speaker_field="debate_next_speaker",
+    )
+
+
+def _parent_with_conference(conference: CompiledStateGraph) -> CompiledStateGraph:
+    """A parent graph: seed the shared accumulator, then run the conference."""
+
+    async def seed(state: dict) -> dict:  # noqa: ARG001
+        return {"shared_accumulator": ["seeded"]}
+
+    parent: StateGraph = StateGraph(_EchoParentState)
+    parent.add_node("seed", seed)  # type: ignore[type-var]
+    parent.add_node("conference", conference)
+    parent.add_edge(START, "seed")
+    parent.add_edge("seed", "conference")
+    parent.add_edge("conference", END)
+    return parent.compile()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestConferenceOutputSchema:
+    """``output_schema`` restricts the subgraph's emissions to parent state.
+
+    Without it, a conference compiled against a parent schema echoes the
+    parent's own reducer-channel value back through its final state, and the
+    parent's reducer re-applies it (doubling). This is what silently doubled
+    the trading_decision Bull/Bear turns when the risk-debate conference
+    shared ``TradingDecisionState``'s ``operator.add`` channels.
+    """
+
+    async def test_output_schema_prevents_reducer_echo(self):
+        compiled = _parent_with_conference(
+            _echo_conference(output_schema=_EchoOutputSchema)
+        )
+        cfg, _ = fake_model_config_seq(ai("alpha-says"), ai("beta-says"))
+        with _patch_participants(cfg):
+            result = await compiled.ainvoke({})
+
+        # The conference produced exactly its two turns...
+        assert [m.name for m in result["debate_messages"]] == ["alpha", "beta"]
+        # ...and did NOT echo the parent's reducer channel back.
+        assert result["shared_accumulator"] == ["seeded"]
+
+    async def test_without_output_schema_echoes_and_doubles(self):
+        # Documents the bug the parameter fixes: no output_schema → the
+        # subgraph emits the parent's shared channel back → parent doubles it.
+        compiled = _parent_with_conference(_echo_conference(output_schema=None))
+        cfg, _ = fake_model_config_seq(ai("alpha-says"), ai("beta-says"))
+        with _patch_participants(cfg):
+            result = await compiled.ainvoke({})
+
+        assert result["shared_accumulator"] == ["seeded", "seeded"]
 
 
 @pytest.mark.unit

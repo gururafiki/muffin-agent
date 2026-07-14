@@ -93,6 +93,18 @@ async def test_trading_decision_full_pipeline_to_portfolio_decision(config):
     assert result["news_report"]
     assert result["sentiment_report"]
 
+    # Both debates are conference subgraphs with restricted output schemas.
+    # Regression: the Bull/Bear conference runs BEFORE the risk conference and
+    # they share the parent state; without the output_schema restriction each
+    # would echo the other's / the parent's reducer channels and double them.
+    # Assert exactly the turns each conference produced (defaults: 2×2 / 1×3).
+    assert len(result["investment_debate_messages"]) == 4
+    assert {m.name for m in result["investment_debate_messages"]} == {
+        "bull_researcher",
+        "bear_researcher",
+    }
+    assert len(result["risk_debate_messages"]) == 3
+
     # The debate → judge → trader chain produced its structured artifacts.
     assert result["investment_judge"]["signal"] in InvestmentSignal.__args__
     assert result["trader"]["action"] in ("sell", "hold", "buy")
