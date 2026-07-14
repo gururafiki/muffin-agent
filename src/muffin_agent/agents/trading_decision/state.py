@@ -7,13 +7,17 @@ agents fill in the analysis (``market_report``, ``fundamentals_report``,
 ``news_report``, ``sentiment_report``) before the Bull/Bear/Judge/
 Trader/PM downstream nodes run.
 
-The Bull/Bear debate still uses per-speaker ``Annotated[list[str],
-operator.add]`` fields (not migrated yet — see the multi_agent framework
-roadmap). The risk debate (Aggressive/Conservative/Neutral) is wired
-through ``muffin_agent.multi_agent.build_conference_graph`` which
-accumulates name-tagged ``AIMessage`` instances into
-``risk_debate_messages`` and uses ``next_speaker`` for internal
-routing.
+Both debates are wired through ``muffin_agent.multi_agent.build_conference_graph``:
+the Bull/Bear investment debate accumulates name-tagged ``AIMessage``
+instances into ``investment_debate_messages`` (speakers ``bull_researcher``
+/ ``bear_researcher``), and the 3-way risk debate
+(Aggressive/Conservative/Neutral) into ``risk_debate_messages``. Each has
+its own cursor + routing fields so the two conference subgraphs never
+share a channel. Both subgraphs are compiled with a restricted
+``output_schema`` (``InvestmentDebateOutput`` / ``RiskDebateOutput``) so
+they only emit their own conference-owned channels — never the parent's
+``operator.add`` reducer channels, which would otherwise be echoed and
+doubled on write-back.
 
 Structured outputs (``investment_judge``, ``trader``, ``portfolio_decision``)
 live in their own top-level dict fields populated by the synthesis/judge
@@ -25,7 +29,6 @@ populated by the reflection bookends.
 
 from __future__ import annotations
 
-import operator
 from typing import Annotated, Any
 
 from langchain_core.messages import BaseMessage
@@ -47,6 +50,34 @@ class AnalystInput(TypedDict, total=False):
 
     ticker: str
     decision_date: str
+
+
+class InvestmentDebateOutput(TypedDict, total=False):
+    """Output schema restricting the Bull/Bear conference subgraph's emissions.
+
+    Passed as ``output_schema=`` to ``build_conference_graph`` so the compiled
+    subgraph emits ONLY its own conference-owned channels back to the parent
+    graph. Without this restriction the subgraph — compiled against the full
+    ``TradingDecisionState`` — would echo the parent's other reducer channels
+    (e.g. ``tool_runs``) through its final state, and the parent's reducer
+    would re-apply them. See ``multi_agent.build_conference_graph``'s
+    ``output_schema`` docstring.
+    """
+
+    investment_debate_messages: Annotated[list[BaseMessage], add_messages]
+    investment_debate_agent_cursors: dict[str, str]
+    investment_next_speaker: str | None
+
+
+class RiskDebateOutput(TypedDict, total=False):
+    """Output schema restricting the risk-debate conference subgraph's emissions.
+
+    Counterpart to :class:`InvestmentDebateOutput` for the 3-way risk debate.
+    """
+
+    risk_debate_messages: Annotated[list[BaseMessage], add_messages]
+    risk_debate_agent_cursors: dict[str, str]
+    next_speaker: str | None
 
 
 class TradingDecisionState(TypedDict, total=False):
@@ -89,12 +120,23 @@ class TradingDecisionState(TypedDict, total=False):
     sentiment_report: str
     """Markdown social-sentiment report from ``social_analyst``."""
 
-    # ── Investment debate ──────────────────────────────────────────────────
-    investment_bull_responses: Annotated[list[str], operator.add]
-    """Each Bull turn appended via the reducer. Latest is ``...[-1]``."""
+    # ── Investment debate (wired via multi_agent.build_conference_graph) ────
+    investment_debate_messages: Annotated[list[BaseMessage], add_messages]
+    """Name-tagged ``AIMessage`` instances accumulated by the Bull/Bear
+    debate conference subgraph. One ``AIMessage(content, name=<speaker>)``
+    per turn (``bull_researcher`` / ``bear_researcher``). The Investment
+    Judge reads this as its synthesis input via :func:`format_debate_history`."""
 
-    investment_bear_responses: Annotated[list[str], operator.add]
-    """Each Bear turn appended via the reducer."""
+    investment_debate_agent_cursors: dict[str, str]
+    """Per-agent last-seen message id for the Bull/Bear conference. Unused
+    today (both debaters are ``LLMParticipant``) — kept for a future
+    mix of LLM + Agent participants."""
+
+    investment_next_speaker: str | None
+    """Bull/Bear conference routing field — written by the conference's
+    ``dispatch`` node, consumed by its conditional edge. Distinct from the
+    risk debate's ``next_speaker`` so the two conference subgraphs never
+    share a routing channel."""
 
     investment_judge: dict[str, Any]
     """``InvestmentJudgeOutput.model_dump()`` — set by the judge node."""

@@ -4,8 +4,8 @@ Verifies that:
 * Each per-role template renders without errors with the standard set of
   per-call vars.
 * The shared partials (``_analyst_reports.jinja``,
-  ``_investment_debate_state.jinja``, ``_risk_synthesis_inputs.jinja``)
-  are pulled in correctly via ``{% include %}``.
+  ``_risk_synthesis_inputs.jinja``) are pulled in correctly via
+  ``{% include %}``.
 * Hold-reservation discipline appears in the synthesis prompts.
 """
 
@@ -68,39 +68,32 @@ def _trader_payload() -> dict[str, Any]:
 @pytest.mark.unit
 class TestInvestmentDebatePrompts:
     def test_bull_opening(self):
+        # Conference participant convention: the shared transcript is
+        # rendered into the system prompt as `transcript`.
         result = render_template(
-            "trading_decision/researchers/bull.jinja",
-            speaking_as="Bull",
-            opposing_speaker="Bear",
-            debate_history="",
-            opposing_last="",
+            "trading_decision/investment_debate/bull.jinja",
+            transcript="",
             **_analysis_kwargs(),
         )
         assert "Bull Researcher" in result
         assert "AAPL" in result
         assert "long-term hold" in result
-        # Opening-turn hint should appear when there's no opposing argument.
+        # Opening-turn hint should appear when the transcript is empty.
         assert "opening" in result.lower()
 
-    def test_bull_rebuttal_includes_opposing(self):
+    def test_bull_rebuttal_includes_transcript(self):
         result = render_template(
-            "trading_decision/researchers/bull.jinja",
-            speaking_as="Bull",
-            opposing_speaker="Bear",
-            debate_history="Bull Researcher: opener\n\nBear Researcher: response",
-            opposing_last="Bear Researcher: response",
+            "trading_decision/investment_debate/bull.jinja",
+            transcript="bull_researcher: opener\n\nbear_researcher: response",
             **_analysis_kwargs(),
         )
-        assert "Bear Researcher: response" in result
+        assert "bear_researcher: response" in result
         assert "rebut" in result.lower()
 
     def test_bear_opening(self):
         result = render_template(
-            "trading_decision/researchers/bear.jinja",
-            speaking_as="Bear",
-            opposing_speaker="Bull",
-            debate_history="",
-            opposing_last="",
+            "trading_decision/investment_debate/bear.jinja",
+            transcript="",
             **_analysis_kwargs(),
         )
         assert "Bear Researcher" in result
@@ -120,11 +113,8 @@ class TestInvestmentDebatePrompts:
 
     def test_analyst_reports_partial_renders_each_field(self):
         result = render_template(
-            "trading_decision/researchers/bull.jinja",
-            speaking_as="Bull",
-            opposing_speaker="Bear",
-            debate_history="",
-            opposing_last="",
+            "trading_decision/investment_debate/bull.jinja",
+            transcript="",
             **_analysis_kwargs(
                 market_report="ATR 2.5 / RSI 62",
                 fundamentals_report="ROIC 28%, FCF margin 22%",
@@ -272,8 +262,17 @@ class TestAnalystPrompts:
         assert "2026-05-23" in result
         # All supported indicator keys appear in the menu.
         for ind in (
-            "close_50_sma", "close_200_sma", "macd", "macds", "macdh",
-            "rsi", "boll", "boll_ub", "boll_lb", "atr", "vwma",
+            "close_50_sma",
+            "close_200_sma",
+            "macd",
+            "macds",
+            "macdh",
+            "rsi",
+            "boll",
+            "boll_ub",
+            "boll_lb",
+            "atr",
+            "vwma",
         ):
             assert ind in result
 

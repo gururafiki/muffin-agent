@@ -38,13 +38,13 @@ from functools import partial
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.config import get_config
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 
 from ...multi_agent import (
+    AlternatingModerator,
     LLMParticipant,
     MaxRoundsTerminator,
     RoundRobinModerator,
@@ -63,12 +63,13 @@ from .reflection import (
     decision_writeback_node,
     reflector_resolve_node,
 )
-from .researchers import (
-    bear_researcher_node,
-    bull_researcher_node,
-    investment_judge_node,
+from .researchers import investment_judge_node
+from .state import (
+    AnalystInput,
+    InvestmentDebateOutput,
+    RiskDebateOutput,
+    TradingDecisionState,
 )
-from .state import AnalystInput, TradingDecisionState
 from .tools import OutcomesFetcher
 from .trader import trader_node
 
@@ -83,43 +84,16 @@ _ANALYST_NAMES: tuple[str, str, str, str] = (
     "social_analyst",
 )
 
+_INVESTMENT_DEBATE_PARTICIPANT_NAMES: tuple[str, str] = (
+    "bull_researcher",
+    "bear_researcher",
+)
+
 _RISK_DEBATE_PARTICIPANT_NAMES: tuple[str, str, str] = (
     "aggressive_debator",
     "conservative_debator",
     "neutral_debator",
 )
-
-
-# ── Routing ───────────────────────────────────────────────────────────────────
-
-
-def _active_config() -> RunnableConfig:
-    """Pull the active LangGraph ``RunnableConfig`` (used by routers)."""
-    try:
-        return get_config()
-    except Exception:
-        return RunnableConfig(configurable={})
-
-
-def _route_investment_debate(state: TradingDecisionState) -> str:
-    """Pick the next investment-debate node.
-
-    Routes ``bull_researcher`` and ``bear_researcher`` while count is below
-    the round budget; routes ``investment_judge`` once exhausted.
-    """
-    cfg = TradingDecisionConfiguration.from_runnable_config(_active_config())
-    bulls = len(state.get("investment_bull_responses") or [])
-    bears = len(state.get("investment_bear_responses") or [])
-    if bulls + bears >= 2 * cfg.max_investment_debate_rounds:
-        return "investment_judge"
-    return "bear_researcher" if bulls > bears else "bull_researcher"
-
-
-_INVESTMENT_DEBATE_TARGETS: list[str] = [
-    "bull_researcher",
-    "bear_researcher",
-    "investment_judge",
-]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -180,6 +154,52 @@ def _wire_analysts_to(graph: StateGraph, *, from_node: str, to_node: str) -> Non
         graph.add_edge(analyst, to_node)
 
 
+def _build_investment_debate_subgraph(
+    max_rounds: int,
+) -> CompiledStateGraph:
+    """Compile the Bull/Bear investment-debate conference subgraph.
+
+    Two-speaker alternation (Bull opens each round; the ``AlternatingModerator``
+    reproduces the legacy ``_route_investment_debate`` turn order exactly) with
+    a ``max_rounds × 2`` turn cap. No in-conference judge — the Investment
+    Judge runs in the parent graph and consumes ``investment_debate_messages``.
+
+    ``output_schema=InvestmentDebateOutput`` restricts what the compiled
+    subgraph emits to the parent, so it never echoes the parent's other
+    reducer channels (``tool_runs``, and — because this subgraph runs BEFORE
+    the risk debate — the risk-debate channels too) back through its final
+    state. See ``build_conference_graph``'s ``output_schema`` docstring.
+    """
+    participants = [
+        LLMParticipant(
+            name="bull_researcher",
+            system_prompt_template="trading_decision/investment_debate/bull.jinja",
+            user_prompt="Make your argument now.",
+        ),
+        LLMParticipant(
+            name="bear_researcher",
+            system_prompt_template="trading_decision/investment_debate/bear.jinja",
+            user_prompt="Make your argument now.",
+        ),
+    ]
+    return build_conference_graph(
+        participants=participants,
+        moderator=AlternatingModerator(
+            speaker_a=_INVESTMENT_DEBATE_PARTICIPANT_NAMES[0],
+            speaker_b=_INVESTMENT_DEBATE_PARTICIPANT_NAMES[1],
+        ),
+        terminator=MaxRoundsTerminator(
+            max_rounds=max_rounds,
+            num_participants=len(participants),
+        ),
+        state_schema=TradingDecisionState,
+        output_schema=InvestmentDebateOutput,
+        messages_field="investment_debate_messages",
+        agent_cursors_field="investment_debate_agent_cursors",
+        next_speaker_field="investment_next_speaker",
+    )
+
+
 def _build_risk_debate_subgraph(
     max_rounds: int,
 ) -> CompiledStateGraph:
@@ -189,6 +209,10 @@ def _build_risk_debate_subgraph(
     hard ``max_rounds × 3`` turn cap. No in-conference judge — the
     Portfolio Manager runs in the parent graph and consumes the
     ``risk_debate_transcript`` directly.
+
+    ``output_schema=RiskDebateOutput`` restricts the subgraph's emissions to
+    its own conference channels so it never echoes the parent's ``operator.add``
+    reducer channels (e.g. ``tool_runs``) back through write-back.
     """
     participants = [
         LLMParticipant(
@@ -217,6 +241,7 @@ def _build_risk_debate_subgraph(
             num_participants=len(participants),
         ),
         state_schema=TradingDecisionState,
+        output_schema=RiskDebateOutput,
         messages_field="risk_debate_messages",
         agent_cursors_field="risk_debate_agent_cursors",
     )
@@ -231,23 +256,21 @@ async def build_investment_debate_graph(
     store: BaseStore | None = None,
 ) -> CompiledStateGraph:
     """Compile analysts → Bull/Bear debate → Investment Judge sub-graph."""
+    cfg = TradingDecisionConfiguration.from_runnable_config(config)
     graph: StateGraph = StateGraph(TradingDecisionState)
     await _add_analyst_nodes(graph, config)
-    graph.add_node("bull_researcher", bull_researcher_node, retry_policy=_LLM_RETRY)
-    graph.add_node("bear_researcher", bear_researcher_node, retry_policy=_LLM_RETRY)
+    graph.add_node(
+        "investment_debate",
+        _build_investment_debate_subgraph(max_rounds=cfg.max_investment_debate_rounds),
+    )
     graph.add_node("investment_judge", investment_judge_node, retry_policy=_LLM_RETRY)
 
-    # START → analysts (parallel) → bull_researcher (barrier)
+    # START → analysts (parallel) → investment_debate (barrier)
     for analyst in _ANALYST_NAMES:
         graph.add_edge(START, analyst)
-        graph.add_edge(analyst, "bull_researcher")
+        graph.add_edge(analyst, "investment_debate")
 
-    graph.add_conditional_edges(
-        "bull_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
-    graph.add_conditional_edges(
-        "bear_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
+    graph.add_edge("investment_debate", "investment_judge")
     graph.add_edge("investment_judge", END)
 
     return graph.compile(checkpointer=checkpointer, store=store)
@@ -259,23 +282,21 @@ async def build_investment_thesis_graph(
     store: BaseStore | None = None,
 ) -> CompiledStateGraph:
     """Compile analysts → debate → Judge → Trader sub-graph."""
+    cfg = TradingDecisionConfiguration.from_runnable_config(config)
     graph: StateGraph = StateGraph(TradingDecisionState)
     await _add_analyst_nodes(graph, config)
-    graph.add_node("bull_researcher", bull_researcher_node, retry_policy=_LLM_RETRY)
-    graph.add_node("bear_researcher", bear_researcher_node, retry_policy=_LLM_RETRY)
+    graph.add_node(
+        "investment_debate",
+        _build_investment_debate_subgraph(max_rounds=cfg.max_investment_debate_rounds),
+    )
     graph.add_node("investment_judge", investment_judge_node, retry_policy=_LLM_RETRY)
     graph.add_node("trader", trader_node, retry_policy=_LLM_RETRY)
 
     for analyst in _ANALYST_NAMES:
         graph.add_edge(START, analyst)
-        graph.add_edge(analyst, "bull_researcher")
+        graph.add_edge(analyst, "investment_debate")
 
-    graph.add_conditional_edges(
-        "bull_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
-    graph.add_conditional_edges(
-        "bear_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
+    graph.add_edge("investment_debate", "investment_judge")
     graph.add_edge("investment_judge", "trader")
     graph.add_edge("trader", END)
 
@@ -300,7 +321,10 @@ async def build_trading_decision_graph(
                   ├─→ news_analyst ──┤   (parallel; implicit barrier)
                   └─→ social_analyst ─┘
                                      ▼
-                            bull_researcher ⇄ bear_researcher  (N rounds)
+                    investment_debate (conference subgraph)
+                       └── bull_researcher
+                       └── bear_researcher
+                       (alternating × N rounds via build_conference_graph)
                                      │
                                      ▼
                               investment_judge
@@ -340,8 +364,10 @@ async def build_trading_decision_graph(
         retry_policy=_LLM_RETRY,
     )
     await _add_analyst_nodes(graph, config)
-    graph.add_node("bull_researcher", bull_researcher_node, retry_policy=_LLM_RETRY)
-    graph.add_node("bear_researcher", bear_researcher_node, retry_policy=_LLM_RETRY)
+    graph.add_node(
+        "investment_debate",
+        _build_investment_debate_subgraph(max_rounds=cfg.max_investment_debate_rounds),
+    )
     graph.add_node("investment_judge", investment_judge_node, retry_policy=_LLM_RETRY)
     graph.add_node("trader", trader_node, retry_policy=_LLM_RETRY)
     graph.add_node(
@@ -353,13 +379,8 @@ async def build_trading_decision_graph(
     graph.add_node("decision_writeback", partial(decision_writeback_node, store=store))
 
     graph.add_edge(START, "reflector_resolve")
-    _wire_analysts_to(graph, from_node="reflector_resolve", to_node="bull_researcher")
-    graph.add_conditional_edges(
-        "bull_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
-    graph.add_conditional_edges(
-        "bear_researcher", _route_investment_debate, _INVESTMENT_DEBATE_TARGETS
-    )
+    _wire_analysts_to(graph, from_node="reflector_resolve", to_node="investment_debate")
+    graph.add_edge("investment_debate", "investment_judge")
     graph.add_edge("investment_judge", "trader")
     graph.add_edge("trader", "risk_debate")
     graph.add_edge("risk_debate", "portfolio_manager")

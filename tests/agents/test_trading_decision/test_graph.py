@@ -117,9 +117,7 @@ def _patch_model_config(factory):
     """Patch ``ModelConfiguration.from_runnable_config`` at the source."""
     from muffin_agent.model_config import ModelConfiguration
 
-    return patch.object(
-        ModelConfiguration, "from_runnable_config", side_effect=factory
-    )
+    return patch.object(ModelConfiguration, "from_runnable_config", side_effect=factory)
 
 
 # ── Stub analyst nodes ───────────────────────────────────────────────────────
@@ -145,7 +143,8 @@ async def _stub_social(state):  # noqa: ARG001
 
 
 async def _stub_add_analyst_nodes(
-    graph: StateGraph, config  # noqa: ARG001
+    graph: StateGraph,
+    config,  # noqa: ARG001
 ) -> None:
     """Replacement for ``_add_analyst_nodes`` that wires lightweight stubs.
 
@@ -154,9 +153,7 @@ async def _stub_add_analyst_nodes(
     them with single-function nodes that emit constant report strings.
     """
     graph.add_node("market_analyst", _stub_market, retry_policy=_LLM_RETRY)
-    graph.add_node(
-        "fundamentals_analyst", _stub_fundamentals, retry_policy=_LLM_RETRY
-    )
+    graph.add_node("fundamentals_analyst", _stub_fundamentals, retry_policy=_LLM_RETRY)
     graph.add_node("news_analyst", _stub_news, retry_policy=_LLM_RETRY)
     graph.add_node("social_analyst", _stub_social, retry_policy=_LLM_RETRY)
 
@@ -175,15 +172,18 @@ class TestGraphCompilation:
         with _patch_analyst_nodes():
             g = await build_investment_debate_graph(config={"configurable": {}})
         nodes = set(g.get_graph().nodes.keys())
+        # Bull/Bear now live inside the `investment_debate` conference
+        # subgraph, not as top-level nodes.
         assert {
             "market_analyst",
             "fundamentals_analyst",
             "news_analyst",
             "social_analyst",
-            "bull_researcher",
-            "bear_researcher",
+            "investment_debate",
             "investment_judge",
         } <= nodes
+        assert "bull_researcher" not in nodes
+        assert "bear_researcher" not in nodes
 
     async def test_investment_thesis_graph_compiles(self):
         with _patch_analyst_nodes():
@@ -191,8 +191,7 @@ class TestGraphCompilation:
         nodes = set(g.get_graph().nodes.keys())
         assert {
             "market_analyst",
-            "bull_researcher",
-            "bear_researcher",
+            "investment_debate",
             "investment_judge",
             "trader",
         } <= nodes
@@ -201,22 +200,23 @@ class TestGraphCompilation:
         with _patch_analyst_nodes():
             g = await build_trading_decision_graph(config={"configurable": {}})
         nodes = set(g.get_graph().nodes.keys())
-        # The 3 risk debators now live inside the `risk_debate` conference
-        # subgraph, not as top-level nodes.
+        # Both debates now live inside their conference subgraphs
+        # (`investment_debate` / `risk_debate`), not as top-level nodes.
         assert {
             "reflector_resolve",
             "market_analyst",
             "fundamentals_analyst",
             "news_analyst",
             "social_analyst",
-            "bull_researcher",
-            "bear_researcher",
+            "investment_debate",
             "investment_judge",
             "trader",
             "risk_debate",
             "portfolio_manager",
             "decision_writeback",
         } <= nodes
+        assert "bull_researcher" not in nodes
+        assert "bear_researcher" not in nodes
 
 
 # ── End-to-end execution tests ───────────────────────────────────────────────
@@ -239,9 +239,7 @@ class TestInvestmentDebateGraph:
         patcher.start()
         try:
             with _patch_analyst_nodes():
-                graph = await build_investment_debate_graph(
-                    config={"configurable": {}}
-                )
+                graph = await build_investment_debate_graph(config={"configurable": {}})
                 result = await graph.ainvoke(
                     {"ticker": "AAPL"},
                     config={"configurable": {"thread_id": "test-debate"}},
@@ -249,8 +247,17 @@ class TestInvestmentDebateGraph:
         finally:
             patcher.stop()
 
-        assert result["investment_bull_responses"] == ["bull 1", "bull 2"]
-        assert result["investment_bear_responses"] == ["bear 1", "bear 2"]
+        # The Bull/Bear debate is now a conference subgraph — turns land as
+        # name-tagged AIMessages in `investment_debate_messages`, exactly one
+        # per turn (no reducer echo / duplication).
+        msgs = result["investment_debate_messages"]
+        assert [m.name for m in msgs] == [
+            "bull_researcher",
+            "bear_researcher",
+            "bull_researcher",
+            "bear_researcher",
+        ]
+        assert [m.content for m in msgs] == ["bull 1", "bear 1", "bull 2", "bear 2"]
         assert result["investment_judge"]["signal"] == "buy"
         # Analyst stubs wrote their reports too.
         assert result["market_report"].startswith("Market:")
@@ -260,25 +267,24 @@ class TestInvestmentDebateGraph:
         responses = [ai("bull"), ai("bear"), _judge_output()]
         patcher = _patch_model_config(_make_role_factory({"sequence": responses}))
         patcher.start()
+        # Debate rounds size the conference subgraph at BUILD time (same as
+        # the risk debate + the CLI, which reuses one config for build+invoke).
+        run_config = {
+            "configurable": {
+                "thread_id": "test-1round",
+                "max_investment_debate_rounds": 1,
+            }
+        }
         try:
             with _patch_analyst_nodes():
-                graph = await build_investment_debate_graph(
-                    config={"configurable": {}}
-                )
-                result = await graph.ainvoke(
-                    {"ticker": "AAPL"},
-                    config={
-                        "configurable": {
-                            "thread_id": "test-1round",
-                            "max_investment_debate_rounds": 1,
-                        }
-                    },
-                )
+                graph = await build_investment_debate_graph(config=run_config)
+                result = await graph.ainvoke({"ticker": "AAPL"}, config=run_config)
         finally:
             patcher.stop()
 
-        assert len(result["investment_bull_responses"]) == 1
-        assert len(result["investment_bear_responses"]) == 1
+        msgs = result["investment_debate_messages"]
+        assert len(msgs) == 2
+        assert [m.name for m in msgs] == ["bull_researcher", "bear_researcher"]
 
 
 @pytest.mark.unit
@@ -293,20 +299,16 @@ class TestInvestmentThesisGraph:
         ]
         patcher = _patch_model_config(_make_role_factory({"sequence": responses}))
         patcher.start()
+        run_config = {
+            "configurable": {
+                "thread_id": "test-thesis",
+                "max_investment_debate_rounds": 1,
+            }
+        }
         try:
             with _patch_analyst_nodes():
-                graph = await build_investment_thesis_graph(
-                    config={"configurable": {}}
-                )
-                result = await graph.ainvoke(
-                    {"ticker": "AAPL"},
-                    config={
-                        "configurable": {
-                            "thread_id": "test-thesis",
-                            "max_investment_debate_rounds": 1,
-                        }
-                    },
-                )
+                graph = await build_investment_thesis_graph(config=run_config)
+                result = await graph.ainvoke({"ticker": "AAPL"}, config=run_config)
         finally:
             patcher.stop()
 
@@ -332,29 +334,34 @@ class TestTradingDecisionGraph:
         ]
         patcher = _patch_model_config(_make_role_factory({"sequence": responses}))
         patcher.start()
+        run_config = {
+            "configurable": {
+                "thread_id": "test-full",
+                "user_id": "alice",
+                "max_investment_debate_rounds": 1,
+                "decision_date": "2026-05-17",
+            }
+        }
         try:
             with _patch_analyst_nodes():
                 graph = await build_trading_decision_graph(
-                    config={"configurable": {}},
+                    config=run_config,
                     store=InMemoryStore(),
                 )
-                result = await graph.ainvoke(
-                    {"ticker": "AAPL"},
-                    config={
-                        "configurable": {
-                            "thread_id": "test-full",
-                            "user_id": "alice",
-                            "max_investment_debate_rounds": 1,
-                            "decision_date": "2026-05-17",
-                        }
-                    },
-                )
+                result = await graph.ainvoke({"ticker": "AAPL"}, config=run_config)
         finally:
             patcher.stop()
 
         assert result["portfolio_decision"]["rating"] == "buy"
         assert result["portfolio_decision"]["price_target"] == 220.0
         assert result["decision_date"] == "2026-05-17"
+        # Regression (bug: bull/bear turns doubled 2→4). risk_debate runs
+        # AFTER investment_debate and shares the parent state schema; before
+        # the `output_schema` restriction it echoed the investment-debate
+        # channel back through write-back, and the parent reducer re-applied
+        # it. Assert exactly the turns each conference produced — no echo.
+        assert len(result["investment_debate_messages"]) == 2  # 1 round × 2
+        assert len(result["risk_debate_messages"]) == 3  # 1 round × 3
 
     async def test_two_sequential_runs_inject_reflection(self):
         store = InMemoryStore()
@@ -372,22 +379,20 @@ class TestTradingDecisionGraph:
         ]
         patcher = _patch_model_config(_make_role_factory({"sequence": run1_responses}))
         patcher.start()
+        run1_config = {
+            "configurable": {
+                "thread_id": "test-run1",
+                "user_id": "alice",
+                "max_investment_debate_rounds": 1,
+                "decision_date": "2026-05-10",
+            }
+        }
         try:
             with _patch_analyst_nodes():
                 graph = await build_trading_decision_graph(
-                    config={"configurable": {}}, store=store
+                    config=run1_config, store=store
                 )
-                await graph.ainvoke(
-                    {"ticker": "AAPL"},
-                    config={
-                        "configurable": {
-                            "thread_id": "test-run1",
-                            "user_id": "alice",
-                            "max_investment_debate_rounds": 1,
-                            "decision_date": "2026-05-10",
-                        }
-                    },
-                )
+                await graph.ainvoke({"ticker": "AAPL"}, config=run1_config)
         finally:
             patcher.stop()
 
@@ -422,24 +427,22 @@ class TestTradingDecisionGraph:
         ]
         patcher = _patch_model_config(_make_role_factory({"sequence": run2_responses}))
         patcher.start()
+        run2_config = {
+            "configurable": {
+                "thread_id": "test-run2",
+                "user_id": "alice",
+                "max_investment_debate_rounds": 1,
+                "decision_date": "2026-05-17",
+            }
+        }
         try:
             with _patch_analyst_nodes():
                 graph = await build_trading_decision_graph(
-                    config={"configurable": {}},
+                    config=run2_config,
                     store=store,
                     outcomes_fetcher=stub_fetcher,
                 )
-                result = await graph.ainvoke(
-                    {"ticker": "AAPL"},
-                    config={
-                        "configurable": {
-                            "thread_id": "test-run2",
-                            "user_id": "alice",
-                            "max_investment_debate_rounds": 1,
-                            "decision_date": "2026-05-17",
-                        }
-                    },
-                )
+                result = await graph.ainvoke({"ticker": "AAPL"}, config=run2_config)
         finally:
             patcher.stop()
 

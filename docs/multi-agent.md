@@ -29,6 +29,7 @@ def build_conference_graph(
     terminator: Terminator,
     judge: Judge | None = None,
     state_schema: type = ConferenceState,
+    output_schema: type | None = None,
     messages_field: str = "messages",
     next_speaker_field: str = "next_speaker",
     agent_cursors_field: str = "agent_cursors",
@@ -37,7 +38,7 @@ def build_conference_graph(
 ) -> CompiledStateGraph: ...
 ```
 
-The `*_field` parameters let the conference embed in a parent state schema that uses renamed fields (see `trading_decision` using `risk_debate_messages` / `risk_debate_agent_cursors`).
+The `*_field` parameters let the conference embed in a parent state schema that uses renamed fields (see `trading_decision` using `risk_debate_messages` / `risk_debate_agent_cursors`). `output_schema` restricts which channels the compiled subgraph emits back to a parent — **required when the conference shares reducer channels with its parent** (see [the reducer-echo invariant](#output_schema--the-reducer-echo-invariant) below).
 
 ---
 
@@ -310,6 +311,7 @@ def _build_risk_debate_subgraph(max_rounds: int) -> CompiledStateGraph:
             num_participants=len(participants),
         ),
         state_schema=TradingDecisionState,
+        output_schema=RiskDebateOutput,
         messages_field="risk_debate_messages",
         agent_cursors_field="risk_debate_agent_cursors",
     )
@@ -317,7 +319,13 @@ def _build_risk_debate_subgraph(max_rounds: int) -> CompiledStateGraph:
 
 From the parent graph's perspective the result is a single `risk_debate` node: `trader → risk_debate → portfolio_manager` is a straight edge chain. The Portfolio Manager reads `state["risk_debate_messages"]` and passes it through `format_risk_history(messages)` (a thin wrapper over `multi_agent.render_messages_chronological`) into the PM prompt as `{{ transcript }}`.
 
-The Bull/Bear investment debate is still bespoke today (uses per-speaker `Annotated[list[str], operator.add]` reducers + a hand-written `_route_investment_debate` router). Migration to the conference framework via `AlternatingModerator("bull_researcher", "bear_researcher")` is a roadmap item.
+The **Bull/Bear investment debate** runs on the same framework via `_build_investment_debate_subgraph(max_rounds)` — an `AlternatingModerator("bull_researcher", "bear_researcher")` (Bull opens each round) + `MaxRoundsTerminator`, writing into `investment_debate_messages` / `investment_debate_agent_cursors` / `investment_next_speaker`. The Investment Judge reads `investment_debate_messages` via `format_debate_history(messages)`.
+
+### `output_schema` — the reducer-echo invariant
+
+Both trading-decision conferences pass `output_schema=` (`InvestmentDebateOutput` / `RiskDebateOutput`), and **this is mandatory whenever the conference is compiled against a parent state schema that carries reducer-annotated channels the conference does not own.** A subgraph compiled against the full parent schema emits *every* channel in that schema — including channels it merely received as input and never wrote. For a plain-value channel that's harmless (last-write-wins), but for a reducer channel (`operator.add`, `add_messages`) the parent *re-applies* the reducer to the echoed value, **doubling it**. This is the conference-level counterpart to the [`AgentParticipant`](#3-agentparticipant-wraps-a-compiled-muffin-agent) `extract`-node isolation (which keeps a participant's internal messages out of *conference* state); `output_schema` keeps *conference* state from clobbering *parent* state. Restrict it to the conference-owned fields (`messages_field` / `agent_cursors_field` / `next_speaker_field` / `verdict_field`).
+
+> **Real bug this fixed (2026-07):** before the Bull/Bear migration, the risk-debate conference (running *after* the investment debate) was compiled against `TradingDecisionState` with no `output_schema`. It echoed the parent's `investment_bull_responses` / `investment_bear_responses` (`operator.add`) channels back through write-back, and the parent doubled them (2 turns → 4). `risk_debate_messages` survived only because `add_messages` deduplicates by message id. Both conferences now restrict their `output_schema`; regression: `tests/multi_agent/test_conference.py::TestConferenceOutputSchema`.
 
 ---
 
