@@ -151,6 +151,12 @@ class ToolResultCacheMiddleware(AgentMiddleware):
 
         if not isinstance(result, ToolMessage):
             return result
+        # `status` is the authoritative success/failure signal — never cache
+        # (or drop it when reconstructing) an errored result. Content-string
+        # heuristics like `is_error_content()` are a fallback for messages
+        # that never set `status`, not a substitute for checking it first.
+        if result.status == "error":
+            return result
         # Only cache str and list content (the two valid ToolMessage.content types).
         if not isinstance(result.content, (str, list)):
             return result
@@ -172,6 +178,7 @@ class ToolResultCacheMiddleware(AgentMiddleware):
             content=result.content,
             tool_call_id=result.tool_call_id,
             name=result.name,
+            status=result.status,
             additional_kwargs={
                 **result.additional_kwargs,
                 "cache": _cache_metadata(

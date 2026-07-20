@@ -340,6 +340,59 @@ class TestToolResultCacheMiddleware:
 
 
 @pytest.mark.unit
+class TestStatusAuthoritative:
+    """``status`` is the authoritative success/failure signal, not a content-string
+    heuristic — a result must never be cached, nor have its status dropped on
+    reconstruction, just because its content string doesn't start with "error".
+    """
+
+    @pytest.mark.asyncio
+    async def test_status_error_not_cached_even_without_error_prefix(self):
+        """Reproduces the ``get_indicators`` bug: ``ToolRetryMiddleware``'s
+        exhausted-retry message doesn't start with "error" but carries
+        ``status="error"`` — it must not be cached, and the returned message
+        must keep ``status="error"``."""
+        store = AsyncMock()
+        store.aget = AsyncMock(return_value=None)
+        store.aput = AsyncMock()
+
+        content = "Tool 'get_indicators' failed after 1 attempt with ToolException: ..."
+        handler_result = ToolMessage(
+            content=content, tool_call_id="tc_1", status="error"
+        )
+        handler = AsyncMock(return_value=handler_result)
+
+        mw = ToolResultCacheMiddleware()
+        request = _make_request("get_indicators", store=store)
+
+        result = await mw.awrap_tool_call(request, handler)
+
+        store.aput.assert_not_awaited()
+        assert result.status == "error"
+        assert result.content == content
+
+    @pytest.mark.asyncio
+    async def test_success_status_forwarded_on_cache_write(self):
+        """A newly-cached ``ToolMessage`` forwards its original ``status``."""
+        store = AsyncMock()
+        store.aget = AsyncMock(return_value=None)
+        store.aput = AsyncMock()
+
+        handler_result = ToolMessage(
+            content="ok data", tool_call_id="tc_1", status="success"
+        )
+        handler = AsyncMock(return_value=handler_result)
+
+        mw = ToolResultCacheMiddleware()
+        request = _make_request("tool_a", store=store)
+
+        result = await mw.awrap_tool_call(request, handler)
+
+        store.aput.assert_awaited_once()
+        assert result.status == "success"
+
+
+@pytest.mark.unit
 class TestStrictContentInvariant:
     """Verify the cache never injects prose / markers into ``content``.
 

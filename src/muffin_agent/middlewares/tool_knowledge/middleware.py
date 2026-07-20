@@ -174,6 +174,7 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
                     f"Previous error: {failed_calls[dup_key]}"
                 ),
                 tool_call_id=request.tool_call["id"],
+                status="error",
             )
 
         # Run the tool; treat raised exceptions and errored ToolMessages
@@ -233,6 +234,7 @@ class ToolKnowledgeMiddleware(AgentMiddleware["ToolLessonState"]):
             error_message_obj = ToolMessage(
                 content=f"{prefix}: {error_msg}",
                 tool_call_id=request.tool_call["id"],
+                status="error",
             )
 
         if permanent:
