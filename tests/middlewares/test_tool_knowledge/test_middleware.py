@@ -74,6 +74,7 @@ class TestDuplicateBlock:
         assert isinstance(result, ToolMessage)
         assert "DUPLICATE CALL BLOCKED" in result.content
         assert prior in result.content
+        assert result.status == "error"
 
 
 @pytest.mark.unit
@@ -110,6 +111,7 @@ class TestErrorRecording:
 
         assert isinstance(result, ToolMessage)
         assert result.content.startswith("Error: ")
+        assert result.status == "error"
         store.aput.assert_awaited_once()  # learned anyway
 
     @pytest.mark.asyncio
