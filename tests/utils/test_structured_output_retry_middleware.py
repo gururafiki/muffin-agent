@@ -63,7 +63,10 @@ def test_jumps_to_model_after_failed_parse_without_nudge():
     mw = _StructuredOutputRetryMiddleware("_SampleOutput")
     state = {"messages": [AIMessage(content=""), _parse_error_tool_message()]}
     update = mw._guard(state)
-    assert update == {"jump_to": "model"}
+    assert update is not None
+    assert update["jump_to"] == "model"
+    assert "messages" not in update  # the parse-error IS the feedback
+    assert update["structured_retry_jumps"] == 1  # this jump is counted
 
 
 @pytest.mark.unit
@@ -87,7 +90,9 @@ def test_nudges_count_as_attempts():
     nudge = HumanMessage(content="nudge", additional_kwargs={_NUDGE_MARKER: True})
     state = {"messages": [AIMessage(content="prose"), nudge]}
     update = mw._guard(state)
-    assert update == {"jump_to": "model"}  # attempt 1 of 2 — no second nudge
+    assert update is not None
+    assert update["jump_to"] == "model"  # attempt 1 of 2
+    assert "messages" not in update  # no second nudge — the first one counts
 
     state["messages"].append(_parse_error_tool_message())
     with pytest.raises(StructuredOutputRetryExhaustedError):
@@ -100,6 +105,34 @@ def test_raises_after_max_attempts():
     state = {"messages": [_parse_error_tool_message() for _ in range(3)]}
     with pytest.raises(StructuredOutputRetryExhaustedError, match="3 attempt"):
         mw._guard(state)
+
+
+@pytest.mark.unit
+def test_bounds_jumps_when_model_cannot_run():
+    """Livelock backstop: the guard raises even when no new transcript artifact
+    ever appears.
+
+    Reproduces the prod hang (council personas, thread 019f8476-…): once
+    ``ModelCallLimitMiddleware(exit_behavior="end")`` spends the model-call
+    budget, the model can no longer run, so the transcript-attempt count freezes
+    (here at 1 — a single nudge). Without the jump counter the guard would return
+    ``jump_to: model`` forever; the ``structured_retry_jumps`` counter climbs on
+    every bounce and forces exhaustion after ``max_attempts`` jumps.
+    """
+    mw = _StructuredOutputRetryMiddleware("_SampleOutput", max_attempts=3)
+    # Frozen transcript: one nudge (attempts==1), never gains a schema ToolMessage.
+    frozen = [
+        AIMessage(content="prose"),
+        HumanMessage(content="n", additional_kwargs={_NUDGE_MARKER: True}),
+    ]
+    jumps = 0
+    with pytest.raises(StructuredOutputRetryExhaustedError):
+        for _ in range(50):  # far more than max_attempts — must raise well before
+            update = mw._guard({"messages": frozen, "structured_retry_jumps": jumps})
+            assert update is not None and update["jump_to"] == "model"
+            # Emulate the operator.add reducer merging the returned delta.
+            jumps += update["structured_retry_jumps"]
+    assert jumps == 3  # raised on the 4th call, after exactly max_attempts jumps
 
 
 @pytest.mark.unit

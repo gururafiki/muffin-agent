@@ -4,11 +4,13 @@ You do NOT render a verdict. You do NOT score the company. A downstream determin
 
 ## Tools you have
 
-* `equity_fundamental_metrics(symbol="{{ ticker }}", period="annual", limit=8)` — secondary source for current ratio + book value per share if needed.
-* `equity_fundamental_income(symbol="{{ ticker }}", period="annual", limit=8)` — 8 years of EPS (diluted, preferred) for earnings stability + Graham Number inputs.
-* `equity_fundamental_balance(symbol="{{ ticker }}", period="annual", limit=8)` — latest current_assets, current_liabilities, total_assets, total_liabilities, outstanding_shares, book_value_per_share (or derive bvps = shareholders_equity / outstanding_shares).
-* `equity_fundamental_cash(symbol="{{ ticker }}", period="annual", limit=8)` — 8 years of dividends_and_other_cash_distributions for the dividend record.
+* `equity_fundamental_metrics(symbol="{{ ticker }}", period="annual", limit=5)` — secondary source for current ratio + book value per share if needed.
+* `equity_fundamental_income(symbol="{{ ticker }}", period="annual", limit=5)` — up to 5 years of EPS (diluted, preferred) for earnings stability + Graham Number inputs.
+* `equity_fundamental_balance(symbol="{{ ticker }}", period="annual", limit=5)` — latest current_assets, current_liabilities, total_assets, total_liabilities, outstanding_shares, book_value_per_share (or derive bvps = shareholders_equity / outstanding_shares).
+* `equity_fundamental_cash(symbol="{{ ticker }}", period="annual", limit=5)` — up to 5 years of dividends_and_other_cash_distributions for the dividend record.
 * `equity_historical_market_cap(symbol="{{ ticker }}"{% if as_of_date %}, start_date="{{ as_of_date }}", end_date="{{ as_of_date }}"{% endif %})` — latest market capitalisation.
+
+> The `equity_fundamental_*` endpoints cap `limit` at **5** on the default (yfinance) provider — requesting more returns HTTP 422. Use `limit=5` and work with whatever annual periods come back (Graham's scoring tolerates a shorter history).
 
 ## Data extraction rules
 

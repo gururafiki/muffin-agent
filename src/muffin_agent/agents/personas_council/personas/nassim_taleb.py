@@ -214,8 +214,31 @@ class NassimTalebState(AgentState):
 # ── Composite scorers ─────────────────────────────────────────────────────────
 
 
+def _to_float(value: Any) -> float | None:
+    """Coerce a possibly-string numeric to ``float`` (``None`` if not numeric).
+
+    ``NassimTalebRawData.prices_1y`` / ``.insider_trades`` are ``list[dict[str,
+    Any]]`` — Pydantic does NOT coerce their inner values the way it coerces the
+    ``*_series: list[float | None]`` fields. A weak LLM can extract ``close`` /
+    ``transaction_shares`` as strings ("185.23"), and ``"185.23" > 0`` raises
+    ``TypeError: '>' not supported between instances of 'str' and 'int'`` (hit in
+    prod on the AMZN council run). Call this at every site that reads those dicts
+    before comparing/arithmetic.
+    """
+    if isinstance(value, bool):  # bool is an int subclass — never a price/quantity
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
 def _daily_returns_from_bars(bars: list[dict[str, Any]]) -> list[float]:
-    closes = [b.get("close") for b in bars if b.get("close") is not None]
+    closes = [c for c in (_to_float(b.get("close")) for b in bars) if c is not None]
     returns: list[float] = []
     for i in range(1, len(closes)):
         prev = closes[i - 1]
@@ -440,8 +463,12 @@ def _score_taleb_fragility(state: NassimTalebState) -> NassimTalebFragility:
 
 def _score_taleb_skin_in_game(state: NassimTalebState) -> NassimTalebSkinInGame:
     insider_trades = state.get("insider_trades") or []
-    buys = sum(1 for t in insider_trades if (t.get("transaction_shares") or 0) > 0)
-    sells = sum(1 for t in insider_trades if (t.get("transaction_shares") or 0) < 0)
+    buys = sum(
+        1 for t in insider_trades if (_to_float(t.get("transaction_shares")) or 0) > 0
+    )
+    sells = sum(
+        1 for t in insider_trades if (_to_float(t.get("transaction_shares")) or 0) < 0
+    )
     if buys + sells == 0:
         return NassimTalebSkinInGame(
             insider_buys=0,
