@@ -45,3 +45,39 @@ class TestSharedRateLimiter:
         assert len(models) == 2
         assert models[0].rate_limiter is models[1].rate_limiter
         assert models[0].rate_limiter is _shared_rate_limiter(0.3)
+
+
+@pytest.mark.unit
+class TestChainPerProfileRateLimiter:
+    """The council path (`get_llm_for_role` → per-profile `_build_from_profile`)
+    honours each profile's own `requests_per_second`. The deployed chain throttles
+    BOTH the Ollama primary and the OpenRouter fallback so the ~19-way fan-out
+    doesn't overwhelm Ollama Cloud with concurrent requests."""
+
+    def test_ollama_primary_throttled_separately_from_openrouter_fallback(self):
+        cfg = ModelConfiguration(
+            openrouter_api_key="x",
+            llm_chain=[
+                {"provider": "ollama", "model": "m", "requests_per_second": 0.5},
+                {
+                    "provider": "openrouter",
+                    "model": "x/y:free",
+                    "requests_per_second": 0.3,
+                },
+            ],
+        )
+        primary, fallback = cfg.get_llm_for_role("collector")
+        # each profile gets its OWN shared limiter keyed by its rate
+        assert primary.rate_limiter is _shared_rate_limiter(0.5)
+        assert fallback.rate_limiter is _shared_rate_limiter(0.3)
+        assert primary.rate_limiter is not fallback.rate_limiter
+
+    def test_ollama_profile_without_rps_is_unthrottled(self):
+        # Regression: an Ollama primary with no `requests_per_second` gets NO
+        # limiter — the misconfiguration that let the council flood Ollama Cloud
+        # with "too many concurrent requests" (429) on the AMZN run.
+        cfg = ModelConfiguration(
+            llm_chain=[{"provider": "ollama", "model": "m"}],
+        )
+        (primary,) = cfg.get_llm_for_role("collector")
+        assert primary.rate_limiter is None

@@ -34,7 +34,8 @@ Not intended for direct use by callers.
 
 from __future__ import annotations
 
-from typing import Any
+import operator
+from typing import Annotated, Any, NotRequired, cast
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -50,6 +51,25 @@ from langgraph.runtime import Runtime
 _NUDGE_MARKER = "structured_output_retry_nudge"
 
 
+class _StructuredRetryState(AgentState):
+    """Adds a private jump counter so the guard cannot livelock.
+
+    The transcript-artifact attempt count (schema ``ToolMessage``s + nudges)
+    only advances when the MODEL runs. But ``ModelCallLimitMiddleware(
+    exit_behavior="end")`` can stop the model from ever running again once its
+    call budget is spent: the transcript then never gains a new artifact, the
+    artifact count freezes below ``max_attempts``, and ``_guard`` would jump to
+    the model forever while ``ModelCallLimit`` bounces it straight back to
+    ``end`` — one superstep per bounce, until the Platform ``recursion_limit``
+    (10011 in prod) finally trips after ~10k iterations. This ``operator.add``
+    counter increments on EVERY guard jump regardless of whether the model
+    actually ran, giving the guard an execution-independent ceiling that breaks
+    the livelock after ``max_attempts`` jumps.
+    """
+
+    structured_retry_jumps: NotRequired[Annotated[int, operator.add]]
+
+
 class StructuredOutputRetryExhaustedError(Exception):
     """No structured response after all in-loop retries.
 
@@ -61,13 +81,20 @@ class StructuredOutputRetryExhaustedError(Exception):
     """
 
 
-class _StructuredOutputRetryMiddleware(AgentMiddleware[AgentState[Any], Any, Any]):
+class _StructuredOutputRetryMiddleware(
+    AgentMiddleware[_StructuredRetryState, Any, Any]
+):
     """Jump back to the model when the loop ends without ``structured_response``.
 
     One attempt = one schema-tool ``ToolMessage`` (a parse failure or a
-    success) or one injected nudge. The guard fires only when the agent is
+    success), one injected nudge, OR one guard jump (the ``structured_retry_jumps``
+    counter) — whichever is highest. The jump counter is the livelock backstop:
+    it advances even when the model can no longer run (see
+    :class:`_StructuredRetryState`). The guard fires only when the agent is
     ending WITHOUT a structured response, so successful runs never pay for it.
     """
+
+    state_schema = _StructuredRetryState
 
     def __init__(self, schema_name: str, *, max_attempts: int = 3) -> None:
         """Initialize the guard.
@@ -99,15 +126,24 @@ class _StructuredOutputRetryMiddleware(AgentMiddleware[AgentState[Any], Any, Any
     def _guard(self, state: AgentState[Any]) -> dict[str, Any] | None:
         if state.get("structured_response") is not None:
             return None
+        # Two independent ceilings: transcript artifacts (advance only when the
+        # model runs) and guard jumps (advance every bounce — the livelock
+        # backstop when the model can no longer run). Whichever hits first wins.
         attempts = self._count_attempts(state.get("messages", []))
-        if attempts >= self._max_attempts:
+        jumps = cast(int, state.get("structured_retry_jumps", 0))
+        effective = max(attempts, jumps)
+        if effective >= self._max_attempts:
             raise StructuredOutputRetryExhaustedError(
-                f"Agent ended without a structured response after {attempts} "
+                f"Agent ended without a structured response after {effective} "
                 f"attempt(s) at the '{self._schema_name}' output tool. The parse "
-                "errors are in the message history; the model failed to produce "
-                "valid output."
+                "errors (if any) are in the message history; the model failed to "
+                "produce valid output — or could not run (e.g. a model-call limit "
+                "was reached)."
             )
-        update: dict[str, Any] = {"jump_to": "model"}
+        # Count this jump. ``operator.add`` accumulates it across guard calls, so
+        # the counter climbs even when the model never re-runs to add a new
+        # transcript artifact.
+        update: dict[str, Any] = {"jump_to": "model", "structured_retry_jumps": 1}
         if attempts == 0:
             # The model never called the schema tool — the transcript carries
             # no feedback, so inject an explicit instruction.

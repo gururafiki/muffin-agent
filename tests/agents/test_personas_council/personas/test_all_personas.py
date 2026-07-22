@@ -53,6 +53,28 @@ class TestPersonaSurface:
                     f"personas_council/personas/{slug}_data_collection.jinja: {exc}"
                 )
 
+    def test_data_collection_prompts_respect_fundamentals_limit_cap(self):
+        """No persona may request ``limit>5`` on ``equity_fundamental_*``.
+
+        The default (yfinance) provider caps those endpoints at 5 — a higher
+        ``limit`` returns HTTP 422, which then cascades into "Tool call limit
+        exceeded" as the model retries (observed on the AMZN council run, where
+        ben_graham's prompt requested ``limit=8``).
+        """
+        import re
+
+        env = Environment(loader=FileSystemLoader(PROMPTS_DIR))
+        bad = re.compile(r"equity_fundamental_\w+\([^)]*limit=(\d+)")
+        for slug in _PERSONA_SLUGS:
+            source = env.loader.get_source(  # type: ignore[union-attr]
+                env, f"personas_council/personas/{slug}_data_collection.jinja"
+            )[0]
+            for match in bad.finditer(source):
+                assert int(match.group(1)) <= 5, (
+                    f"{slug}_data_collection.jinja requests "
+                    f"equity_fundamental_* limit={match.group(1)} (>5 caps at 422)"
+                )
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize("slug", _PERSONA_SLUGS)
