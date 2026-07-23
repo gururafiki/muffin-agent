@@ -25,7 +25,7 @@ from ....prompts import render_template
 from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
-from ..schemas import AnalystSignal, merge_tool_runs
+from ..schemas import AnalystSignal, merge_subagent_tree, merge_tool_runs
 
 logger = logging.getLogger(__name__)
 _LLM_RETRY = RetryPolicy(max_attempts=2)
@@ -107,6 +107,7 @@ class MohnishPabraiInput(TypedDict, total=False):
 class MohnishPabraiOutput(TypedDict, total=False):
     persona_signals: list[dict[str, Any]]
     tool_runs: list[dict[str, Any]]
+    subagent_tree: dict[str, Any]
 
 
 class MohnishPabraiState(AgentState):
@@ -143,6 +144,7 @@ class MohnishPabraiState(AgentState):
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
     tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
+    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
 
 
 # ── Composite scorers ─────────────────────────────────────────────────────────
