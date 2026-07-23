@@ -5,6 +5,7 @@ the sub-agent execution tree (``subagent_tree``). Replaces the former
 ``subagent_transcript`` and ``tool_telemetry`` middlewares.
 """
 
+from .detail_store import offload_subagent_detail
 from .middleware import (
     AgentCaptureMiddleware,
     AgentCaptureParentMiddleware,
@@ -36,5 +37,6 @@ __all__ = [
     "merge_subagent_tree",
     "merge_tool_runs",
     "node_ids_from_ns",
+    "offload_subagent_detail",
     "serialize_messages",
 ]

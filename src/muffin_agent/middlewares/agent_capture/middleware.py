@@ -28,6 +28,7 @@ graph node surfaces them on its output state.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Annotated, Any, Generic, Literal, NotRequired
 
 from langchain.agents import AgentState
@@ -36,9 +37,26 @@ from langchain.agents.middleware.types import ContextT
 from langgraph.config import get_config
 from langgraph.runtime import Runtime
 
+from .detail_store import offload_subagent_detail
 from .records import DEFAULT_EXCLUDE_TOOLS, build_tool_records, merge_tool_runs
 from .serialize import first_human, serialize_messages
 from .tree import build_tree_node, merge_subagent_tree, node_ids_from_ns
+
+
+@dataclass(frozen=True)
+class _CaptureResult:
+    """Everything one ``_build_capture`` pass produces, for reuse by callers.
+
+    ``updates`` is the state-update dict ``_capture``/``after_agent`` returns
+    as-is; the remaining fields are the heavy payload ``aafter_agent`` offloads
+    to the Store without recomputing ``build_tool_records``/``serialize_messages``.
+    """
+
+    updates: dict[str, Any]
+    node_id: str
+    tool_runs: list[dict[str, Any]]
+    output: Any
+    serialized_messages: list[dict[str, Any]]
 
 
 def merge_subagent_runs(
@@ -106,7 +124,14 @@ class AgentCaptureMiddleware(
         self._transcript_subagent_only = transcript_subagent_only
         self._exclude_tools = exclude_tools
 
-    def _capture(self, state: AgentCaptureState) -> dict[str, Any] | None:
+    def _build_capture(self, state: AgentCaptureState) -> _CaptureResult | None:
+        """Do the one message-walk and return everything derived from it.
+
+        Shared by ``_capture`` (sync path, unchanged behaviour) and
+        ``aafter_agent`` (async path, which additionally offloads the heavy
+        payload to the Store) so neither ``build_tool_records`` nor
+        ``serialize_messages`` runs twice per agent completion.
+        """
         messages = state.get("messages") or []
         if not messages:
             return None
@@ -144,28 +169,73 @@ class AgentCaptureMiddleware(
             )
         }
 
+        serialized_messages = serialize_messages(messages)
         if not self._transcript_subagent_only or _running_as_subagent():
             updates["subagent_runs"] = {
                 uuid.uuid4().hex[:12]: {
                     "name": self._name,
                     "description": first_human(messages),
-                    "messages": serialize_messages(messages),
+                    "messages": serialized_messages,
                 }
             }
 
-        return updates or None
+        return _CaptureResult(
+            updates=updates,
+            node_id=node_id,
+            tool_runs=records or [],
+            output=output,
+            serialized_messages=serialized_messages,
+        )
+
+    def _capture(self, state: AgentCaptureState) -> dict[str, Any] | None:
+        result = self._build_capture(state)
+        return result.updates if result is not None else None
 
     def after_agent(
         self, state: AgentCaptureState, runtime: Runtime[ContextT]
     ) -> dict[str, Any] | None:
-        """Capture transcript + tool runs + tree node into state (sync)."""
+        """Capture transcript + tool runs + tree node into state (sync).
+
+        Does NOT offload to the Store — offloading is async-only, wired in
+        ``aafter_agent`` below.
+        """
         return self._capture(state)
 
     async def aafter_agent(
         self, state: AgentCaptureState, runtime: Runtime[ContextT]
     ) -> dict[str, Any] | None:
-        """Capture transcript + tool runs + tree node into state (async)."""
-        return self._capture(state)
+        """Capture transcript + tool runs + tree node into state (async).
+
+        Additionally offloads the heavy per-node detail (full transcript +
+        tool payloads + output) to the Store, keyed by this node's tree id,
+        so the UI can fetch it lazily instead of it riding ``thread.values``.
+        Best-effort: a ``None`` store or a store failure never breaks capture.
+        """
+        result = self._build_capture(state)
+        if result is None:
+            return None
+
+        try:
+            cfg = get_config()
+            thread_id = (
+                cfg.get("configurable", {}).get("thread_id")
+                if isinstance(cfg, dict)
+                else None
+            )
+        except Exception:
+            thread_id = None
+
+        if thread_id:
+            await offload_subagent_detail(
+                runtime.store,
+                thread_id,
+                result.node_id,
+                messages=result.serialized_messages,
+                tool_runs=result.tool_runs,
+                output=result.output,
+            )
+
+        return result.updates
 
 
 class AgentCaptureParentMiddleware(
