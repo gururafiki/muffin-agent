@@ -16,16 +16,19 @@ middlewares (which duplicated purpose and mechanism — see roadmap). One
   the deployed LangGraph runtime). Graphs opt IN by declaring a ``tool_runs``
   channel on their state; parents that don't declare it drop the records at
   their boundary for free.
+* ``subagent_tree`` — one light ``TreeNode`` per capturing agent (see
+  ``tree.py``), keyed by an id derived from the ambient ``checkpoint_ns``.
+  Captured unconditionally, same rationale as ``tool_runs``.
 
-Both are reducer-backed channels, so nested ``task``-invoked subagents' captures
-merge up to the parent automatically, and a compiled agent added as a graph
-node surfaces them on its output state.
+All three are reducer-backed channels, so nested ``task``-invoked subagents'
+captures merge up to the parent automatically, and a compiled agent added as a
+graph node surfaces them on its output state.
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any, Generic, NotRequired
+from typing import Annotated, Any, Generic, Literal, NotRequired
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
@@ -35,6 +38,7 @@ from langgraph.runtime import Runtime
 
 from .records import DEFAULT_EXCLUDE_TOOLS, build_tool_records, merge_tool_runs
 from .serialize import first_human, serialize_messages
+from .tree import build_tree_node, merge_subagent_tree, node_ids_from_ns
 
 
 def merge_subagent_runs(
@@ -45,10 +49,11 @@ def merge_subagent_runs(
 
 
 class AgentCaptureState(AgentState):
-    """Declares both capture channels: ``subagent_runs`` + ``tool_runs``."""
+    """Declares the ``subagent_runs`` / ``tool_runs`` / ``subagent_tree`` channels."""
 
     subagent_runs: NotRequired[Annotated[dict[str, Any], merge_subagent_runs]]
     tool_runs: NotRequired[Annotated[list[dict[str, Any]], merge_tool_runs]]
+    subagent_tree: NotRequired[Annotated[dict[str, Any], merge_subagent_tree]]
 
 
 def _running_as_subagent() -> bool:
@@ -114,6 +119,31 @@ class AgentCaptureMiddleware(
         if records:
             updates["tool_runs"] = records
 
+        try:
+            cfg = get_config()
+            ns = (
+                cfg.get("configurable", {}).get("checkpoint_ns")
+                if isinstance(cfg, dict)
+                else None
+            )
+        except Exception:
+            ns = None
+        node_id, parent_id = node_ids_from_ns(ns)
+        kind: Literal["task", "subgraph"] = (
+            "task" if _running_as_subagent() else "subgraph"
+        )
+        output = state.get("structured_response")
+        updates["subagent_tree"] = {
+            node_id: build_tree_node(
+                node_id=node_id,
+                parent_id=parent_id,
+                name=self._name,
+                kind=kind,
+                tool_runs=records or [],
+                output=output,
+            )
+        }
+
         if not self._transcript_subagent_only or _running_as_subagent():
             updates["subagent_runs"] = {
                 uuid.uuid4().hex[:12]: {
@@ -128,13 +158,13 @@ class AgentCaptureMiddleware(
     def after_agent(
         self, state: AgentCaptureState, runtime: Runtime[ContextT]
     ) -> dict[str, Any] | None:
-        """Capture transcript + tool runs into state (sync)."""
+        """Capture transcript + tool runs + tree node into state (sync)."""
         return self._capture(state)
 
     async def aafter_agent(
         self, state: AgentCaptureState, runtime: Runtime[ContextT]
     ) -> dict[str, Any] | None:
-        """Capture transcript + tool runs into state (async)."""
+        """Capture transcript + tool runs + tree node into state (async)."""
         return self._capture(state)
 
 
@@ -142,6 +172,6 @@ class AgentCaptureParentMiddleware(
     AgentMiddleware[AgentCaptureState, ContextT],
     Generic[ContextT],
 ):
-    """Declare both capture channels so merged-up child records land."""
+    """Declare all three capture channels so merged-up child records land."""
 
     state_schema = AgentCaptureState

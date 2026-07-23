@@ -1,3 +1,6 @@
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+from muffin_agent.middlewares.agent_capture.middleware import AgentCaptureMiddleware
 from muffin_agent.middlewares.agent_capture.tree import (
     build_tree_node,
     merge_subagent_tree,
@@ -63,3 +66,30 @@ def test_reducer_merges_by_id():
     a = {"p:1": {"id": "p:1"}}
     b = {"p:1|c:2": {"id": "p:1|c:2"}}
     assert set(merge_subagent_tree(a, b)) == {"p:1", "p:1|c:2"}
+
+
+def test_capture_emits_tree_node(monkeypatch):
+    monkeypatch.setattr(
+        "muffin_agent.middlewares.agent_capture.middleware.get_config",
+        lambda: {"configurable": {"checkpoint_ns": "pabrai:1"}},
+    )
+    mw = AgentCaptureMiddleware(name="pabrai")
+    state = {
+        "messages": [
+            HumanMessage("evaluate AAPL"),
+            AIMessage(
+                "",
+                tool_calls=[
+                    {"name": "equity_price", "args": {"t": "AAPL"}, "id": "t1"}
+                ],
+            ),
+            ToolMessage("100", tool_call_id="t1"),
+            AIMessage("done"),
+        ]
+    }
+    update = mw._capture(state)
+    assert update is not None
+    node = update["subagent_tree"]["pabrai:1"]
+    assert node["name"] == "pabrai"
+    assert node["tool_summary"]["count"] == 1
+    assert node["tool_summary"]["tools"] == ["equity_price"]

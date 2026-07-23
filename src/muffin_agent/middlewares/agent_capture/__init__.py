@@ -1,7 +1,8 @@
 """Unified agent capture from one message-walk.
 
-Captures the transcript (``subagent_runs``) + tool records (``tool_runs``).
-Replaces the former ``subagent_transcript`` and ``tool_telemetry`` middlewares.
+Captures the transcript (``subagent_runs``) + tool records (``tool_runs``) +
+the sub-agent execution tree (``subagent_tree``). Replaces the former
+``subagent_transcript`` and ``tool_telemetry`` middlewares.
 """
 
 from .middleware import (
@@ -16,14 +17,24 @@ from .records import (
     merge_tool_runs,
 )
 from .serialize import serialize_messages
+from .tree import (
+    TreeNode,
+    build_tree_node,
+    merge_subagent_tree,
+    node_ids_from_ns,
+)
 
 __all__ = [
     "AgentCaptureMiddleware",
     "AgentCaptureParentMiddleware",
     "AgentCaptureState",
     "DEFAULT_EXCLUDE_TOOLS",
+    "TreeNode",
     "build_tool_records",
+    "build_tree_node",
     "merge_subagent_runs",
+    "merge_subagent_tree",
     "merge_tool_runs",
+    "node_ids_from_ns",
     "serialize_messages",
 ]
