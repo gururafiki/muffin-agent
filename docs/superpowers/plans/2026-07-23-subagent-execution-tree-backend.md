@@ -31,50 +31,38 @@
 
 ---
 
-## Task 1: Spike — validate `checkpoint_ns` fidelity for nested + task subagents
+## Task 1: Spike — validate `checkpoint_ns` fidelity — ✅ DONE (validated by controller, 2026-07-23)
 
-**Files:**
-- Create (temporary, reverted at end): a scratch test `tests/middlewares/_spike_checkpoint_ns.py`
-- Read: `src/muffin_agent/middlewares/agent_capture/middleware.py`, `.venv/.../deepagents/middleware/subagents.py`
+Ran the real council + criteria integration graphs with a temporary `print` of
+`get_config()["configurable"]["checkpoint_ns"]` inside `AgentCaptureMiddleware._capture`
+(env-gated, then reverted — `git diff` clean). **Findings — the ns model is validated, with two
+refinements Task 2 must honour:**
 
-**Why:** the whole tree model assumes every invocation (compiled node AND deepagent `task` subagent) receives a **distinct, prefix-nestable** `checkpoint_ns`. Deepagent `task` subagents run via `subagent.ainvoke(state, {"configurable": {"ls_agent_type": "subagent"}})` — this spike confirms whether the ambient config gives them a nested `checkpoint_ns` or the parent's.
+1. **Compiled subgraph nesting works and fully encodes the tree.** Real namespaces are pipe-joined
+   `<node>:<uuid>` segments, e.g.:
+   - council: `mohnish_pabrai:<uuid>|collect_data:<uuid>|AgentCaptureMiddleware.after_agent:<uuid>`
+   - criteria: `criterion_evaluation:<uuid>|evaluate:<uuid>|AgentCaptureMiddleware.after_agent:<uuid>`;
+     stages like `ticker_classification:<uuid>|AgentCaptureMiddleware.after_agent:<uuid>`.
+   So the persona → `collect_data`, and criterion-worker → `evaluate` hierarchy is directly readable.
+2. **Refinement A — strip the trailing middleware segment.** The LAST segment is always the
+   capturing middleware's own node (`AgentCaptureMiddleware.after_agent:<uuid>`). `node_ids_from_ns`
+   MUST drop trailing `AgentCaptureMiddleware.*:<uuid>` segment(s) before computing `id`/`parent_id`.
+3. **Refinement B — reconstruct intermediate nodes from ns segments.** Only the leaf agents capture
+   (e.g. `collect_data`); the intermediate level (`mohnish_pabrai` the persona subgraph) has no
+   capture of its own and appears only as an ancestor ns prefix. So the tree is built by splitting
+   each captured node's cleaned ns into `<name>:<uuid>` segments — each segment is a node
+   (`name` = the segment's node name, `id` = the cumulative prefix), and captured detail attaches to
+   the deepest segment. The backend emits ONE record per capture keyed by its cleaned ns; ancestor
+   structural nodes are reconstructed by the consumer (Phase-2 UI) from the segment prefixes. This
+   keeps the channel minimal.
 
-- [ ] **Step 1: Write a spike that logs `checkpoint_ns` at every capture boundary**
-
-Build a tiny 2-level deep agent (a parent deep agent with one `task` subagent that itself calls a compiled ReAct sub-agent), each carrying an `AgentCaptureMiddleware`, and a temporary `print(get_config()["configurable"].get("checkpoint_ns"))` inside `_capture`. Use the integration harness `ScriptedChatModel` so the subagent actually invokes `task`. Concretely, adapt an existing nested case:
-
-```python
-# tests/middlewares/_spike_checkpoint_ns.py  (temporary)
-import pytest
-from langgraph.config import get_config
-from muffin_agent.middlewares.agent_capture import middleware as cap
-
-@pytest.mark.integration
-async def test_spike_ns(monkeypatch):
-    seen = []
-    orig = cap.AgentCaptureMiddleware._capture
-    def spy(self, state):
-        try: ns = get_config().get("configurable", {}).get("checkpoint_ns")
-        except Exception: ns = "<no-config>"
-        seen.append((self._name, ns))
-        return orig(self, state)
-    monkeypatch.setattr(cap.AgentCaptureMiddleware, "_capture", spy)
-    # ... build + ainvoke a real 2-level agent via the harness (patch_llm/patch_mcp) ...
-    # assert at least one nested ns exists whose prefix is a parent's ns
-    print("NS SEEN:", seen)
-```
-
-- [ ] **Step 2: Run it and inspect the namespaces**
-
-Run: `pytest tests/middlewares/_spike_checkpoint_ns.py -s -m integration`
-Expected: printed `(name, checkpoint_ns)` pairs. **Decision gate:**
-- If nested invocations have distinct `checkpoint_ns` where a child's ns has the parent's ns as a prefix (e.g. parent `"a:uuid"`, child `"a:uuid|b:uuid"`) → **use `checkpoint_ns` as `id`** (Task 2 primary path).
-- If `task` subagents share the parent's ns (no distinct child ns) → **fallback:** derive `id` from `checkpoint_ns` for compiled nodes, and for `task` subagents mint `id = f"{parent_ns}|task:{uuid4().hex[:8]}"` using the `ls_agent_type == "subagent"` marker + a per-capture uuid, recording `parent_id = parent_ns`. Record the chosen scheme in the report.
-
-- [ ] **Step 3: Delete the spike file and record the decision**
-
-Run: `rm tests/middlewares/_spike_checkpoint_ns.py`
-Record in the report: the observed ns format and which `id` scheme Task 2 uses. Commit nothing (spike is throwaway); the decision flows into Task 2.
+**Still open (minor, fallback covers it):** the mocked integration tests never invoke the deepagent
+`task` subagents (`subagent=False` throughout — the scripted model returns structured output without
+calling the data-collection subagents), so the `task`-subagent ns is unconfirmed. Deepagent `task`
+subagents run via `subagent.ainvoke(...)` with ambient config; they most likely receive a further
+nested ns segment, but if they instead share the parent's ns, the `_running_as_subagent()` marker +
+a minted `|task:<uuid>` id (already in Task 2's fallback) handles it. Confirm opportunistically when
+a real `task` call is exercised; it does not block Phase 1.
 
 ---
 
@@ -106,6 +94,17 @@ def test_ns_parsing_nested():
     assert node_ids_from_ns("persona:abc|collect:def") == (
         "persona:abc|collect:def", "persona:abc",
     )
+
+def test_ns_parsing_strips_trailing_middleware_segment():
+    # Real namespaces (Task-1 spike): the capturing middleware's own node is the
+    # trailing segment and must be stripped before deriving id/parent.
+    assert node_ids_from_ns(
+        "mohnish_pabrai:a|collect_data:b|AgentCaptureMiddleware.after_agent:c"
+    ) == ("mohnish_pabrai:a|collect_data:b", "mohnish_pabrai:a")
+    assert node_ids_from_ns(
+        "ticker_classification:a|AgentCaptureMiddleware.after_agent:b"
+    ) == ("ticker_classification:a", "__root__")
+    assert node_ids_from_ns("AgentCaptureMiddleware.after_agent:a") == ("__root__", None)
 
 def test_build_node_summarises_tools():
     runs = [
@@ -153,18 +152,32 @@ class TreeNode(TypedDict):
     output_preview: str | None
     has_detail: bool
 
+def _strip_capture_segments(segments: list[str]) -> list[str]:
+    """Drop trailing ``AgentCaptureMiddleware.*:<uuid>`` segments — the capturing
+    middleware's OWN node is always the last ns segment (validated in Task 1)."""
+    while segments and segments[-1].split(":", 1)[0].startswith("AgentCaptureMiddleware"):
+        segments = segments[:-1]
+    return segments
+
 def node_ids_from_ns(checkpoint_ns: str | None) -> tuple[str, str | None]:
     """Map a LangGraph ``checkpoint_ns`` to ``(id, parent_id)``.
 
-    Namespaces are ``|``-joined ``<node>:<task_id>`` segments; the id is the full
-    ns, the parent is the ns minus its last segment (``__root__`` at depth 1).
+    Namespaces are ``|``-joined ``<node>:<task_id>`` segments; the LAST segment is
+    the capturing middleware's own node and is stripped. The id is then the
+    cleaned ns; the parent is the cleaned ns minus its last segment
+    (``__root__`` at depth 1). Ancestor structural nodes (levels that never
+    capture, e.g. the persona subgraph) are reconstructed by the consumer from
+    the ``<name>:<uuid>`` segment prefixes.
     """
     if not checkpoint_ns:
         return _ROOT, None
-    segments = checkpoint_ns.split("|")
-    if len(segments) <= 1:
-        return checkpoint_ns, _ROOT
-    return checkpoint_ns, "|".join(segments[:-1])
+    segments = _strip_capture_segments(checkpoint_ns.split("|"))
+    if not segments:
+        return _ROOT, None
+    node_id = "|".join(segments)
+    if len(segments) == 1:
+        return node_id, _ROOT
+    return node_id, "|".join(segments[:-1])
 
 def _summarise(tool_runs: list[dict[str, Any]]) -> ToolSummary:
     tools: list[str] = []
