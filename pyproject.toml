@@ -13,7 +13,7 @@ dependencies = [
     "langchain>=1.3",
     "langchain-openai>=1.3.3",
     "langchain-anthropic>=1.4.8",
-    "langchain-openrouter>=0.2.4",
+    "langchain-openrouter>=0.2.7",
     # Ollama Cloud / local Ollama via the native /api/chat API (reliable tool
     # calling; the OpenAI-compat /v1 path is not) — see model_config.py.
     "langchain-ollama>=1.1.0",
