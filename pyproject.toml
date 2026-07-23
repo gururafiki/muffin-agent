@@ -23,7 +23,7 @@ dependencies = [
     # needs the crypto extra installed in the deployment image)
     "pyjwt>=2.13.0",
     "langchain-mcp-adapters>=0.2.2",
-    "langgraph-cli>=0.4.26",
+    "langgraph-cli>=0.4.31",
     "pydantic>=2.13.4",
     # Prompt templating
     "jinja2>=3.1.6",
@@ -92,7 +92,7 @@ convention = "google"
 
 [dependency-groups]
 dev = [
-    "langgraph-cli[inmem]>=0.4.26",
+    "langgraph-cli[inmem]>=0.4.31",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.3",
     "pytest-cov>=7.1.0",
