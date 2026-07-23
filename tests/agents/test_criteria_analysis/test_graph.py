@@ -218,6 +218,7 @@ class TestPackageEvaluationNode:
         assert evals[0]["weight"] == 0.4
         assert evals[0]["source"] == "skill"
         assert "tool_runs" not in evals[0]  # none captured → not attached
+        assert "subagent_tree" not in evals[0]  # none captured → not attached
         assert evals[0]["data_collected"] is False  # no tool runs → flagged
 
     def test_attaches_per_criterion_tool_runs(self):
@@ -236,6 +237,23 @@ class TestPackageEvaluationNode:
             {"tool": "equity_fundamentals", "status": "ok"}
         ]
         assert evaluation["data_collected"] is True
+
+    def test_attaches_per_criterion_subagent_tree(self):
+        """Same re-homing treatment as tool_runs (Task 5 propagation)."""
+        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
+            package_evaluation_node,
+        )
+
+        state = {
+            "criterion": {"name": "ROE", "weight": 0.4, "source": "skill"},
+            "evaluation": {"score": 0.7},
+            "subagent_tree": {"evaluate": {"id": "evaluate", "name": "evaluate"}},
+        }
+        update = package_evaluation_node(state)  # type: ignore[arg-type]
+        evaluation = update["criterion_evaluations"][0]
+        assert evaluation["subagent_tree"] == {
+            "evaluate": {"id": "evaluate", "name": "evaluate"}
+        }
 
 
 @pytest.mark.unit

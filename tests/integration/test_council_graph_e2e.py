@@ -112,10 +112,12 @@ async def test_council_runs_all_13_personas_to_judge(config, store):
     # ``evidence``, ``structured_response``, ``messages``) leaks into the council
     # state — only CouncilState channels survive (the persona graphs' explicit
     # ``output_schema=<Persona>Output`` filters them at the council boundary).
-    # `tool_runs` is a legitimate CouncilState channel: each persona's
-    # `<Persona>Output` surfaces its collect_data agent's records and the council
-    # accumulates them (empty here — the schema-routed harness single-shots the
-    # RawData response with no MCP tool calls, so no records are captured).
+    # `tool_runs` / `subagent_tree` are legitimate CouncilState channels: each
+    # persona's `<Persona>Output` surfaces its collect_data agent's records
+    # (tool_runs empty here — the schema-routed harness single-shots the
+    # RawData response with no MCP tool calls, so no tool records are
+    # captured — but subagent_tree is captured unconditionally, so it's
+    # always present) and the council accumulates them.
     allowed = {
         "ticker",
         "query",
@@ -123,6 +125,7 @@ async def test_council_runs_all_13_personas_to_judge(config, store):
         "persona_signals",
         "council_synthesis",
         "tool_runs",
+        "subagent_tree",
     }
     assert set(result.keys()) <= allowed, (
         f"persona internals leaked into council state: {set(result.keys()) - allowed}"

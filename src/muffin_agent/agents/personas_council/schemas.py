@@ -27,6 +27,13 @@ from muffin_agent.middlewares.agent_capture.records import (
     merge_tool_runs as merge_tool_runs,
 )
 
+# Re-exported for the same reason as `merge_tool_runs` above: persona files
+# annotate their `subagent_tree` state channel with the SAME reducer the
+# collect_data agent's AgentCaptureState uses.
+from muffin_agent.middlewares.agent_capture.tree import (
+    merge_subagent_tree as merge_subagent_tree,
+)
+
 # ── Shared node input contract ────────────────────────────────────────────────
 
 

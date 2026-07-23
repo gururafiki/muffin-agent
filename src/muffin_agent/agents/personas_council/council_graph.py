@@ -60,7 +60,7 @@ from .personas import (
     build_stanley_druckenmiller_agent,
     build_warren_buffett_agent,
 )
-from .schemas import PersonaInput
+from .schemas import PersonaInput, merge_subagent_tree
 from .specialists import (
     build_fundamentals_analysis_agent,
     build_growth_analysis_agent,
@@ -109,6 +109,10 @@ class CouncilState(TypedDict, total=False):
     # across all 13 personas (concurrent writers → operator.add). Drives the UI
     # "Tool execution" panel.
     tool_runs: Annotated[list[dict[str, Any]], operator.add]
+    # Sub-agent execution tree: each persona subgraph surfaces its collect_data
+    # agent's subagent_tree on its `<Persona>Output`; concurrent writers merge
+    # by node id (disjoint per persona) via merge_subagent_tree.
+    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
 
 
 async def build_council_graph(
