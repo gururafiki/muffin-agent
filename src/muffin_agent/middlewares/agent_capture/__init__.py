@@ -23,6 +23,7 @@ from .tree import (
     build_tree_node,
     merge_subagent_tree,
     node_ids_from_ns,
+    resolve_node_id,
 )
 
 __all__ = [
@@ -38,5 +39,6 @@ __all__ = [
     "merge_tool_runs",
     "node_ids_from_ns",
     "offload_subagent_detail",
+    "resolve_node_id",
     "serialize_messages",
 ]

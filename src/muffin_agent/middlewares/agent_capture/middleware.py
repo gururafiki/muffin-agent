@@ -40,7 +40,12 @@ from langgraph.runtime import Runtime
 from .detail_store import offload_subagent_detail
 from .records import DEFAULT_EXCLUDE_TOOLS, build_tool_records, merge_tool_runs
 from .serialize import first_human, serialize_messages
-from .tree import build_tree_node, merge_subagent_tree, node_ids_from_ns
+from .tree import (
+    build_tree_node,
+    merge_subagent_tree,
+    node_ids_from_ns,
+    resolve_node_id,
+)
 
 
 @dataclass(frozen=True)
@@ -157,6 +162,7 @@ class AgentCaptureMiddleware(
         kind: Literal["task", "subgraph"] = (
             "task" if _running_as_subagent() else "subgraph"
         )
+        node_id = resolve_node_id(node_id, parent_id, kind)
         output = state.get("structured_response")
         updates["subagent_tree"] = {
             node_id: build_tree_node(

@@ -5,6 +5,7 @@ from muffin_agent.middlewares.agent_capture.tree import (
     build_tree_node,
     merge_subagent_tree,
     node_ids_from_ns,
+    resolve_node_id,
 )
 
 
@@ -60,6 +61,22 @@ def test_build_node_summarises_tools():
         "cached": 1,
     }
     assert n["output_preview"] and n["has_detail"] is True
+
+
+def test_resolve_node_id_mints_unique_id_on_task_collision():
+    resolved = resolve_node_id("p:1", "p:1", "task")
+    assert resolved != "p:1"
+    assert resolved.startswith("p:1|task:")
+
+
+def test_resolve_node_id_leaves_distinct_task_id_unchanged():
+    assert resolve_node_id("p:1|c:2", "p:1", "task") == "p:1|c:2"
+
+
+def test_resolve_node_id_leaves_subgraph_collision_unchanged():
+    # Only task-kind collisions are minted a unique id; subgraph nesting is
+    # validated to always produce a distinct id from its parent already.
+    assert resolve_node_id("p:1", "p:1", "subgraph") == "p:1"
 
 
 def test_reducer_merges_by_id():

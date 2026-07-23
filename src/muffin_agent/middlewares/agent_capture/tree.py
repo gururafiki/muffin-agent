@@ -10,6 +10,7 @@ channel.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Literal, TypedDict
 
 _ROOT = "__root__"
@@ -81,6 +82,20 @@ def node_ids_from_ns(checkpoint_ns: str | None) -> tuple[str, str | None]:
     if len(segments) == 1:
         return node_id, _ROOT
     return node_id, "|".join(segments[:-1])
+
+
+def resolve_node_id(node_id: str, parent_id: str | None, kind: str) -> str:
+    """Guarantee a unique id for a task-invoked subagent.
+
+    Deepagent ``task`` subagents may not receive a ``checkpoint_ns`` distinct from
+    their parent, which would collapse the derived id onto the parent's and let
+    the reducer overwrite one node with the other. When ``kind == "task"`` and the
+    derived id would duplicate the parent, mint a unique child id so each task
+    invocation is its own node under that parent.
+    """
+    if kind == "task" and node_id == parent_id:
+        return f"{parent_id}|task:{uuid.uuid4().hex[:8]}"
+    return node_id
 
 
 def _summarise(tool_runs: list[dict[str, Any]]) -> ToolSummary:
