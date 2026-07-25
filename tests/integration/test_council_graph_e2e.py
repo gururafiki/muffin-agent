@@ -108,14 +108,37 @@ async def test_council_runs_all_13_personas_to_judge(config, store):
     assert synthesis["consensus_rating"] in InvestmentSignal.__args__
     assert synthesis["ticker"] == "AAPL"
 
+    # subagent_tree: one node per persona's collect_data ReAct agent (the only
+    # capturing node in each 3-node persona subgraph — compute_evidence/
+    # render_verdict are plain/LLM-direct, not agents). Each id is
+    # "<slug>:<task_id>|collect_data:<task_id>" — two real ns segments deep
+    # (persona subgraph, then its own collect_data agent), which is why the
+    # `|` proves real nesting even though the persona-subgraph level itself
+    # never gets a tree entry (nothing captures there; the consumer
+    # reconstructs it from the id prefix, per tree.py's docstring). Root-level
+    # ("__root__") rooting is covered by test_criteria_analysis.py instead —
+    # every capturing node here sits one level deeper than that.
+    tree = result.get("subagent_tree") or {}
+    assert tree, "subagent_tree should be populated"
+    assert len(tree) == 13  # one per persona, none dropped/collided
+    names = {n["name"] for n in tree.values()}
+    assert {"warren_buffett_data_collection", "mohnish_pabrai_data_collection"} <= names
+    assert all("_data_collection" in n for n in names)
+    assert all("|" in node_id for node_id in tree)  # nested under the persona subgraph
+    parents = {n["parent_id"] for n in tree.values()}
+    assert len(parents) == 13  # each persona's collect_data has its own distinct parent
+    assert "__root__" not in parents  # by design: see comment above
+
     # No persona's internal scratch (the now-``output=False`` collect_data fields,
     # ``evidence``, ``structured_response``, ``messages``) leaks into the council
     # state — only CouncilState channels survive (the persona graphs' explicit
     # ``output_schema=<Persona>Output`` filters them at the council boundary).
-    # `tool_runs` is a legitimate CouncilState channel: each persona's
-    # `<Persona>Output` surfaces its collect_data agent's records and the council
-    # accumulates them (empty here — the schema-routed harness single-shots the
-    # RawData response with no MCP tool calls, so no records are captured).
+    # `tool_runs` / `subagent_tree` are legitimate CouncilState channels: each
+    # persona's `<Persona>Output` surfaces its collect_data agent's records
+    # (tool_runs empty here — the schema-routed harness single-shots the
+    # RawData response with no MCP tool calls, so no tool records are
+    # captured — but subagent_tree is captured unconditionally, so it's
+    # always present) and the council accumulates them.
     allowed = {
         "ticker",
         "query",
@@ -123,6 +146,7 @@ async def test_council_runs_all_13_personas_to_judge(config, store):
         "persona_signals",
         "council_synthesis",
         "tool_runs",
+        "subagent_tree",
     }
     assert set(result.keys()) <= allowed, (
         f"persona internals leaked into council state: {set(result.keys()) - allowed}"

@@ -11,6 +11,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.store.memory import InMemoryStore
 
 from muffin_agent.middlewares import (
     AgentCaptureMiddleware,
@@ -136,6 +137,25 @@ def test_guarded_capture_noop_when_not_subagent() -> None:
     agent.invoke({"messages": [HumanMessage("go")]}, cfg)
     runs = agent.get_state(cfg).values.get("subagent_runs")
     assert not runs, "top-level deep agent must not capture its own transcript"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_aafter_agent_offloads_heavy_detail_to_store() -> None:
+    """The async path writes the heavy payload to the Store, keyed by node id."""
+    store = InMemoryStore()
+    agent = create_agent(
+        model=_Scripted(responses=[AIMessage("fetched revenue=100")]),
+        middleware=[AgentCaptureMiddleware(name="pabrai")],
+        store=store,
+    )
+    cfg = {"configurable": {"thread_id": "T-offload"}}
+    await agent.ainvoke({"messages": [HumanMessage("evaluate AAPL")]}, cfg)
+    # subagent_tree node id for a root (non-nested) run is "__root__".
+    item = await store.aget(("subagent_detail", "T-offload"), "__root__")
+    assert item is not None
+    assert item.value["messages"]
+    assert item.value["tool_runs"] == []
 
 
 @pytest.mark.unit

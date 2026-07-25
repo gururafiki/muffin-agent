@@ -36,6 +36,7 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from muffin_agent.middlewares.agent_capture.records import merge_tool_runs
+from muffin_agent.middlewares.agent_capture.tree import merge_subagent_tree
 
 
 class AnalystInput(TypedDict, total=False):
@@ -182,3 +183,9 @@ class TradingDecisionState(TypedDict, total=False):
     analyst agents are added as parent-graph nodes (no ``output_schema``
     restriction), so their records merge up here automatically; the downstream
     Bull/Bear/Judge/Trader/PM nodes make no tool calls."""
+
+    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
+    """Sub-agent execution tree nodes captured by ``AgentCaptureMiddleware``,
+    same propagation scope as ``tool_runs`` above (the four analyst agents;
+    the two debate conference subgraphs deliberately do NOT carry this — see
+    ``InvestmentDebateOutput`` / ``RiskDebateOutput``)."""

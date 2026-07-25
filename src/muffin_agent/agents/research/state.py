@@ -17,6 +17,7 @@ from langchain.agents import AgentState
 from langchain_core.messages import BaseMessage
 
 from muffin_agent.middlewares.agent_capture.records import merge_tool_runs
+from muffin_agent.middlewares.agent_capture.tree import merge_subagent_tree
 
 TaskType = Literal[
     "research_report",
@@ -69,6 +70,11 @@ class ResearchState(AgentState):
     """Tool-execution records captured by ``AgentCaptureMiddleware``. The
     researcher is a function node, so ``researcher_node`` forwards the deep
     agent's ``tool_runs`` explicitly (see ``nodes/researcher.py``)."""
+
+    subagent_tree: NotRequired[Annotated[dict[str, Any], merge_subagent_tree]]
+    """Sub-agent execution tree nodes captured by ``AgentCaptureMiddleware``,
+    same forwarding scope as ``tool_runs`` above — ``researcher_node``
+    forwards the deep agent's ``subagent_tree`` explicitly alongside it."""
 
 
 class ResearchClassificationFilterState(AgentState):

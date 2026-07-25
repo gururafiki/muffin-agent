@@ -25,6 +25,13 @@ from muffin_agent.agents.research.schemas import (
 #: ``ResearchState`` channel are exercised end-to-end.
 _STUB_TOOL_RUN = {"tool": "firecrawl_search", "agent": "deep-research", "status": "ok"}
 
+#: One sub-agent-tree node the researcher stub emits, mimicking
+#: ``AgentCaptureMiddleware`` output so the node's ``subagent_tree`` forwarding +
+#: the ``ResearchState`` channel are exercised end-to-end (Task 5 propagation).
+_STUB_SUBAGENT_TREE = {
+    "__root__": {"id": "__root__", "name": "deep-research", "kind": "subgraph"}
+}
+
 
 @pytest.mark.unit
 class TestBuildGraph:
@@ -65,10 +72,12 @@ def _patch_all_nodes(
     class _ResearcherStub:
         async def ainvoke(self, *_a: Any, **_kw: Any) -> dict[str, Any]:
             # Mimic the deep agent's AgentCaptureMiddleware output so the node's
-            # tool_runs forwarding + the ResearchState channel are exercised.
+            # tool_runs/subagent_tree forwarding + the ResearchState channel are
+            # exercised.
             return {
                 "structured_response": findings,
                 "tool_runs": [_STUB_TOOL_RUN],
+                "subagent_tree": _STUB_SUBAGENT_TREE,
             }
 
     class _WriterStub:
@@ -127,6 +136,8 @@ class TestEndToEnd:
         assert result["mode"] == "balanced"
         # The researcher's captured tool_runs surface for the "Tool execution" panel.
         assert result["tool_runs"] == [_STUB_TOOL_RUN]
+        # Same propagation proof for the sub-agent execution tree (Task 5).
+        assert result["subagent_tree"] == _STUB_SUBAGENT_TREE
 
     async def test_skip_search_bypasses_researcher_and_rerank(
         self,

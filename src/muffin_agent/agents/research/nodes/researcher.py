@@ -168,4 +168,10 @@ async def researcher_node(
     # so the run view's "Tool execution" panel populates. It's a function node,
     # so the records don't auto-propagate like a compiled-agent graph node.
     tool_runs = result.get("tool_runs") if isinstance(result, dict) else None
-    return {"evidence": chunks, "tool_runs": tool_runs or []}
+    # Same treatment for the sub-agent execution tree (see tool_runs above).
+    subagent_tree = result.get("subagent_tree") if isinstance(result, dict) else None
+    return {
+        "evidence": chunks,
+        "tool_runs": tool_runs or [],
+        "subagent_tree": subagent_tree or {},
+    }

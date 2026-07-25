@@ -34,6 +34,8 @@ from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 from typing_extensions import TypedDict
 
+from muffin_agent.middlewares.agent_capture.tree import merge_subagent_tree
+
 from ..criterion_evaluation import create_criterion_evaluation_agent
 from .state import CriterionEvaluationSendPayload
 
@@ -66,6 +68,9 @@ class _CriterionWorkerState(TypedDict, total=False):
     # nested subagents' records); the package node moves it onto the
     # evaluation dict so it rides into the parent per-criterion, not top-level.
     tool_runs: Annotated[list[dict[str, Any]], operator.add]
+    # Same treatment as tool_runs above, but keyed by node id (dict merge,
+    # not list concat) — the package node moves it onto the evaluation dict too.
+    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
 
 
 class _CriterionWorkerOutput(TypedDict):
@@ -177,6 +182,9 @@ def package_evaluation_node(state: _CriterionWorkerState) -> dict[str, Any]:
     tool_runs = state.get("tool_runs") or []
     if tool_runs:
         evaluation["tool_runs"] = tool_runs
+    subagent_tree = state.get("subagent_tree") or {}
+    if subagent_tree:
+        evaluation["subagent_tree"] = subagent_tree
     _reconcile_data_sources(evaluation, tool_runs)
     _emit_criterion_evaluated(evaluation)
     return {"criterion_evaluations": [evaluation]}

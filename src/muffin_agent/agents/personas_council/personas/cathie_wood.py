@@ -27,7 +27,7 @@ from ....prompts import render_template
 from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
-from ..schemas import AnalystSignal, merge_tool_runs
+from ..schemas import AnalystSignal, merge_subagent_tree, merge_tool_runs
 from ..tools.scoring_helpers import compute_intrinsic_value_exit_multiple
 
 logger = logging.getLogger(__name__)
@@ -135,6 +135,7 @@ class CathieWoodOutput(TypedDict, total=False):
 
     persona_signals: list[dict[str, Any]]
     tool_runs: list[dict[str, Any]]
+    subagent_tree: dict[str, Any]
 
 
 class CathieWoodState(AgentState):
@@ -173,6 +174,7 @@ class CathieWoodState(AgentState):
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
     tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
+    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
 
 
 # ── Composite scorers ─────────────────────────────────────────────────────────

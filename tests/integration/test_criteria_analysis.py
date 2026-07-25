@@ -173,6 +173,38 @@ async def test_criteria_analysis_runs_end_to_end(config, store):
     for key in ("classification", "criteria_definition", "valuation_methodology"):
         assert "error" not in result[key]
 
+    # subagent_tree — top level: one node per stage agent (classification,
+    # criteria_definition, valuation_methodology, synthesis), each added
+    # directly to the orchestrator graph, so each roots at depth 1.
+    tree = result.get("subagent_tree") or {}
+    assert tree, "subagent_tree should be populated"
+    assert len(tree) == 4
+    names = {n["name"] for n in tree.values()}
+    assert names == {
+        "ticker_classification",
+        "criteria_definition",
+        "valuation_methodology",
+        "criteria_analysis_synthesis",
+    }
+    parents = {n["parent_id"] for n in tree.values()}
+    assert parents == {"__root__"}  # depth-1 nodes rooted correctly
+    assert all("|" not in node_id for node_id in tree)  # not nested — no parent agent
+
+    # subagent_tree — per criterion: the criterion_evaluation deep agent runs
+    # inside the Send-fan-out worker subgraph (evaluate -> package), so its
+    # tree node id is nested (worker ns + its own node), and the worker's
+    # `package` node moves it onto the evaluation dict rather than the
+    # top-level channel (kept scoped per-criterion, see criterion_evaluation
+    # _node.py / state.py). This is where real nesting (id containing "|")
+    # shows up for this graph.
+    for e in evals:
+        per_criterion_tree = e.get("subagent_tree") or {}
+        assert per_criterion_tree, "each criterion's subagent_tree should be populated"
+        [criterion_node] = list(per_criterion_tree.values())
+        assert criterion_node["name"] == "criterion_evaluation"
+        assert "|" in criterion_node["id"]  # nested under the worker's `evaluate` node
+        assert criterion_node["parent_id"] != "__root__"
+
 
 async def test_classification_stage_renders_ticker_into_human_message(config, store):
     """Regression: the requested ticker MUST reach the model — now via the FIRST
