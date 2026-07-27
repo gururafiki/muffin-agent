@@ -19,9 +19,6 @@ from pydantic import BaseModel, Field
 
 from ..model_config import ModelConfiguration
 from ..utils.agent_builder import MuffinAgentBuilder
-from .criteria_analysis.data_collection_evidence import (
-    DataCollectionEvidenceMiddleware,
-)
 from .investment.schemas import DataSource
 from .subagents import build_analysis_subagents
 
@@ -107,7 +104,7 @@ class CriterionEvaluationAgentState(DeepAgentState):
     classification: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
     evaluation: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
     # Evidence for the worker's anti-hallucination pass, not observability —
-    # see ``criteria_analysis.data_collection_evidence``.
+    # see ``middlewares.data_collection_guard``.
     executed_tools: Annotated[list[str], operator.add]
 
 
@@ -140,18 +137,11 @@ async def create_criterion_evaluation_agent(config: RunnableConfig):
         .with_response_format(AutoStrategy(schema=CriterionEvaluationNodeOutput))
         # Feeds the worker's `package` node, which cannot trust the model's own
         # claim that it collected data — that is the thing being checked.
-        # Feeds the worker's `package` node, which cannot trust the model's own
-        # claim that it collected data — that is the thing being checked.
-        .with_middleware(
-            DataCollectionEvidenceMiddleware(
-                name="criterion_evaluation",
-                # AutoStrategy exposes the response schema as a TOOL, so the
-                # synthetic final call that emits the verdict would otherwise
-                # read as data collection — marking every single-shot
-                # fabrication as data-backed and defeating the whole pass.
-                exclude_tools=frozenset({CriterionEvaluationNodeOutput.__name__}),
-            )
-        )
+        # Bounce a verdict produced without calling a single subagent back to
+        # the model, and record what really ran for the worker's `package` node
+        # — which cannot trust the model's own claim that it collected data,
+        # because that claim is the thing being checked.
+        .with_data_collection_guard()
     )
     if summariser is not None:
         builder = builder.with_tool_knowledge(summariser)

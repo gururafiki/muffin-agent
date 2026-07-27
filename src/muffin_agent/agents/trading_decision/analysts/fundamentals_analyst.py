@@ -62,6 +62,9 @@ async def build_fundamentals_analyst_agent(
             "trading_decision/analysts/fundamentals.jinja",
         )
         .with_response_format(FundamentalsAnalystOutput)
+        # Same backstop as the council collectors: a weak model that
+        # single-shots this schema with zero tool calls gets bounced back.
+        .with_data_collection_guard()
     )
     for tool in mcp_tools:
         builder = builder.with_tool(tool, run_limit=3)

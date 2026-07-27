@@ -1,5 +1,9 @@
 """Middleware components for muffin agents."""
 
+from .data_collection_guard import (
+    DataCollectionGuardMiddleware,
+    DataCollectionGuardState,
+)
 from .skill_suggestion import SkillFilterMiddleware
 from .store_access import StoreAccessMiddleware
 from .subagent_refinement import (
@@ -14,6 +18,8 @@ from .tool_result_cache import (
 
 __all__ = [
     "CollectionFindings",
+    "DataCollectionGuardMiddleware",
+    "DataCollectionGuardState",
     "SkillFilterMiddleware",
     "StoreAccessMiddleware",
     "SubagentRefinementMiddleware",
