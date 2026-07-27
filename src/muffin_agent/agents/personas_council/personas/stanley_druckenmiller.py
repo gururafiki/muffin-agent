@@ -460,6 +460,9 @@ async def _build_data_collection_agent(config: RunnableConfig) -> CompiledStateG
             "personas_council/personas/stanley_druckenmiller_data_collection.jinja"
         )
         .with_response_format(StanleyDruckenmillerRawData)
+        # Weak models single-shot this schema with zero MCP calls and
+        # fabricate the figures; bounce that back to the model.
+        .with_data_collection_guard()
         .with_model_call_limit(run_limit=10, exit_behavior="end")
     )
     for tool in mcp_tools:

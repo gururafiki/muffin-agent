@@ -1326,3 +1326,55 @@ class TestChaining:
         _, first = mock_cda.call_args_list[0]
         _, second = mock_cda.call_args_list[1]
         assert first["middleware"] is not second["middleware"]
+
+
+@pytest.mark.unit
+class TestDataCollectionGuard:
+    """`with_data_collection_guard()` wiring (behaviour: tests/middlewares/)."""
+
+    def test_absent_by_default(self):
+        """Opt-in: a tool-less agent would just bounce and change nothing."""
+        from muffin_agent.middlewares import DataCollectionGuardMiddleware
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_REACT_PATCH) as mock_ca:
+            MuffinAgentBuilder(MagicMock()).build_react_agent()
+        mw = _react_kwargs(mock_ca)["middleware"]
+        assert not any(isinstance(m, DataCollectionGuardMiddleware) for m in mw)
+
+    def test_wired_when_requested(self):
+        from muffin_agent.middlewares import DataCollectionGuardMiddleware
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        with patch(_REACT_PATCH) as mock_ca:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_data_collection_guard(max_attempts=3)
+                .build_react_agent()
+            )
+        mw = _react_kwargs(mock_ca)["middleware"]
+        guard = next(m for m in mw if isinstance(m, DataCollectionGuardMiddleware))
+        assert guard._max_attempts == 3
+
+    def test_excludes_the_response_schema_name(self):
+        """Without this the synthetic structured-output call reads as data
+        collection, so the guard never fires and every fabricated answer is
+        marked data-backed — the exact bug the criteria E2E test caught."""
+        from pydantic import BaseModel
+
+        from muffin_agent.middlewares import DataCollectionGuardMiddleware
+        from muffin_agent.utils.agent_builder import MuffinAgentBuilder
+
+        class MyOutput(BaseModel):
+            value: str
+
+        with patch(_REACT_PATCH) as mock_ca:
+            (
+                MuffinAgentBuilder(MagicMock())
+                .with_response_format(MyOutput)
+                .with_data_collection_guard()
+                .build_react_agent()
+            )
+        mw = _react_kwargs(mock_ca)["middleware"]
+        guard = next(m for m in mw if isinstance(m, DataCollectionGuardMiddleware))
+        assert "MyOutput" in guard._exclude_tools

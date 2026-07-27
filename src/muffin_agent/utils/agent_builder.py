@@ -92,6 +92,7 @@ from langgraph.types import Checkpointer
 
 from ..middlewares import (
     CollectionFindings,
+    DataCollectionGuardMiddleware,
     SubagentRefinementMiddleware,
     SubagentRefinementParentMiddleware,
     ToolKnowledgeMiddleware,
@@ -369,6 +370,7 @@ class MuffinAgentBuilder:
         self._tool_call_limits: list[ToolCallLimitMiddleware] = []
         self._knowledge_summariser: BaseChatModel | None = None
         self._subagent_refinement: bool = False
+        self._data_collection_attempts: int = 0
         self._permissions: list[FilesystemPermission] = []
         self._response_format: ResponseFormat[Any] | type | dict[str, Any] | None = None
         self._store: BaseStore | None = None
@@ -709,6 +711,33 @@ class MuffinAgentBuilder:
             thread_limit=thread_limit,
             exit_behavior=exit_behavior,
         )
+        return self
+
+    def with_data_collection_guard(self, *, max_attempts: int = 2) -> Self:
+        """Refuse an answer produced without calling a single data tool.
+
+        The model-agnostic backstop for the worst observed failure mode: free /
+        weak models single-shot their structured output with ZERO tool calls and
+        fabricate the evidence (verified in prod: 0 TOOL spans across an entire
+        criteria run). Every affected prompt already carries a non-negotiable
+        data-collection contract; a weak model ignores it.
+
+        On ``after_agent``, if nothing but plumbing executed, the guard injects a
+        corrective message and jumps back to the model, up to *max_attempts*
+        times. After that it lets the answer through — downstream truthing
+        labels it ``data_collected=False``, and a flagged low-confidence answer
+        beats a failed run.
+
+        Also records the evidence (``executed_tools``) that the criteria
+        worker's ``_reconcile_data_sources`` pass consumes. The agent's
+        response-format schema name is excluded automatically: the strategies
+        expose that schema as a *tool*, so the synthetic final call would
+        otherwise read as data collection and defeat the whole check.
+
+        Only meaningful for agents that HAVE data tools or subagents; a
+        tool-less agent would bounce ``max_attempts`` times and then proceed.
+        """
+        self._data_collection_attempts = max_attempts
         return self
 
     def with_tool_knowledge(
@@ -1095,6 +1124,21 @@ class MuffinAgentBuilder:
         # parent graph with shared per-field state keys.
         if self._state_schema is not None and self._response_format is not None:
             stack.append(_StructuredResponseToStateMiddleware())
+        schema_name = self._response_schema_name()
+        # Data-collection guard — before caller middleware so a caller's own
+        # after_agent hook (which runs later in registration order, i.e. EARLIER
+        # in the reverse-ordered after_agent pass) still sees the final answer.
+        # Registered only when asked for; the schema name is excluded so the
+        # synthetic structured-output call never counts as data collection.
+        if self._data_collection_attempts:
+            guard_excludes = frozenset({schema_name}) if schema_name else frozenset()
+            stack.append(
+                DataCollectionGuardMiddleware(
+                    name=self._name,
+                    exclude_tools=guard_excludes,
+                    max_attempts=self._data_collection_attempts,
+                )
+            )
         stack.extend(self._middleware)
         # Structured-output completion guard — registered LAST so its
         # after_agent hook runs FIRST (after_agent executes in reverse
@@ -1103,7 +1147,6 @@ class MuffinAgentBuilder:
         # unpacking hooks run, recovering the in-loop retry that
         # langchain's tools_to_model edge loses when a malformed
         # structured-output call shares an AIMessage with a regular tool call.
-        schema_name = self._response_schema_name()
         if schema_name:
             stack.append(_StructuredOutputRetryMiddleware(schema_name=schema_name))
         return stack

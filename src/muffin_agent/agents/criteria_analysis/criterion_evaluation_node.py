@@ -63,7 +63,7 @@ class _CriterionWorkerState(TypedDict, total=False):
     evaluation: dict[str, Any]
     criterion_evaluations: Annotated[list[dict[str, Any]], operator.add]
     # One short label per tool call the evaluate agent actually completed — see
-    # ``data_collection_evidence``. This is input to the ``package`` node's
+    # ``middlewares.data_collection_guard``. Input to the ``package`` node's
     # anti-hallucination check, NOT telemetry: the run's execution record lives
     # in LangGraph's checkpoints. The worker's ``output_schema`` keeps it from
     # reaching the parent graph at all.
