@@ -3,8 +3,11 @@
 Public entrypoints:
 
 - :func:`build_research_graph` — compile the LangGraph pipeline
-  (classifier → researcher → rerank → writer).  Registered in
-  ``langgraph.json`` and exposed as the ``muffin research`` CLI.
+  (prepare → classifier → lift → researcher → rerank → writer →
+  finalize).  **Async** — every LLM stage is a compiled agent built at
+  graph-construction time.
+- :func:`make_graph` — the config-only Platform factory registered in
+  ``langgraph.json``; also what the ``muffin research`` CLI drives.
 - :func:`build_research_subagent` — wrap the same pipeline as a
   :class:`deepagents.CompiledSubAgent` for embedding inside another
   deep agent.
@@ -19,11 +22,11 @@ to the classifier's enum).  See ``docs/features/research-agent.md``.
 """
 
 from .config import ResearchConfiguration
-from .graph import build_research_graph, graph
+from .graph import build_research_graph, make_graph
 from .schemas import (
     EvidenceChunk,
     ResearchClassification,
-    ResearchEvidenceFindings,
+    ResearcherNodeOutput,
     ResearchOutput,
     Source,
 )
@@ -40,7 +43,7 @@ __all__ = [
     "ResearchClassification",
     "ResearchClassificationFilterState",
     "ResearchConfiguration",
-    "ResearchEvidenceFindings",
+    "ResearcherNodeOutput",
     "ResearchMode",
     "ResearchOutput",
     "ResearchState",
@@ -48,5 +51,5 @@ __all__ = [
     "TaskType",
     "build_research_graph",
     "build_research_subagent",
-    "graph",
+    "make_graph",
 ]

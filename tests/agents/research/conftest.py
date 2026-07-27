@@ -9,7 +9,7 @@ import pytest
 from muffin_agent.agents.research.schemas import (
     EvidenceChunk,
     ResearchClassification,
-    ResearchEvidenceFindings,
+    ResearcherNodeOutput,
     ResearchOutput,
 )
 
@@ -58,9 +58,9 @@ def evidence_chunks() -> list[EvidenceChunk]:
 @pytest.fixture
 def sample_evidence_findings(
     evidence_chunks: list[EvidenceChunk],
-) -> ResearchEvidenceFindings:
-    return ResearchEvidenceFindings(
-        evidence_chunks=evidence_chunks,
+) -> ResearcherNodeOutput:
+    return ResearcherNodeOutput(
+        evidence=evidence_chunks,
         notes="",
     )
 

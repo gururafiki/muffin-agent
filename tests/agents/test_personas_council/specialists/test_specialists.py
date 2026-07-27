@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from langchain_core.messages import ToolMessage
 
 from muffin_agent.agents.personas_council.specialists import (
     FundamentalsSignal,
@@ -21,6 +23,13 @@ from muffin_agent.agents.personas_council.specialists import (
     build_technical_analysis_agent,
     build_valuation_analysis_agent,
 )
+from muffin_agent.agents.personas_council.specialists._fetch_tools import (
+    deterministic_tool_call,
+    fetch_company_news,
+    fetch_equity_ohlcv,
+    fetch_insider_trades,
+    plan_message,
+)
 from muffin_agent.agents.personas_council.specialists.fundamentals_analysis import (
     compute_fundamentals_signal_node,
 )
@@ -33,8 +42,20 @@ from muffin_agent.agents.personas_council.specialists.news_sentiment_analysis im
 from muffin_agent.agents.personas_council.specialists.sentiment_analysis import (
     compute_sentiment_signal_node,
 )
+from muffin_agent.agents.personas_council.specialists.sentiment_analysis import (
+    plan_fetch_node as sentiment_plan_fetch_node,
+)
+from muffin_agent.agents.personas_council.specialists.sentiment_analysis import (
+    route_after_plan as sentiment_route_after_plan,
+)
 from muffin_agent.agents.personas_council.specialists.technical_analysis import (
     compute_technical_signal_node,
+)
+from muffin_agent.agents.personas_council.specialists.technical_analysis import (
+    plan_fetch_node as technical_plan_fetch_node,
+)
+from muffin_agent.agents.personas_council.specialists.technical_analysis import (
+    route_after_plan as technical_route_after_plan,
 )
 from muffin_agent.agents.personas_council.specialists.valuation_analysis import (
     compute_valuation_signal_node,
@@ -59,13 +80,44 @@ def _uptrend_bars(n: int = 252) -> list[dict[str, Any]]:
     return bars
 
 
+def _tool_result_state(*results: tuple[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Build the ``{"messages": [...]}`` state a ``ToolNode`` fetch leaves behind.
+
+    The deterministic specialists no longer stash payloads in dedicated state keys —
+    ``plan_fetch`` emits a synthetic ``AIMessage`` and ``ToolNode`` appends a real
+    ``ToolMessage`` per call, which the compute node reads back by tool name.
+    """
+    calls = [deterministic_tool_call(name, {}) for name, _ in results]
+    messages: list[Any] = [plan_message(calls)]
+    for call, (name, rows) in zip(calls, results, strict=True):
+        messages.append(
+            ToolMessage(
+                content=json.dumps({"results": rows}),
+                tool_call_id=call["id"],
+                name=name,
+            )
+        )
+    return {"messages": messages}
+
+
+def _ohlcv_state(bars: list[dict[str, Any]]) -> dict[str, Any]:
+    return _tool_result_state((fetch_equity_ohlcv.name, bars))
+
+
+def _sentiment_state(
+    insider: list[dict[str, Any]], news: list[dict[str, Any]]
+) -> dict[str, Any]:
+    return _tool_result_state(
+        (fetch_insider_trades.name, insider), (fetch_company_news.name, news)
+    )
+
+
 @pytest.mark.unit
 class TestTechnicalCompute:
     """Pure-Python compute_technical_signal_node tests (no MCP / no graph)."""
 
     def test_uptrend_yields_bullish(self):
-        state = {"prices_1y": _uptrend_bars(252)}
-        result = compute_technical_signal_node(state)
+        result = compute_technical_signal_node(_ohlcv_state(_uptrend_bars(252)))
         sig = result["persona_signals"][0]
         assert sig["agent_id"] == "technicals"
         assert sig["signal"] in ("buy", "strong_buy")
@@ -82,18 +134,18 @@ class TestTechnicalCompute:
             assert key in ev
 
     def test_empty_prices_returns_hold(self):
-        result = compute_technical_signal_node({"prices_1y": []})
+        result = compute_technical_signal_node(_ohlcv_state([]))
         sig = result["persona_signals"][0]
         assert sig["signal"] == "hold"
         assert sig["confidence"] == 0.0
 
     def test_short_price_series_returns_hold(self):
-        result = compute_technical_signal_node({"prices_1y": _uptrend_bars(10)})
+        result = compute_technical_signal_node(_ohlcv_state(_uptrend_bars(10)))
         sig = result["persona_signals"][0]
         assert sig["signal"] == "hold"
 
     def test_signal_validates_against_schema(self):
-        result = compute_technical_signal_node({"prices_1y": _uptrend_bars(252)})
+        result = compute_technical_signal_node(_ohlcv_state(_uptrend_bars(252)))
         sig = result["persona_signals"][0]
         validated = TechnicalSignal.model_validate(sig)
         assert validated.agent_id == "technicals"
@@ -104,19 +156,19 @@ class TestSentimentCompute:
     """Pure-Python compute_sentiment_signal_node tests (no MCP / no graph)."""
 
     def test_bullish_alignment(self):
-        state = {
-            "insider_trades": [
+        state = _sentiment_state(
+            [
                 {"transaction_shares": 1_000},
                 {"transaction_shares": 500},
                 {"transaction_shares": -200},
             ],
-            "company_news": [
+            [
                 {"sentiment": "positive"},
                 {"sentiment": "positive"},
                 {"sentiment": "positive"},
                 {"sentiment": "negative"},
             ],
-        }
+        )
         result = compute_sentiment_signal_node(state)
         sig = result["persona_signals"][0]
         assert sig["agent_id"] == "sentiment"
@@ -124,26 +176,25 @@ class TestSentimentCompute:
 
     def test_news_dominates_due_to_weighting(self):
         # 3 insider buys (weight 0.3) vs 5 news negatives (weight 0.7)
-        state = {
-            "insider_trades": [{"transaction_shares": 100} for _ in range(3)],
-            "company_news": [{"sentiment": "negative"} for _ in range(5)],
-        }
+        state = _sentiment_state(
+            [{"transaction_shares": 100} for _ in range(3)],
+            [{"sentiment": "negative"} for _ in range(5)],
+        )
         result = compute_sentiment_signal_node(state)
         sig = result["persona_signals"][0]
         assert sig["signal"] in ("sell", "strong_sell")
 
     def test_empty_inputs_returns_hold(self):
-        state = {"insider_trades": [], "company_news": []}
+        state = _sentiment_state([], [])
         result = compute_sentiment_signal_node(state)
         sig = result["persona_signals"][0]
         assert sig["signal"] == "hold"
         assert sig["confidence"] == 0.0
 
     def test_signal_validates_against_schema(self):
-        state = {
-            "insider_trades": [{"transaction_shares": 100}],
-            "company_news": [{"sentiment": "positive"}],
-        }
+        state = _sentiment_state(
+            [{"transaction_shares": 100}], [{"sentiment": "positive"}]
+        )
         result = compute_sentiment_signal_node(state)
         sig = result["persona_signals"][0]
         validated = SentimentSignal.model_validate(sig)
@@ -313,15 +364,67 @@ class TestSpecialistSubgraphs:
     def test_technical_analysis_compiles(self):
         g = build_technical_analysis_agent()
         nodes = list(g.get_graph().nodes)
+        assert "plan_fetch" in nodes
         assert "fetch_ohlcv" in nodes
         assert "compute_technical_signal" in nodes
 
     def test_sentiment_analysis_compiles(self):
         g = build_sentiment_analysis_agent()
         nodes = list(g.get_graph().nodes)
-        assert "fetch_insider_trades" in nodes
-        assert "fetch_company_news" in nodes
+        assert "plan_fetch" in nodes
+        assert "fetch" in nodes
         assert "compute_sentiment_signal" in nodes
+
+
+@pytest.mark.unit
+class TestDeterministicFetchesAreRealToolCalls:
+    """The deterministic specialists must emit genuine tool calls, not silent fetches.
+
+    This is the whole point of the ``plan_fetch -> ToolNode -> compute`` shape: the
+    payload travels as an ``AIMessage``/``ToolMessage`` pair in ``values.messages``, so
+    anything reading a namespace's messages (the UI execution tree, LangSmith, evals)
+    sees the fetch with no special-casing. A regression here would make these two
+    specialists invisible again — which is exactly how they used to behave.
+    """
+
+    def test_technicals_plans_a_real_tool_call(self):
+        out = technical_plan_fetch_node({"ticker": "AAPL", "as_of_date": "2026-07-26"})
+        (message,) = out["messages"]
+        (call,) = message.tool_calls
+        assert call["name"] == fetch_equity_ohlcv.name
+        assert call["type"] == "tool_call"
+        assert call["args"]["symbol"] == "AAPL"
+        # A year-long window ending on as_of_date.
+        assert call["args"]["end_date"] == "2026-07-26"
+        assert call["args"]["start_date"] == "2025-07-26"
+
+    def test_sentiment_plans_both_fetches_in_one_message(self):
+        """One message with two calls — ToolNode runs them concurrently."""
+        out = sentiment_plan_fetch_node({"ticker": "AAPL", "as_of_date": "2026-07-26"})
+        (message,) = out["messages"]
+        assert [c["name"] for c in message.tool_calls] == [
+            fetch_insider_trades.name,
+            fetch_company_news.name,
+        ]
+
+    def test_compute_survives_a_failed_fetch(self):
+        """An errored ToolMessage degrades to the empty fallback, never a crash."""
+        out = sentiment_plan_fetch_node({"ticker": "AAPL", "as_of_date": "2026-07-26"})
+        message = out["messages"][0]
+        failed = ToolMessage(
+            content="upstream exploded",
+            tool_call_id=message.tool_calls[0]["id"],
+            name=fetch_insider_trades.name,
+            status="error",
+        )
+        result = compute_sentiment_signal_node({"messages": [message, failed]})
+        assert result["persona_signals"][0]["signal"] == "hold"
+
+    def test_no_ticker_routes_around_the_fetch(self):
+        assert technical_route_after_plan({"ticker": ""}) == "compute_technical_signal"
+        assert technical_route_after_plan({"ticker": "AAPL"}) == "fetch_ohlcv"
+        assert sentiment_route_after_plan({"ticker": ""}) == "compute_sentiment_signal"
+        assert sentiment_route_after_plan({"ticker": "AAPL"}) == "fetch"
 
 
 _REACT_SPECIALIST_BUILDERS = [

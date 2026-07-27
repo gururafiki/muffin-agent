@@ -1,4 +1,10 @@
-"""Tests for the classifier node."""
+"""Tests for the classifier stage's pure nodes.
+
+The classifier itself is now a compiled agent added via ``add_node``, so the logic
+worth testing lives in the two pure nodes around it: ``prepare_node`` (normalise the
+caller's input) and ``lift_classification_node`` (flatten the agent's output, apply
+overrides, intersect sources). Both are plain functions — no LLM stubbing needed.
+"""
 
 from __future__ import annotations
 
@@ -10,123 +16,114 @@ from langchain_core.runnables import RunnableConfig
 from muffin_agent.agents.research.nodes import classifier as classifier_module
 from muffin_agent.agents.research.schemas import ResearchClassification
 
+_CFG = RunnableConfig(configurable={})
 
-def _patch_classifier_agent(
-    monkeypatch: Any, structured: ResearchClassification | None
-):
-    """Replace ``create_classifier_agent`` with a stub returning *structured*.
 
-    The stub returns an awaitable agent object whose ``ainvoke`` returns
-    ``{"structured_response": structured}`` (or ``{"structured_response": None}``).
-    """
-
-    class _StubAgent:
-        async def ainvoke(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-            return {"structured_response": structured}
-
-    async def _stub_create(*args: Any, **kwargs: Any) -> _StubAgent:
-        return _StubAgent()
-
-    monkeypatch.setattr(classifier_module, "create_classifier_agent", _stub_create)
+def _classified(**overrides: Any) -> dict[str, Any]:
+    """The ``classification`` payload the classifier agent unpacks into state."""
+    base = ResearchClassification(
+        standalone_query="How does pgvector indexing work?",
+        task_type="how_to",
+        mode_hint="balanced",
+        sources_to_use=["web"],
+        skip_search=False,
+        rationale="how-to query about a specific technical mechanism",
+    ).model_dump()
+    base.update(overrides)
+    return base
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-class TestClassifierNode:
-    async def test_lifts_classification_into_flat_keys(
-        self,
-        monkeypatch: Any,
-        sample_classification: ResearchClassification,
-    ):
-        _patch_classifier_agent(monkeypatch, sample_classification)
-        result = await classifier_module.classifier_node(
-            {"query": "How does pgvector indexing work?"},
-            RunnableConfig(configurable={}),
+class TestLiftClassification:
+    def test_lifts_classification_into_flat_keys(self):
+        result = classifier_module.lift_classification_node(
+            {
+                "query": "How does pgvector indexing work?",
+                "allowed_sources": ["web"],
+                "classification": _classified(),
+            },
+            _CFG,
         )
         assert result["standalone_query"] == "How does pgvector indexing work?"
         assert result["task_type"] == "how_to"
         assert result["mode"] == "balanced"
         assert result["sources_to_use"] == ["web"]
         assert result["skip_search"] is False
-        assert "classification" in result
 
-    async def test_mode_override_takes_precedence(
-        self,
-        monkeypatch: Any,
-        sample_classification: ResearchClassification,
-    ):
-        _patch_classifier_agent(monkeypatch, sample_classification)
-        result = await classifier_module.classifier_node(
-            {"query": "How does pgvector indexing work?", "mode_override": "quality"},
-            RunnableConfig(configurable={}),
+    def test_mode_override_takes_precedence(self):
+        result = classifier_module.lift_classification_node(
+            {
+                "allowed_sources": ["web"],
+                "classification": _classified(),
+                "mode_override": "quality",
+            },
+            _CFG,
         )
         assert result["mode"] == "quality"
 
-    async def test_task_type_override_takes_precedence(
-        self,
-        monkeypatch: Any,
-        sample_classification: ResearchClassification,
-    ):
-        _patch_classifier_agent(monkeypatch, sample_classification)
-        result = await classifier_module.classifier_node(
+    def test_task_type_override_takes_precedence(self):
+        result = classifier_module.lift_classification_node(
             {
-                "query": "How does pgvector indexing work?",
+                "allowed_sources": ["web"],
+                "classification": _classified(),
                 "task_type_override": "comparison",
             },
-            RunnableConfig(configurable={}),
+            _CFG,
         )
         assert result["task_type"] == "comparison"
 
-    async def test_sources_intersected_with_allowed(
-        self,
-        monkeypatch: Any,
-    ):
-        # Classifier returns "academic" but the caller only allowed "web".
-        wandering = ResearchClassification(
-            standalone_query="x",
-            task_type="research_report",
-            mode_hint="balanced",
-            sources_to_use=["web", "academic"],
-            skip_search=False,
-        )
-        _patch_classifier_agent(monkeypatch, wandering)
-
-        result = await classifier_module.classifier_node(
-            {"query": "x", "allowed_sources": ["web"]},
-            RunnableConfig(configurable={}),
+    def test_sources_intersected_with_allowed(self):
+        """A wandering classifier cannot enable a source the caller never permitted."""
+        result = classifier_module.lift_classification_node(
+            {
+                "allowed_sources": ["web"],
+                "classification": _classified(sources_to_use=["web", "academic"]),
+            },
+            _CFG,
         )
         assert result["sources_to_use"] == ["web"]
 
-    async def test_extra_sources_appended_to_allowed_default(
-        self,
-        monkeypatch: Any,
-    ):
-        agreeable = ResearchClassification(
-            standalone_query="x",
-            task_type="research_report",
-            mode_hint="balanced",
-            sources_to_use=["academic"],
-            skip_search=False,
+    def test_empty_intersection_falls_back_to_allowed(self):
+        """Never leave the researcher with zero sources on a searching run."""
+        result = classifier_module.lift_classification_node(
+            {
+                "allowed_sources": ["web"],
+                "classification": _classified(sources_to_use=["academic"]),
+            },
+            _CFG,
         )
-        _patch_classifier_agent(monkeypatch, agreeable)
+        assert result["sources_to_use"] == ["web"]
 
-        result = await classifier_module.classifier_node(
-            {"query": "x"},
-            RunnableConfig(configurable={}),
-            extra_sources=["academic"],
+    def test_skip_search_keeps_empty_sources(self):
+        result = classifier_module.lift_classification_node(
+            {
+                "allowed_sources": ["web"],
+                "classification": _classified(sources_to_use=[], skip_search=True),
+            },
+            _CFG,
         )
-        assert "academic" in result["sources_to_use"]
+        assert result["skip_search"] is True
+        assert result["sources_to_use"] == []
 
-    async def test_fallback_when_no_structured_response(self, monkeypatch: Any):
-        _patch_classifier_agent(monkeypatch, None)
-        result = await classifier_module.classifier_node(
-            {"query": "Anything"},
-            RunnableConfig(configurable={}),
+
+@pytest.mark.unit
+class TestPrepareNode:
+    def test_defaults_and_dedupes_allowed_sources(self):
+        result = classifier_module.prepare_node(
+            {"query": "x", "allowed_sources": ["web", "web", "academic"]}, _CFG
         )
-        assert result["standalone_query"] == "Anything"
-        assert result["task_type"] == "research_report"
-        assert result["skip_search"] is False
-        assert result["classification"]["fallback"] is True
+        assert result["allowed_sources"] == ["web", "academic"]
+
+    def test_caller_sources_win_over_config_defaults(self):
+        result = classifier_module.prepare_node(
+            {"query": "x", "allowed_sources": ["academic"]}, _CFG
+        )
+        assert result["allowed_sources"] == ["academic"]
+
+    def test_supplies_today_and_chat_history_text(self):
+        result = classifier_module.prepare_node({"query": "x"}, _CFG)
+        assert result["today"].count("-") == 2  # ISO date
+        assert result["chat_history_text"].startswith("(no")
 
 
 @pytest.mark.unit

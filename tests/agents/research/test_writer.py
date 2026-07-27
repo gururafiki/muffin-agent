@@ -1,45 +1,28 @@
-"""Tests for the writer node."""
+"""Tests for the writer stage's pure finalize node.
+
+The writer itself is now a compiled agent added via ``add_node``. What remains worth
+testing is ``finalize_output_node``: the model is asked to echo ``task_type`` /
+``mode_used`` back into its public output, and a mislabel there is a silent lie to
+the caller — so the pipeline overwrites both with its own truth.
+"""
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
-from langchain_core.runnables import RunnableConfig
 
 from muffin_agent.agents.research.nodes import writer as writer_module
 from muffin_agent.agents.research.schemas import ResearchOutput
 
 
-def _patch_writer_agent(monkeypatch: Any, structured: ResearchOutput | None):
-    class _StubAgent:
-        async def ainvoke(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-            return {"structured_response": structured}
-
-    async def _stub_create(*args: Any, **kwargs: Any) -> _StubAgent:
-        return _StubAgent()
-
-    monkeypatch.setattr(writer_module, "create_writer_agent", _stub_create)
-
-
 @pytest.mark.unit
-@pytest.mark.asyncio
-class TestWriterNode:
-    async def test_returns_validated_output(
-        self,
-        monkeypatch: Any,
-        sample_research_output: ResearchOutput,
-    ):
-        _patch_writer_agent(monkeypatch, sample_research_output)
-        result = await writer_module.writer_node(
+class TestFinalizeOutputNode:
+    def test_returns_validated_output(self, sample_research_output: ResearchOutput):
+        result = writer_module.finalize_output_node(
             {
-                "query": "How does pgvector indexing work?",
+                "output": sample_research_output.model_dump(),
                 "task_type": "how_to",
                 "mode": "balanced",
-                "reranked_evidence": [],
-                "skip_search": False,
-            },
-            RunnableConfig(configurable={}),
+            }
         )
         output = result["output"]
         # Re-validation must pass.
@@ -47,32 +30,28 @@ class TestWriterNode:
         assert output["task_type"] == "how_to"
         assert output["mode_used"] == "balanced"
 
-    async def test_fallback_when_no_structured_response(self, monkeypatch: Any):
-        _patch_writer_agent(monkeypatch, None)
-        result = await writer_module.writer_node(
-            {"query": "Anything", "task_type": "summary", "mode": "speed"},
-            RunnableConfig(configurable={}),
-        )
-        output = result["output"]
-        ResearchOutput.model_validate(output)
-        assert output["confidence"] == 0.0
-        assert output["task_type"] == "summary"
-        assert output["mode_used"] == "speed"
-
-    async def test_task_type_and_mode_echoed_from_state(
-        self,
-        monkeypatch: Any,
-        sample_research_output: ResearchOutput,
+    def test_task_type_and_mode_pinned_from_state(
+        self, sample_research_output: ResearchOutput
     ):
-        # Writer LLM returns task_type/mode_used that diverge from state;
-        # node must defensively echo state values.
-        result_obj = sample_research_output.model_copy(
+        """A writer that mislabels its own metadata gets corrected."""
+        mislabelled = sample_research_output.model_copy(
             update={"task_type": "wrong", "mode_used": "wrong"}
-        )
-        _patch_writer_agent(monkeypatch, result_obj)
-        result = await writer_module.writer_node(
-            {"query": "x", "task_type": "comparison", "mode": "quality"},
-            RunnableConfig(configurable={}),
+        ).model_dump()
+        result = writer_module.finalize_output_node(
+            {"output": mislabelled, "task_type": "comparison", "mode": "quality"}
         )
         assert result["output"]["task_type"] == "comparison"
         assert result["output"]["mode_used"] == "quality"
+
+    def test_no_output_is_a_noop(self):
+        """Nothing to pin — never fabricate an output the writer didn't produce."""
+        assert writer_module.finalize_output_node({"task_type": "summary"}) == {}
+
+    def test_defaults_when_state_lacks_metadata(
+        self, sample_research_output: ResearchOutput
+    ):
+        result = writer_module.finalize_output_node(
+            {"output": sample_research_output.model_dump()}
+        )
+        assert result["output"]["task_type"] == "research_report"
+        assert result["output"]["mode_used"] == "balanced"

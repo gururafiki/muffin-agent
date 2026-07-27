@@ -1398,7 +1398,13 @@ async def _run_research(
     session_id = thread or f"research-{query[:40].replace(' ', '-')}"
     callbacks = setup_tracing(session_id=session_id)
     store = InMemoryStore()
-    graph = build_research_graph(
+    build_config = RunnableConfig(
+        configurable={"thread_id": session_id, "user_id": user}
+    )
+    # Async + config-taking: every LLM stage is a compiled agent built here rather
+    # than per-request inside a node.
+    graph = await build_research_graph(
+        build_config,
         checkpointer=_get_checkpointer(),
         store=store,
     )

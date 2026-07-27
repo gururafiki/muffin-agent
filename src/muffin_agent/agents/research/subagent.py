@@ -18,30 +18,29 @@ from .graph import build_research_graph
 
 
 async def build_research_subagent(
-    config: RunnableConfig,  # noqa: ARG001 — held for symmetry with peer factories
+    config: RunnableConfig,
     *,
     extra_tools: Sequence[BaseTool] | None = None,
-    extra_sources: Sequence[str] | None = None,
     name: str = "deep-research",
 ) -> CompiledSubAgent:
     """Build the research subagent.
 
     Args:
-        config: Caller's ``RunnableConfig``.  Held for symmetry with
-            other muffin subagent factories — the inner graph reads
-            its own configuration from each per-invocation ``config``.
+        config: Caller's ``RunnableConfig``.  Now genuinely used — the inner graph
+            builds its compiled agent nodes at construction time and needs the
+            model / MCP configuration to do so.
         extra_tools: Tools to plug into the researcher (e.g. an
             ArXiv search tool, NewsAPI wrapper, or an internal docs
             retriever).
-        extra_sources: Source names to expose to the classifier's
-            ``sources_to_use`` enum.  Match the ``source_type`` your
-            tools populate so the writer can route citations.
         name: Public name shown to the parent agent's ``task`` tool.
             Default ``"deep-research"``.
+
+    Note:
+        ``extra_sources`` was removed — the permitted source list is now per-run
+        state (``allowed_sources``) rather than baked into the graph, so callers
+        pass it in the invocation input instead.
     """
-    runnable = build_research_graph(
-        extra_tools=extra_tools, extra_sources=extra_sources
-    )
+    runnable = await build_research_graph(config, extra_tools=extra_tools)
     return CompiledSubAgent(
         name=name,
         description=(
