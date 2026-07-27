@@ -217,11 +217,15 @@ class TestPackageEvaluationNode:
         assert evals[0]["criterion_name"] == "ROE"
         assert evals[0]["weight"] == 0.4
         assert evals[0]["source"] == "skill"
-        assert "tool_runs" not in evals[0]  # none captured → not attached
-        assert "subagent_tree" not in evals[0]  # none captured → not attached
-        assert evals[0]["data_collected"] is False  # no tool runs → flagged
+        assert evals[0]["data_collected"] is False  # nothing executed → flagged
+        # The worker's tool calls stay in ITS checkpoints; only the verdict and
+        # the reconciled data claims ride into the parent. If a transcript or a
+        # tool record shows up on the evaluation dict again, observability has
+        # been put back into graph state.
+        assert "tool_runs" not in evals[0]
+        assert "subagent_tree" not in evals[0]
 
-    def test_attaches_per_criterion_tool_runs(self):
+    def test_executed_tools_mark_the_evaluation_as_data_backed(self):
         from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
             package_evaluation_node,
         )
@@ -229,31 +233,12 @@ class TestPackageEvaluationNode:
         state = {
             "criterion": {"name": "ROE", "weight": 0.4, "source": "skill"},
             "evaluation": {"score": 0.7},
-            "tool_runs": [{"tool": "equity_fundamentals", "status": "ok"}],
+            "executed_tools": ["equity_fundamentals {} criterion_evaluation"],
         }
         update = package_evaluation_node(state)  # type: ignore[arg-type]
         evaluation = update["criterion_evaluations"][0]
-        assert evaluation["tool_runs"] == [
-            {"tool": "equity_fundamentals", "status": "ok"}
-        ]
         assert evaluation["data_collected"] is True
-
-    def test_attaches_per_criterion_subagent_tree(self):
-        """Same re-homing treatment as tool_runs (Task 5 propagation)."""
-        from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
-            package_evaluation_node,
-        )
-
-        state = {
-            "criterion": {"name": "ROE", "weight": 0.4, "source": "skill"},
-            "evaluation": {"score": 0.7},
-            "subagent_tree": {"evaluate": {"id": "evaluate", "name": "evaluate"}},
-        }
-        update = package_evaluation_node(state)  # type: ignore[arg-type]
-        evaluation = update["criterion_evaluations"][0]
-        assert evaluation["subagent_tree"] == {
-            "evaluate": {"id": "evaluate", "name": "evaluate"}
-        }
+        assert "executed_tools" not in evaluation
 
 
 @pytest.mark.unit
@@ -278,7 +263,7 @@ class TestReconcileDataSources:
         base.update(overrides)
         return base
 
-    def test_no_tool_runs_strips_sources_and_caps_confidence(self):
+    def test_nothing_executed_strips_sources_and_caps_confidence(self):
         from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
             _NO_DATA_LIMITATION,
             _reconcile_data_sources,
@@ -290,7 +275,7 @@ class TestReconcileDataSources:
         assert evaluation["confidence"] == 0.3
         assert _NO_DATA_LIMITATION in evaluation["limitations"]
 
-    def test_no_tool_runs_keeps_already_low_confidence(self):
+    def test_nothing_executed_keeps_already_low_confidence(self):
         from muffin_agent.agents.criteria_analysis.criterion_evaluation_node import (
             _reconcile_data_sources,
         )
@@ -303,14 +288,8 @@ class TestReconcileDataSources:
             _reconcile_data_sources,
         )
 
-        tool_runs = [
-            {
-                "agent": "equity-fundamentals",
-                "tool": "equity_fundamental_ratios",
-                "status": "ok",
-            }
-        ]
-        evaluation = _reconcile_data_sources(self._evaluation(), tool_runs)
+        executed = ["equity_fundamental_ratios {} equity-fundamentals"]
+        evaluation = _reconcile_data_sources(self._evaluation(), executed)
         assert evaluation["data_collected"] is True
         assert len(evaluation["data_sources"]) == 1
         assert evaluation["confidence"] == 0.8  # untouched
@@ -321,15 +300,12 @@ class TestReconcileDataSources:
             _reconcile_data_sources,
         )
 
-        tool_runs = [
-            {
-                "agent": "criterion-evaluation",
-                "tool": "task",
-                "args_preview": '{"subagent_type": "equity-fundamentals"}',
-                "status": "ok",
-            }
+        # The deep-agent `task` call names its subagent in the args, which is
+        # what a claimed data_source is matched against.
+        executed = [
+            'task {"subagent_type": "equity-fundamentals"} criterion_evaluation'
         ]
-        evaluation = _reconcile_data_sources(self._evaluation(), tool_runs)
+        evaluation = _reconcile_data_sources(self._evaluation(), executed)
         assert len(evaluation["data_sources"]) == 1
 
     def test_uncorroborated_sources_dropped_with_limitation(self):
@@ -341,9 +317,9 @@ class TestReconcileDataSources:
             {"subagent": "equity-fundamentals", "data_retrieved": "r", "period": "24"},
             {"subagent": "news", "data_retrieved": "headlines", "period": "30d"},
         ]
-        tool_runs = [{"agent": "equity-fundamentals", "tool": "x", "status": "ok"}]
+        executed = ["x {} equity-fundamentals"]
         evaluation = _reconcile_data_sources(
-            self._evaluation(data_sources=sources), tool_runs
+            self._evaluation(data_sources=sources), executed
         )
         assert [s["subagent"] for s in evaluation["data_sources"]] == [
             "equity-fundamentals"
@@ -357,7 +333,7 @@ class TestReconcileDataSources:
 
         evaluation = _reconcile_data_sources(
             self._evaluation(data_sources=["10-K filing"]),
-            [{"agent": "equity-fundamentals", "tool": "x", "status": "ok"}],
+            ["x {} equity-fundamentals"],
         )
         assert evaluation["data_sources"] == ["10-K filing"]
 

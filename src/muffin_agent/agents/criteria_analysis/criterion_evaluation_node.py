@@ -7,7 +7,7 @@ The worker is a small compiled subgraph (the council-persona shape):
                  response unpacked into the ``evaluation`` channel)
     package    → pure node that augments the evaluation with the criterion's
                  ``weight`` + ``source``, reconciles the claimed
-                 ``data_sources`` against the captured ``tool_runs``
+                 ``data_sources`` against the tools that actually executed
                  (anti-hallucination), emits a ``criterion_evaluated`` custom
                  stream event, and appends the evaluation to the parent
                  ``criterion_evaluations`` accumulator (``operator.add``).
@@ -33,8 +33,6 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 from typing_extensions import TypedDict
-
-from muffin_agent.middlewares.agent_capture.tree import merge_subagent_tree
 
 from ..criterion_evaluation import create_criterion_evaluation_agent
 from .state import CriterionEvaluationSendPayload
@@ -64,13 +62,12 @@ class _CriterionWorkerState(TypedDict, total=False):
     classification: dict[str, Any]
     evaluation: dict[str, Any]
     criterion_evaluations: Annotated[list[dict[str, Any]], operator.add]
-    # Written by the evaluate agent's AgentCaptureMiddleware (its own +
-    # nested subagents' records); the package node moves it onto the
-    # evaluation dict so it rides into the parent per-criterion, not top-level.
-    tool_runs: Annotated[list[dict[str, Any]], operator.add]
-    # Same treatment as tool_runs above, but keyed by node id (dict merge,
-    # not list concat) — the package node moves it onto the evaluation dict too.
-    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
+    # One short label per tool call the evaluate agent actually completed — see
+    # ``data_collection_evidence``. This is input to the ``package`` node's
+    # anti-hallucination check, NOT telemetry: the run's execution record lives
+    # in LangGraph's checkpoints. The worker's ``output_schema`` keeps it from
+    # reaching the parent graph at all.
+    executed_tools: Annotated[list[str], operator.add]
 
 
 class _CriterionWorkerOutput(TypedDict):
@@ -86,26 +83,25 @@ class _CriterionWorkerOutput(TypedDict):
 
 
 def _reconcile_data_sources(
-    evaluation: dict[str, Any], tool_runs: list[dict[str, Any]]
+    evaluation: dict[str, Any], executed_tools: list[str]
 ) -> dict[str, Any]:
-    """Reconcile the LLM-claimed ``data_sources`` with captured tool runs.
+    """Reconcile the LLM-claimed ``data_sources`` with what actually executed.
 
     Deterministic anti-hallucination pass (mutates and returns
     ``evaluation``). Observed failure mode in prod: free/weak models
     single-shot the structured output without calling a single tool and
     fabricate plausible ``data_sources``/evidence.
 
-    * **No tool runs** — nothing was retrieved, so every claimed source is
-      fabricated: clear ``data_sources``, set ``data_collected=False``, cap
-      ``confidence`` at ``_NO_DATA_CONFIDENCE_CAP`` and record a limitation.
-    * **Tool runs present** — set ``data_collected=True`` and keep only
-      sources whose ``subagent`` matches something that actually executed
-      (record ``agent`` labels, tool names, or ``task`` args previews);
-      dropped names are listed in a limitation line.
+    * **Nothing executed** — every claimed source is fabricated: clear
+      ``data_sources``, set ``data_collected=False``, cap ``confidence`` at
+      ``_NO_DATA_CONFIDENCE_CAP`` and record a limitation.
+    * **Something executed** — set ``data_collected=True`` and keep only
+      sources whose ``subagent`` matches a label that really ran (tool name,
+      args preview, or agent label); dropped names go in a limitation line.
     """
     limitations = [str(item) for item in (evaluation.get("limitations") or [])]
 
-    if not tool_runs:
+    if not executed_tools:
         evaluation["data_collected"] = False
         evaluation["data_sources"] = []
         confidence = evaluation.get("confidence")
@@ -117,13 +113,7 @@ def _reconcile_data_sources(
         return evaluation
 
     evaluation["data_collected"] = True
-    haystack_parts: list[str] = []
-    for record in tool_runs:
-        for key in ("agent", "tool", "args_preview"):
-            value = record.get(key)
-            if isinstance(value, str) and value:
-                haystack_parts.append(value.lower())
-    haystack = " ".join(haystack_parts)
+    haystack = " ".join(label.lower() for label in executed_tools)
 
     kept: list[Any] = []
     dropped: list[str] = []
@@ -167,8 +157,8 @@ def package_evaluation_node(state: _CriterionWorkerState) -> dict[str, Any]:
     Carries the criterion's ``weight`` + ``source`` onto the evaluation
     dict so the synthesis stage can build the weighted breakdown without
     rejoining against ``merged_criteria``, reconciles ``data_sources``
-    against the captured ``tool_runs`` and emits the ``criterion_evaluated``
-    custom stream event for live per-criterion progress.
+    against the tools that actually executed and emits the
+    ``criterion_evaluated`` custom stream event for live per-criterion progress.
     """
     criterion = state.get("criterion") or {}
     evaluation = dict(state.get("evaluation") or {})
@@ -177,15 +167,10 @@ def package_evaluation_node(state: _CriterionWorkerState) -> dict[str, Any]:
     )
     evaluation["weight"] = criterion.get("weight", 0.0)
     evaluation["source"] = criterion.get("source", "skill")
-    # Attach this criterion's tool-execution records (AgentCaptureMiddleware;
-    # capture is unconditional). Kept per-criterion, not top-level.
-    tool_runs = state.get("tool_runs") or []
-    if tool_runs:
-        evaluation["tool_runs"] = tool_runs
-    subagent_tree = state.get("subagent_tree") or {}
-    if subagent_tree:
-        evaluation["subagent_tree"] = subagent_tree
-    _reconcile_data_sources(evaluation, tool_runs)
+    # `data_collected` and the pruned `data_sources` are the only trace of the
+    # worker's tool use that rides into the parent state — the calls themselves
+    # stay in this worker's checkpoints, where the UI reads them.
+    _reconcile_data_sources(evaluation, state.get("executed_tools") or [])
     _emit_criterion_evaluated(evaluation)
     return {"criterion_evaluations": [evaluation]}
 

@@ -27,7 +27,7 @@ from typing_extensions import TypedDict
 from ....model_config import ModelConfiguration
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
-from ..schemas import AnalystSignal, InvestmentSignal, merge_tool_runs
+from ..schemas import AnalystSignal, InvestmentSignal
 
 logger = logging.getLogger(__name__)
 _RETRY = RetryPolicy(max_attempts=2)
@@ -78,7 +78,6 @@ class NewsSentimentInput(TypedDict, total=False):
 
 class NewsSentimentOutput(TypedDict, total=False):
     persona_signals: list[dict[str, Any]]
-    tool_runs: list[dict[str, Any]]
 
 
 class NewsSentimentState(AgentState):
@@ -89,7 +88,6 @@ class NewsSentimentState(AgentState):
         list[ArticleSentiment] | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
-    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
 
 
 # ── Mapping helper ────────────────────────────────────────────────────────────

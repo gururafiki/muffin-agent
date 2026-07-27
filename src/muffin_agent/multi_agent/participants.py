@@ -46,9 +46,7 @@ class Participant(Protocol):
 
     name: str
 
-    async def speak(
-        self, state: dict[str, Any], config: RunnableConfig
-    ) -> str:
+    async def speak(self, state: dict[str, Any], config: RunnableConfig) -> str:
         """Produce one turn of free-text content for this participant."""
         ...
 
@@ -71,9 +69,7 @@ class LLMParticipant:
     llm_role: Role = "reasoner"
     user_prompt: str = "Take your turn now."
 
-    async def speak(
-        self, state: dict[str, Any], config: RunnableConfig
-    ) -> str:
+    async def speak(self, state: dict[str, Any], config: RunnableConfig) -> str:
         """Render the role prompt + transcript and return one LLM turn."""
         messages: list[BaseMessage] = state.get("messages") or []
         llm = ModelConfiguration.get_chat_model_for_role(config, self.llm_role)
@@ -108,15 +104,14 @@ class LLMMessageParticipant:
     llm_role: Role = "reasoner"
     user_prompt: str = "Take your turn now."
 
-    async def speak(
-        self, state: dict[str, Any], config: RunnableConfig
-    ) -> str:
+    async def speak(self, state: dict[str, Any], config: RunnableConfig) -> str:
         """Materialise the conversation as messages and return one LLM turn."""
         messages: list[BaseMessage] = state.get("messages") or []
         llm = ModelConfiguration.get_chat_model_for_role(config, self.llm_role)
         prompt = render_template(self.system_prompt_template, **state)
         history: list[AIMessage | HumanMessage] = [
-            AIMessage(m.content) if (m.name or "") == self.name
+            AIMessage(m.content)
+            if (m.name or "") == self.name
             else HumanMessage(
                 f"[{m.name or 'speaker'}]: {m.content}",
                 name=m.name,

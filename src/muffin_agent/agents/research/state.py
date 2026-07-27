@@ -28,9 +28,6 @@ from langchain.agents.middleware.types import OmitFromSchema
 from langchain_core.messages import BaseMessage
 from typing_extensions import TypedDict
 
-from muffin_agent.middlewares.agent_capture.records import merge_tool_runs
-from muffin_agent.middlewares.agent_capture.tree import merge_subagent_tree
-
 TaskType = Literal[
     "research_report",
     "comparison",
@@ -82,17 +79,6 @@ class ResearchState(TypedDict, total=False):
 
     # ── Final output ───────────────────────────────────────────────────
     output: dict[str, Any]
-
-    # ── Tool-execution capture (declaring the channel opts this graph in) ─
-    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
-    """Tool-execution records captured by ``AgentCaptureMiddleware``. Now that every
-    LLM stage is a compiled agent node, these propagate automatically — no manual
-    forwarding. Slated for removal once the UI reads tool calls from each namespace's
-    own messages."""
-
-    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
-    """Sub-agent execution tree nodes captured by ``AgentCaptureMiddleware``, same
-    propagation scope as ``tool_runs`` above."""
 
 
 # ── Per-node input schemas (what each agent node reads from ResearchState) ────

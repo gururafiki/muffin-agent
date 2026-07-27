@@ -134,11 +134,10 @@ def _schema_responses() -> dict[Any, Any]:
 async def test_criteria_analysis_runs_end_to_end(config, store):
     """Full graph: requested ticker flows through every stage; fan-in is complete.
 
-    Capture is always on, exercising the ``tool_runs`` plumbing through every
-    node (incl. the worker subgraph's restricted ``output_schema``) — it must
-    not break the run. (The schema-routed model ends each agent on its first
-    call, so no data-collection tool calls fire here; capture semantics are
-    covered by ``tests/middlewares/test_agent_capture_records.py``.)
+    Also asserts the state contract: only domain channels cross the worker
+    subgraph's restricted ``output_schema``. (The schema-routed model ends each
+    agent on its first call, so no data-collection tool calls fire here — which
+    is exactly why every criterion comes back ``data_collected=False``.)
     """
     responses = _schema_responses()
     with patch_mcp(scenario="aapl"), patch_sandbox(), patch_llm_by_schema(responses):
@@ -173,37 +172,23 @@ async def test_criteria_analysis_runs_end_to_end(config, store):
     for key in ("classification", "criteria_definition", "valuation_methodology"):
         assert "error" not in result[key]
 
-    # subagent_tree — top level: one node per stage agent (classification,
-    # criteria_definition, valuation_methodology, synthesis), each added
-    # directly to the orchestrator graph, so each roots at depth 1.
-    tree = result.get("subagent_tree") or {}
-    assert tree, "subagent_tree should be populated"
-    assert len(tree) == 4
-    names = {n["name"] for n in tree.values()}
-    assert names == {
-        "ticker_classification",
-        "criteria_definition",
-        "valuation_methodology",
-        "criteria_analysis_synthesis",
-    }
-    parents = {n["parent_id"] for n in tree.values()}
-    assert parents == {"__root__"}  # depth-1 nodes rooted correctly
-    assert all("|" not in node_id for node_id in tree)  # not nested — no parent agent
+    # No observability rides on graph state. Each stage agent and each Send
+    # worker is a compiled subgraph with its own checkpoints, which is where the
+    # transcripts and tool calls live (see `test_graph_observability.py`).
+    assert "tool_runs" not in result
+    assert "subagent_tree" not in result
+    assert "subagent_runs" not in result
 
-    # subagent_tree — per criterion: the criterion_evaluation deep agent runs
-    # inside the Send-fan-out worker subgraph (evaluate -> package), so its
-    # tree node id is nested (worker ns + its own node), and the worker's
-    # `package` node moves it onto the evaluation dict rather than the
-    # top-level channel (kept scoped per-criterion, see criterion_evaluation
-    # _node.py / state.py). This is where real nesting (id containing "|")
-    # shows up for this graph.
+    # The one trace of tool use that DOES cross into the parent is a finding the
+    # `package` node computed, not a record of execution: this harness never
+    # lets an agent call a data tool, so every criterion is honestly flagged as
+    # having collected nothing.
     for e in evals:
-        per_criterion_tree = e.get("subagent_tree") or {}
-        assert per_criterion_tree, "each criterion's subagent_tree should be populated"
-        [criterion_node] = list(per_criterion_tree.values())
-        assert criterion_node["name"] == "criterion_evaluation"
-        assert "|" in criterion_node["id"]  # nested under the worker's `evaluate` node
-        assert criterion_node["parent_id"] != "__root__"
+        assert e["data_collected"] is False
+        assert e["data_sources"] == []
+        assert "tool_runs" not in e
+        assert "subagent_tree" not in e
+        assert "executed_tools" not in e
 
 
 async def test_classification_stage_renders_ticker_into_human_message(config, store):

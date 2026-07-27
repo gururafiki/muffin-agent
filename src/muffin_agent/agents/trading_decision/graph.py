@@ -165,10 +165,10 @@ def _build_investment_debate_subgraph(
     Judge runs in the parent graph and consumes ``investment_debate_messages``.
 
     ``output_schema=InvestmentDebateOutput`` restricts what the compiled
-    subgraph emits to the parent, so it never echoes the parent's other
-    reducer channels (``tool_runs``, and — because this subgraph runs BEFORE
-    the risk debate — the risk-debate channels too) back through its final
-    state. See ``build_conference_graph``'s ``output_schema`` docstring.
+    subgraph emits to the parent, so it never echoes the parent's other reducer
+    channels — because this subgraph runs BEFORE the risk debate, that includes
+    the risk-debate channels — back through its final state. See
+    ``build_conference_graph``'s ``output_schema`` docstring.
     """
     participants = [
         LLMParticipant(
@@ -212,7 +212,7 @@ def _build_risk_debate_subgraph(
 
     ``output_schema=RiskDebateOutput`` restricts the subgraph's emissions to
     its own conference channels so it never echoes the parent's ``operator.add``
-    reducer channels (e.g. ``tool_runs``) back through write-back.
+    reducer channels back through write-back.
     """
     participants = [
         LLMParticipant(

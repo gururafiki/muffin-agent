@@ -33,8 +33,6 @@ class TestMinimalBuilders:
         )
 
         from muffin_agent.middlewares import (
-            AgentCaptureMiddleware,
-            AgentCaptureParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
@@ -52,17 +50,15 @@ class TestMinimalBuilders:
         assert kwargs["backend"] is None
         assert kwargs["system_prompt"] is None
         mw = kwargs["middleware"]
-        assert len(mw) == 7
+        # No observability middleware in the stack, deliberately: a run's
+        # execution record lives in LangGraph's checkpoints, not in graph state.
+        assert len(mw) == 5
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], _EnsureUserMessageMiddleware)
         assert isinstance(mw[2], ToolKnowledgeMiddleware)
         assert isinstance(mw[3], ToolResultCacheMiddleware)
         assert mw[3]._cacheable_tools is None
         assert isinstance(mw[4], ToolRetryMiddleware)
-        assert isinstance(mw[5], AgentCaptureParentMiddleware)
-        # Deep agents carry a guarded capturer: the transcript channel fires
-        # only when the deep agent is itself task-invoked as a subagent.
-        assert isinstance(mw[6], AgentCaptureMiddleware)
 
     def test_minimal_react_agent_no_filesystem_middleware(self):
         """No routes → no ``FilesystemMiddleware`` wired on a ReAct agent."""
@@ -210,8 +206,6 @@ class TestSkills:
         )
 
         from muffin_agent.middlewares import (
-            AgentCaptureMiddleware,
-            AgentCaptureParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
@@ -228,15 +222,13 @@ class TestSkills:
             )
 
         mw = _deep_kwargs(mock_cda)["middleware"]
-        # Universal middlewares + the agent-capture pair, no skill filter.
-        assert len(mw) == 7
+        # Universal middlewares only, no skill filter.
+        assert len(mw) == 5
         assert isinstance(mw[0], ModelRetryMiddleware)
         assert isinstance(mw[1], _EnsureUserMessageMiddleware)
         assert isinstance(mw[2], ToolKnowledgeMiddleware)
         assert isinstance(mw[3], ToolResultCacheMiddleware)
         assert isinstance(mw[4], ToolRetryMiddleware)
-        assert isinstance(mw[5], AgentCaptureParentMiddleware)
-        assert isinstance(mw[6], AgentCaptureMiddleware)
 
     def test_with_skills_called_twice_raises(self, tmp_path):
         """Calling ``with_skills`` twice raises ``ValueError``."""
@@ -973,8 +965,6 @@ class TestMiddlewareOrder:
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
-            AgentCaptureMiddleware,
-            AgentCaptureParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
@@ -1001,9 +991,7 @@ class TestMiddlewareOrder:
         assert isinstance(mw[4], ToolRetryMiddleware)
         assert isinstance(mw[5], FilesystemMiddleware)
         assert isinstance(mw[6], MemoryMiddleware)
-        assert isinstance(mw[7], AgentCaptureParentMiddleware)
-        assert isinstance(mw[8], AgentCaptureMiddleware)
-        assert mw[9] is caller_mw
+        assert mw[7] is caller_mw
 
     def test_full_order_with_all_optionals(self):
         """All optional middleware land in the documented order."""
@@ -1061,8 +1049,6 @@ class TestMiddlewareOrder:
         from langchain.agents.middleware.types import AgentMiddleware
 
         from muffin_agent.middlewares import (
-            AgentCaptureMiddleware,
-            AgentCaptureParentMiddleware,
             ToolKnowledgeMiddleware,
             ToolResultCacheMiddleware,
         )
@@ -1091,9 +1077,7 @@ class TestMiddlewareOrder:
         assert isinstance(mw[5], ToolRetryMiddleware)
         assert isinstance(mw[6], FilesystemMiddleware)
         assert isinstance(mw[7], MemoryMiddleware)
-        assert isinstance(mw[8], AgentCaptureParentMiddleware)
-        assert isinstance(mw[9], AgentCaptureMiddleware)
-        assert mw[10] is caller_mw
+        assert mw[8] is caller_mw
 
 
 @pytest.mark.unit

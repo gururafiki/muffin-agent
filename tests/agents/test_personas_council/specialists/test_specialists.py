@@ -439,12 +439,13 @@ _REACT_SPECIALIST_BUILDERS = [
 @pytest.mark.asyncio
 @pytest.mark.parametrize("slug,builder", _REACT_SPECIALIST_BUILDERS)
 async def test_react_specialist_subgraph_output_contract(slug, builder) -> None:
-    """ReAct specialists surface ``persona_signals`` + ``tool_runs`` to the council.
+    """ReAct specialists surface ``persona_signals`` to the council, nothing else.
 
     Mirrors ``test_persona_subgraph_compiles``: the explicit
-    ``output_schema=<Specialist>Output`` must expose the collect_data agent's
-    captured ``tool_runs`` (the council "Tool execution" panel substrate) and
-    nothing else besides the verdict.
+    ``output_schema=<Specialist>Output`` must expose only the verdict. It used to
+    also carry ``tool_runs``; a specialist's tool calls now come from its own
+    LangGraph namespace, so that name reappearing here means telemetry has been
+    put back into graph state.
     """
     mock_client = AsyncMock()
     mock_client.get_tools = AsyncMock(return_value=[])
@@ -467,6 +468,6 @@ async def test_react_specialist_subgraph_output_contract(slug, builder) -> None:
     assert {"ticker", "as_of_date"} <= input_props, (
         f"{slug} input schema missing ticker/as_of_date: {input_props}"
     )
-    assert output_props == {"persona_signals", "tool_runs"}, (
+    assert output_props == {"persona_signals"}, (
         f"{slug} output schema leaks internal fields to the council: {output_props}"
     )

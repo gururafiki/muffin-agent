@@ -37,8 +37,10 @@ _ANALYST_RESPONSES = {
 
 async def test_four_analysts_compose_and_report(config):
     """All 4 analysts map ticker/decision_date in and propagate their reports."""
-    with patch_mcp(scenario="aapl"), patch_sandbox(), patch_llm_by_schema(
-        _ANALYST_RESPONSES
+    with (
+        patch_mcp(scenario="aapl"),
+        patch_sandbox(),
+        patch_llm_by_schema(_ANALYST_RESPONSES),
     ):
         graph = StateGraph(TradingDecisionState)
         await _add_analyst_nodes(graph, config)

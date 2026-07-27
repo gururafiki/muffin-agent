@@ -20,9 +20,7 @@ def render_messages_chronological(messages: list[BaseMessage]) -> str:
     """
     if not messages:
         return ""
-    return "\n\n".join(
-        f"{m.name or type(m).__name__}: {m.content}" for m in messages
-    )
+    return "\n\n".join(f"{m.name or type(m).__name__}: {m.content}" for m in messages)
 
 
 def last_opposing_message(
