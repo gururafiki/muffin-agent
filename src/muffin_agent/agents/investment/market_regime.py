@@ -1,8 +1,9 @@
 """Stage 2: Market Regime & Top-Down Context."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
@@ -26,7 +27,6 @@ from ..data_collection import (
 )
 from ..subagents import build_validation_subagent
 from .schemas import DataSource
-from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -48,6 +48,22 @@ class MarketRegimeInputState(TypedDict, total=False):
     sector: str
     industry: str
     country: str
+
+
+class MarketRegimeAgentState(DeepAgentState):
+    """State schema for the market_regime stage agent.
+
+    Inputs flow IN from the parent graph (``OmitFromSchema(output=True)``
+    keeps them out of the node's output); ``market_regime`` is written by the
+    structured-response unpacker and flows OUT to the parent channel.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    sector: Annotated[str, OmitFromSchema(input=False, output=True)]
+    industry: Annotated[str, OmitFromSchema(input=False, output=True)]
+    country: Annotated[str, OmitFromSchema(input=False, output=True)]
+    market_regime: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
 
 
 # ── Output schema ─────────────────────────────────────────────────────────────
@@ -171,6 +187,17 @@ class MarketRegimeOutput(BaseModel):
     """Data gaps or uncertainties that reduce confidence."""
 
 
+class MarketRegimeNodeOutput(BaseModel):
+    """Node output — unpacks into the ``market_regime`` state channel.
+
+    The single field name IS the parent state key —
+    ``_StructuredResponseToStateMiddleware`` ``model_dump()``s this
+    straight into state.
+    """
+
+    market_regime: MarketRegimeOutput
+
+
 # ── Subagent builder ──────────────────────────────────────────────────────────
 
 
@@ -278,13 +305,14 @@ async def create_market_regime_agent(
 
     builder = (
         MuffinAgentBuilder(primary, name="market_regime")
-        .with_system_prompt_template("investment/market_regime.jinja")
+        .with_state_schema(MarketRegimeAgentState)
+        .with_input_prompt_template("investment/market_regime.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=MarketRegimeOutput))
+        .with_response_format(AutoStrategy(schema=MarketRegimeNodeOutput))
         .with_store(store)
     )
     if summariser is not None:
@@ -297,50 +325,3 @@ async def create_market_regime_agent(
     ):
         builder = builder.with_tool(tool)
     return builder.build_deep_agent()
-
-
-# ── Node ──────────────────────────────────────────────────────────────────────
-
-
-async def market_regime_node(
-    state: MarketRegimeInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 2: Market Regime & Top-Down Context.
-
-    Classifies the current macro and liquidity regime, identifies factor
-    tailwinds and headwinds, and sets the top-down frame within which the
-    individual company analysis will be interpreted.
-
-    Runs in **parallel** with ``sector_analysis_node`` and
-    ``company_analysis_node`` (Group 1).  Its output flows into
-    ``forecasting_node`` and ``risk_assessment_node`` (both Group 2) as
-    contextual input for macro assumptions and stress-scenario design.
-
-    Also used as a shared context node in the equity screening graph
-    (``ScreeningState``) where it runs once before the per-ticker fan-out.
-    Accepts both ``TickerAnalysisState`` (with ``ticker``) and
-    ``ScreeningState`` (query-only); ``MarketRegimeInputState`` documents
-    which fields are read — LangGraph passes the full state at runtime.
-
-    Input state fields (``MarketRegimeInputState``):
-        (a) ticker — agent calls ``etf_equity_exposure`` to derive sector/style
-        (b) sector / industry / country — passed explicitly
-        (c) query only — investment mandate narrows geographic/style focus
-
-    Outputs (state update):
-        market_regime: ``MarketRegimeOutput.model_dump()`` dict, or an error
-        dict ``{"regime_label": "unknown", "error": ..., "raw_output": ...}``
-        if the agent fails to return structured output.
-    """
-    return await run_deep_agent_node(
-        state=state,
-        config=config,
-        agent_factory=create_market_regime_agent,
-        input_state_type=MarketRegimeInputState,
-        state_key="market_regime",
-        error_fallback={"regime_label": "unknown"},
-        store=store,
-    )

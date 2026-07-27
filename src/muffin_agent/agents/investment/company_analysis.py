@@ -1,8 +1,9 @@
 """Stage 4-5: Company Analysis — Business Quality & Fundamental Deep Dive."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
@@ -30,7 +31,6 @@ from ..data_collection import (
 )
 from ..subagents import build_validation_subagent
 from .schemas import DataSource
-from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -49,6 +49,21 @@ class CompanyAnalysisInputState(TypedDict, total=False):
 
     ticker: str
     query: str
+
+
+class CompanyAnalysisAgentState(DeepAgentState):
+    """State schema for the company_analysis stage agent.
+
+    Inputs flow IN from the parent graph (``OmitFromSchema(output=True)``
+    keeps them out of the node's output); ``company_analysis`` is written by the
+    structured-response unpacker and flows OUT to the parent channel.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    company_analysis: Annotated[
+        dict[str, Any], OmitFromSchema(input=True, output=False)
+    ]
 
 
 # ── Output schema ─────────────────────────────────────────────────────────────
@@ -271,6 +286,17 @@ class CompanyAnalysisOutput(BaseModel):
     that reduce confidence in one or more assessment dimensions."""
 
 
+class CompanyAnalysisNodeOutput(BaseModel):
+    """Node output — unpacks into the ``company_analysis`` state channel.
+
+    The single field name IS the parent state key —
+    ``_StructuredResponseToStateMiddleware`` ``model_dump()``s this
+    straight into state.
+    """
+
+    company_analysis: CompanyAnalysisOutput
+
+
 # ── Subagent builder ──────────────────────────────────────────────────────────
 
 
@@ -405,13 +431,14 @@ async def create_company_analysis_agent(
 
     builder = (
         MuffinAgentBuilder(primary, name="company_analysis")
-        .with_system_prompt_template("investment/company_analysis.jinja")
+        .with_state_schema(CompanyAnalysisAgentState)
+        .with_input_prompt_template("investment/company_analysis.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=CompanyAnalysisOutput))
+        .with_response_format(AutoStrategy(schema=CompanyAnalysisNodeOutput))
         .with_store(store)
     )
     if summariser is not None:
@@ -426,43 +453,3 @@ async def create_company_analysis_agent(
     ):
         builder = builder.with_tool(tool)
     return builder.build_deep_agent()
-
-
-# ── Node ──────────────────────────────────────────────────────────────────────
-
-
-async def company_analysis_node(
-    state: CompanyAnalysisInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 4-5: Company Analysis — Business Quality & Fundamental Deep Dive.
-
-    Evaluates the quality of the business across four dimensions: competitive
-    moat (width, sources, ROIC peer premium), management quality and capital
-    allocation discipline, ESG and governance triage, and historical financial
-    quality (margins, ROIC, FCF conversion, leverage).  Also constructs a
-    5-year financial history time series for use by ``forecasting_node``.
-
-    Runs in **parallel** with ``market_regime_node`` and
-    ``sector_analysis_node`` (Group 1).  Its output is the primary input for
-    both ``forecasting_node`` and ``risk_assessment_node`` (Group 2).
-
-    Input state fields (``CompanyAnalysisInputState``):
-        ticker — equity ticker symbol; should be present for company analysis
-        query  — investment mandate context used to focus the analysis
-
-    Outputs (state update):
-        company_analysis: ``CompanyAnalysisOutput.model_dump()`` dict, or an
-        error dict ``{"error": ..., "raw_output": ...}`` if the agent fails
-        to return structured output.
-    """
-    return await run_deep_agent_node(
-        state=state,
-        config=config,
-        agent_factory=create_company_analysis_agent,
-        input_state_type=CompanyAnalysisInputState,
-        state_key="company_analysis",
-        store=store,
-    )

@@ -10,7 +10,6 @@ from muffin_agent.agents.investment.risk_assessment import (
     RiskAssessmentOutput,
     StressScenario,
     create_risk_assessment_agent,
-    risk_assessment_node,
 )
 from muffin_agent.prompts import render_template
 
@@ -327,43 +326,6 @@ class TestOutputModel:
 
 
 @pytest.mark.unit
-class TestNodeJsonInput:
-    def test_state_keys_passed_as_json_input(self):
-        """run_deep_agent_node serialises state keys as JSON for the agent input."""
-        import json
-
-        state = {
-            "ticker": "TSLA",
-            "query": "assess tail risk",
-            "company_analysis": {
-                "company_signal": "watch",
-                "key_risks": ["competition"],
-            },
-        }
-        context = {
-            k: state[k]
-            for k in RiskAssessmentInputState.__annotations__
-            if state.get(k)
-        }
-        serialized = json.dumps(context)
-        assert "TSLA" in serialized
-        assert "market_regime" not in serialized  # absent from state → not included
-
-    def test_missing_optional_state_keys_excluded(self):
-
-        state = {"ticker": "META"}
-        context = {
-            k: state[k]
-            for k in RiskAssessmentInputState.__annotations__
-            if state.get(k)
-        }
-        assert "company_analysis" not in context
-        assert "market_regime" not in context
-
-
-# ── TestCreateAgent ───────────────────────────────────────────────────────────
-
-
 @pytest.mark.unit
 class TestCreateAgent:
     @pytest.mark.asyncio
@@ -497,115 +459,3 @@ class TestCreateAgent:
 
 
 # ── TestNode ──────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-class TestNode:
-    @pytest.mark.asyncio
-    async def test_returns_risk_assessment_key(self):
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "structured_response": MagicMock(model_dump=lambda: _VALID_OUTPUT)
-        }
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.risk_assessment.create_risk_assessment_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.utils.ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await risk_assessment_node(
-                state={"ticker": "AAPL", "query": "risk check"},
-                config=MagicMock(configurable={}),
-            )
-
-        assert "risk_assessment" in result
-
-    @pytest.mark.asyncio
-    async def test_error_fallback_contains_risk_signal_unacceptable(self):
-        """When agent returns no structured response, fallback must include
-        risk_signal."""
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "structured_response": None,
-            "output": "agent failed",
-        }
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.risk_assessment.create_risk_assessment_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.utils.ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await risk_assessment_node(
-                state={"ticker": "AAPL"},
-                config=MagicMock(configurable={}),
-            )
-
-        ra = result["risk_assessment"]
-        assert "error" in ra
-        assert ra.get("risk_signal") == "unacceptable"
-
-    @pytest.mark.asyncio
-    async def test_exception_fallback(self):
-        """Exceptions should be caught and return an error dict."""
-        with (
-            patch(
-                "muffin_agent.agents.investment.risk_assessment.create_risk_assessment_agent",
-                side_effect=RuntimeError("agent build failed"),
-            ),
-            patch(
-                "muffin_agent.agents.investment.utils.ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await risk_assessment_node(
-                state={"ticker": "AAPL"},
-                config=MagicMock(configurable={}),
-            )
-
-        ra = result["risk_assessment"]
-        assert "error" in ra
-        assert ra.get("risk_signal") == "unacceptable"
-
-    @pytest.mark.asyncio
-    async def test_store_kwarg_propagated(self):
-        """Store argument must be forwarded through the node."""
-        mock_store = MagicMock()
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "structured_response": MagicMock(model_dump=lambda: _VALID_OUTPUT)
-        }
-        captured = {}
-
-        async def fake_factory(cfg, store=None):
-            captured["store"] = store
-            return mock_agent
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.risk_assessment.create_risk_assessment_agent",
-                side_effect=fake_factory,
-            ),
-            patch(
-                "muffin_agent.agents.investment.utils.ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            await risk_assessment_node(
-                state={"ticker": "AAPL"},
-                config=MagicMock(configurable={}),
-                store=mock_store,
-            )
-
-        assert captured.get("store") is mock_store

@@ -17,9 +17,7 @@ from muffin_agent.agents.personas_council.tools.scoring_helpers import (
 class TestMaintenanceCapex:
     def test_median_of_three_when_enough_ratios(self):
         # capex 40 → m1=34; dep 20 → m2=20; ratios≈avg×rev → m3≈42; median=34
-        mc = estimate_maintenance_capex(
-            [35, 38, 40], [18, 19, 20], [400, 450, 500]
-        )
+        mc = estimate_maintenance_capex([35, 38, 40], [18, 19, 20], [400, 450, 500])
         assert mc == pytest.approx(34.0, abs=0.5)
 
     def test_max_of_two_when_few_ratios(self):
@@ -45,16 +43,12 @@ class TestBuffettOwnerEarnings:
         assert oe == pytest.approx(100 + 20 - 34 - 10, abs=0.6)
 
     def test_zero_working_capital_when_history_missing(self):
-        oe = compute_buffett_owner_earnings(
-            [100], [20], [40], [500]
-        )
+        oe = compute_buffett_owner_earnings([100], [20], [40], [500])
         # ΔWC defaults to 0 → 100 + 20 - max(34,20) = 86
         assert oe == pytest.approx(86.0, abs=0.5)
 
     def test_missing_latest_returns_none(self):
-        assert (
-            compute_buffett_owner_earnings([None], [20], [40], [500]) is None
-        )
+        assert compute_buffett_owner_earnings([None], [20], [40], [500]) is None
 
 
 @pytest.mark.unit

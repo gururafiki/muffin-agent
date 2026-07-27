@@ -1,8 +1,9 @@
 """Stage 3: Sector / Industry & Thematic View."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
@@ -23,7 +24,6 @@ from ..data_collection import (
     create_regulatory_filings_data_collection_agent,
 )
 from ..investment.schemas import DataSource
-from ..investment.utils import run_deep_agent_node
 from ..subagents import build_validation_subagent
 
 # ── Input state schema ─────────────────────────────────────────────────────────
@@ -45,6 +45,21 @@ class SectorAnalysisInputState(TypedDict, total=False):
     query: str
     sector: str
     industry: str
+
+
+class SectorAnalysisAgentState(DeepAgentState):
+    """State schema for the sector_view stage agent.
+
+    Inputs flow IN from the parent graph (``OmitFromSchema(output=True)``
+    keeps them out of the node's output); ``sector_view`` is written by the
+    structured-response unpacker and flows OUT to the parent channel.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    sector: Annotated[str, OmitFromSchema(input=False, output=True)]
+    industry: Annotated[str, OmitFromSchema(input=False, output=True)]
+    sector_view: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
 
 
 # ── Output schema ─────────────────────────────────────────────────────────────
@@ -190,6 +205,17 @@ class SectorViewOutput(BaseModel):
     """Data gaps or uncertainties that reduce confidence in the assessment."""
 
 
+class SectorAnalysisNodeOutput(BaseModel):
+    """Node output — unpacks into the ``sector_view`` state channel.
+
+    The single field name IS the parent state key —
+    ``_StructuredResponseToStateMiddleware`` ``model_dump()``s this
+    straight into state.
+    """
+
+    sector_view: SectorViewOutput
+
+
 # ── Subagent builder ──────────────────────────────────────────────────────────
 
 
@@ -306,13 +332,14 @@ async def create_sector_analysis_agent(
 
     builder = (
         MuffinAgentBuilder(primary, name="sector_analysis")
-        .with_system_prompt_template("investment/sector_analysis.jinja")
+        .with_state_schema(SectorAnalysisAgentState)
+        .with_input_prompt_template("investment/sector_analysis.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=SectorViewOutput))
+        .with_response_format(AutoStrategy(schema=SectorAnalysisNodeOutput))
         .with_store(store)
     )
     if summariser is not None:
@@ -320,50 +347,3 @@ async def create_sector_analysis_agent(
     for tool in (compute_sector_relative_performance, compute_peer_dispersion):
         builder = builder.with_tool(tool)
     return builder.build_deep_agent()
-
-
-# ── Node ──────────────────────────────────────────────────────────────────────
-
-
-async def sector_analysis_node(
-    state: SectorAnalysisInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 3: Sector / Industry & Thematic View.
-
-    Assesses the attractiveness of the ticker's sector and industry: cycle
-    position, Porter's Five Forces competitive structure, thematic tailwinds
-    and headwinds, sector-relative valuation, regulatory/legislative backdrop,
-    and alpha opportunity (peer return dispersion).
-
-    Runs in **parallel** with ``market_regime_node`` and
-    ``company_analysis_node`` (Group 1).  Its output flows into
-    ``valuation_node`` (Group 3) for peer-relative valuation benchmarks and
-    into ``thesis_synthesis_node`` for the sector attractiveness narrative.
-
-    In ``screening_graph`` this node runs **once** on the outer graph before
-    the per-ticker fan-out when all candidates share a sector; for multi-sector
-    screens the outer graph may run it once per sector or skip it when each
-    ticker worker handles sector identification independently.
-
-    Input state fields (``SectorAnalysisInputState``):
-        (a) ticker — agent calls ``etf_equity_exposure`` to derive sector/industry
-        (b) sector / industry — passed explicitly (screening graph pre-fanout)
-        (c) query only — thematic scan; agent infers sector from the mandate
-
-    Outputs (state update):
-        sector_view: ``SectorViewOutput.model_dump()`` dict, or an error dict
-        ``{"sector": "unknown", "error": ..., "raw_output": ...}`` if the
-        agent fails to return structured output.
-    """
-    return await run_deep_agent_node(
-        state=state,
-        config=config,
-        agent_factory=create_sector_analysis_agent,
-        input_state_type=SectorAnalysisInputState,
-        state_key="sector_view",
-        error_fallback={"sector": "unknown"},
-        store=store,
-    )

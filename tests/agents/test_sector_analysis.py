@@ -1,6 +1,5 @@
 """Tests for the sector analysis investment agent."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,9 +8,9 @@ from pydantic import ValidationError
 
 from muffin_agent.agents.investment.sector_analysis import (
     SectorAnalysisInputState,
+    SectorAnalysisNodeOutput,
     SectorViewOutput,
     create_sector_analysis_agent,
-    sector_analysis_node,
 )
 from muffin_agent.prompts import render_template
 
@@ -353,139 +352,6 @@ class TestSectorViewOutputModel:
 
 
 @pytest.mark.unit
-class TestSectorAnalysisNodeJsonInput:
-    """Verify the node serializes state context correctly."""
-
-    @pytest.mark.asyncio
-    async def test_passes_ticker_and_query_in_input(self):
-        mock_structured = MagicMock(spec=SectorViewOutput)
-        mock_structured.model_dump.return_value = _VALID_SECTOR_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            state = {"ticker": "NVDA", "query": "AI infrastructure stocks"}
-            await sector_analysis_node(state, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert ctx["ticker"] == "NVDA"
-        assert ctx["query"] == "AI infrastructure stocks"
-
-    @pytest.mark.asyncio
-    async def test_omits_missing_state_fields(self):
-        mock_structured = MagicMock(spec=SectorViewOutput)
-        mock_structured.model_dump.return_value = _VALID_SECTOR_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            state = {"query": "semiconductor stocks"}
-            await sector_analysis_node(state, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert "ticker" not in ctx
-        assert ctx["query"] == "semiconductor stocks"
-
-    @pytest.mark.asyncio
-    async def test_passes_explicit_sector_industry(self):
-        mock_structured = MagicMock(spec=SectorViewOutput)
-        mock_structured.model_dump.return_value = _VALID_SECTOR_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            state = {
-                "sector": "Information Technology",
-                "industry": "Semiconductors",
-                "query": "chip stocks",
-            }
-            await sector_analysis_node(state, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert ctx["sector"] == "Information Technology"
-        assert ctx["industry"] == "Semiconductors"
-        assert "ticker" not in ctx
-
-    @pytest.mark.asyncio
-    async def test_excludes_non_input_state_fields(self):
-        """Fields outside SectorAnalysisInputState are not sent to agent."""
-        mock_structured = MagicMock(spec=SectorViewOutput)
-        mock_structured.model_dump.return_value = _VALID_SECTOR_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            # Simulate full TickerAnalysisState with extra fields
-            state = {
-                "ticker": "AAPL",
-                "query": "quality tech",
-                "market_regime": {"regime_label": "Goldilocks"},
-                "company_analysis": None,
-                "forecast": None,
-            }
-            await sector_analysis_node(state, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert set(ctx.keys()) <= set(SectorAnalysisInputState.__annotations__)
-        assert "market_regime" not in ctx
-        assert "company_analysis" not in ctx
-
-
-# ── create_sector_analysis_agent tests ────────────────────────────────────────
-
-
 @pytest.mark.unit
 class TestCreateSectorAnalysisAgent:
     """Verify agent factory wires subagents and response_format correctly."""
@@ -685,158 +551,12 @@ class TestCreateSectorAnalysisAgent:
 
             response_format = mock_create.call_args.kwargs["response_format"]
             assert isinstance(response_format, AutoStrategy)
-            assert response_format.schema is SectorViewOutput
-
-
-# ── sector_analysis_node tests ────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-class TestSectorAnalysisNode:
-    """Verify node behavior: output key, structured response, error fallback."""
-
-    @pytest.mark.asyncio
-    async def test_returns_sector_view_key(self):
-        mock_structured = MagicMock(spec=SectorViewOutput)
-        mock_structured.model_dump.return_value = _VALID_SECTOR_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await sector_analysis_node(
-                {"ticker": "NVDA", "query": "AI chips"},
-                MagicMock(),  # type: ignore[arg-type]
+            # The agent now returns the WRAPPER, whose single field name is the
+            # parent state key — that is what makes auto-unpacking land in
+            # `sector_view` without a node function.
+            assert response_format.schema is SectorAnalysisNodeOutput
+            assert list(SectorAnalysisNodeOutput.model_fields) == ["sector_view"]
+            assert (
+                SectorAnalysisNodeOutput.model_fields["sector_view"].annotation
+                is SectorViewOutput
             )
-
-        assert "sector_view" in result
-        sv = result["sector_view"]
-        assert sv["sector"] == "Information Technology"
-        assert sv["sector_signal"] == "favorable"
-        assert "cycle_position" in sv
-        assert "competitive_assessment" in sv
-        assert "thematic_drivers" in sv
-
-    @pytest.mark.asyncio
-    async def test_passes_ticker_in_task(self):
-        mock_structured = MagicMock(spec=SectorViewOutput)
-        mock_structured.model_dump.return_value = _VALID_SECTOR_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            await sector_analysis_node(
-                {"ticker": "NVDA", "query": "AI infrastructure"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        task_input = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        assert "NVDA" in task_input
-
-    @pytest.mark.asyncio
-    async def test_works_without_ticker(self):
-        mock_structured = MagicMock(spec=SectorViewOutput)
-        mock_structured.model_dump.return_value = _VALID_SECTOR_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await sector_analysis_node(
-                {"sector": "Information Technology", "industry": "Semiconductors"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        assert "sector_view" in result
-
-    @pytest.mark.asyncio
-    async def test_error_fallback_on_missing_structured_response(self):
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "output": "Sorry, I could not complete the analysis."
-        }
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await sector_analysis_node(
-                {"query": "tech stocks"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        assert "sector_view" in result
-        assert result["sector_view"]["sector"] == "unknown"
-        assert "error" in result["sector_view"]
-
-    @pytest.mark.asyncio
-    async def test_error_fallback_preserves_raw_output(self):
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "structured_response": None,
-            "output": "Partial analysis text.",
-        }
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".create_sector_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.sector_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await sector_analysis_node(
-                {"query": "test"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        assert result["sector_view"]["sector"] == "unknown"
-        assert result["sector_view"]["raw_output"] == "Partial analysis text."

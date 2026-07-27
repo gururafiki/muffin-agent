@@ -87,7 +87,12 @@ class TestNormaliseForStockstats:
         ]
         out = _normalise_for_stockstats(pd.DataFrame(rows))
         assert list(out.columns) == [
-            "date", "open", "high", "low", "close", "volume",
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
         ]
         assert out["date"].is_monotonic_increasing  # sorted asc
 
@@ -188,10 +193,13 @@ class TestGetIndicators:
     async def test_raises_when_openbb_tool_unavailable(self):
         from langchain_core.tools import ToolException
 
-        with patch(
-            f"{_TOOLS_MODULE}.get_tools",
-            AsyncMock(return_value=[]),
-        ), pytest.raises(ToolException, match="equity_price_historical not available"):
+        with (
+            patch(
+                f"{_TOOLS_MODULE}.get_tools",
+                AsyncMock(return_value=[]),
+            ),
+            pytest.raises(ToolException, match="equity_price_historical not available"),
+        ):
             await get_indicators.ainvoke(
                 {"ticker": "AAPL", "indicator": "rsi", "curr_date": "2025-03-01"}
             )

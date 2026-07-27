@@ -1,8 +1,9 @@
 """Stage 8: Risk & Downside / Stress Testing."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
@@ -27,7 +28,6 @@ from ..data_collection import (
 )
 from ..subagents import build_validation_subagent
 from .schemas import DataSource
-from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -66,6 +66,23 @@ class RiskAssessmentInputState(TypedDict, total=False):
     ``factor_assessment`` (regime-factor cross-check), ``recommended_positioning``
     (beta/exposure context).
     """
+
+
+class RiskAssessmentAgentState(DeepAgentState):
+    """State schema for the risk_assessment stage agent.
+
+    Inputs flow IN from the parent graph (``OmitFromSchema(output=True)``
+    keeps them out of the node's output); ``risk_assessment`` is written by the
+    structured-response unpacker and flows OUT to the parent channel.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    company_analysis: Annotated[
+        dict[str, Any], OmitFromSchema(input=False, output=True)
+    ]
+    market_regime: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    risk_assessment: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
 
 
 # ── Output schema ──────────────────────────────────────────────────────────────
@@ -292,6 +309,17 @@ class RiskAssessmentOutput(BaseModel):
     """
 
 
+class RiskAssessmentNodeOutput(BaseModel):
+    """Node output — unpacks into the ``risk_assessment`` state channel.
+
+    The single field name IS the parent state key —
+    ``_StructuredResponseToStateMiddleware`` ``model_dump()``s this
+    straight into state.
+    """
+
+    risk_assessment: RiskAssessmentOutput
+
+
 # ── Subagent builder ───────────────────────────────────────────────────────────
 
 
@@ -419,13 +447,14 @@ async def create_risk_assessment_agent(
 
     builder = (
         MuffinAgentBuilder(primary, name="risk_assessment")
-        .with_system_prompt_template("investment/risk_assessment.jinja")
+        .with_state_schema(RiskAssessmentAgentState)
+        .with_input_prompt_template("investment/risk_assessment.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=RiskAssessmentOutput))
+        .with_response_format(AutoStrategy(schema=RiskAssessmentNodeOutput))
         .with_store(store)
     )
     if summariser is not None:
@@ -438,39 +467,3 @@ async def create_risk_assessment_agent(
     ):
         builder = builder.with_tool(tool)
     return builder.build_deep_agent()
-
-
-# ── Node ───────────────────────────────────────────────────────────────────────
-
-
-async def risk_assessment_node(
-    state: RiskAssessmentInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 8: Risk & Downside / Stress Testing.
-
-    Quantifies idiosyncratic and systematic risk for an equity position.
-    Computes CAPM beta, FF5+Momentum factor loadings, annualised volatility,
-    max drawdown, Sharpe/Sortino ratios, parametric VaR/CVaR, options-implied
-    tail risk (IV term structure + 25-delta skew), and short-interest crowding.
-    Produces 6 stress scenarios (2 historical analogs, 3 regime-derived, 1
-    idiosyncratic) and an ex-ante stop-loss level.
-
-    Runs in **parallel** with ``forecasting_node`` (Group 2) after all Group 1
-    nodes complete.  Reads ``RiskAssessmentInputState`` fields (ticker, query,
-    company_analysis, market_regime) and writes ``risk_assessment`` to state.
-
-    Its output flows into ``valuation_node`` (Group 3) to inform the discount
-    rate (via CAPM cost of equity) and downside price target.
-    """
-    return await run_deep_agent_node(
-        state=state,
-        config=config,
-        agent_factory=create_risk_assessment_agent,
-        input_state_type=RiskAssessmentInputState,
-        state_key="risk_assessment",
-        error_fallback={"risk_signal": "unacceptable"},
-        store=store,
-    )
