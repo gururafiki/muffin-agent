@@ -1,6 +1,5 @@
 """Tests for the forecasting investment agent (Step 6)."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,9 +8,9 @@ from pydantic import ValidationError
 
 from muffin_agent.agents.investment.forecasting import (
     ForecastingInputState,
+    ForecastingNodeOutput,
     ForecastOutput,
     create_forecasting_agent,
-    forecasting_node,
 )
 from muffin_agent.prompts import render_template
 
@@ -490,144 +489,6 @@ class TestForecastOutputModel:
 
 
 @pytest.mark.unit
-class TestForecastingNodeJsonInput:
-    """Verify the node serializes state context correctly."""
-
-    @pytest.mark.asyncio
-    async def test_passes_ticker_and_query_in_input(self):
-        mock_structured = MagicMock(spec=ForecastOutput)
-        mock_structured.model_dump.return_value = _VALID_FORECAST_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.forecasting.create_forecasting_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            await forecasting_node(
-                {"ticker": "AAPL", "query": "AI compounder thesis"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert ctx["ticker"] == "AAPL"
-        assert ctx["query"] == "AI compounder thesis"
-
-    @pytest.mark.asyncio
-    async def test_passes_upstream_state_fields(self):
-        mock_structured = MagicMock(spec=ForecastOutput)
-        mock_structured.model_dump.return_value = _VALID_FORECAST_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        company_analysis_data = {"company_signal": "pass", "financial_history": {}}
-        market_regime_data = {"regime_label": "Goldilocks expansion"}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.forecasting.create_forecasting_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            await forecasting_node(
-                {
-                    "ticker": "AAPL",
-                    "query": "AI thesis",
-                    "company_analysis": company_analysis_data,
-                    "market_regime": market_regime_data,
-                },
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert ctx["company_analysis"]["company_signal"] == "pass"
-        assert ctx["market_regime"]["regime_label"] == "Goldilocks expansion"
-
-    @pytest.mark.asyncio
-    async def test_omits_missing_state_fields(self):
-        mock_structured = MagicMock(spec=ForecastOutput)
-        mock_structured.model_dump.return_value = _VALID_FORECAST_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.forecasting.create_forecasting_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            await forecasting_node({"query": "tech sector"}, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert "ticker" not in ctx
-        assert "company_analysis" not in ctx
-        assert "market_regime" not in ctx
-        assert ctx["query"] == "tech sector"
-
-    @pytest.mark.asyncio
-    async def test_excludes_non_input_state_fields(self):
-        """Fields outside ForecastingInputState are not sent to the agent."""
-        mock_structured = MagicMock(spec=ForecastOutput)
-        mock_structured.model_dump.return_value = _VALID_FORECAST_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.forecasting.create_forecasting_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            # Simulate full TickerAnalysisState with extra fields
-            state = {
-                "ticker": "AAPL",
-                "query": "quality tech",
-                "company_analysis": {"company_signal": "pass"},
-                "market_regime": {"regime_label": "Goldilocks"},
-                "sector_view": {"sector": "Information Technology"},
-                "risk_assessment": None,
-            }
-            await forecasting_node(state, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert set(ctx.keys()) <= set(ForecastingInputState.__annotations__)
-        assert "sector_view" not in ctx
-        assert "risk_assessment" not in ctx
-
-
-# ── create_forecasting_agent tests ────────────────────────────────────────────
-
-
 @pytest.mark.unit
 class TestCreateForecastingAgent:
     """Verify agent factory wires subagents and response_format correctly."""
@@ -805,132 +666,12 @@ class TestCreateForecastingAgent:
 
             response_format = mock_create.call_args.kwargs["response_format"]
             assert isinstance(response_format, AutoStrategy)
-            assert response_format.schema is ForecastOutput
-
-
-# ── forecasting_node tests ────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-class TestForecastingNode:
-    """Verify node behavior: output key, structured response, error fallback."""
-
-    @pytest.mark.asyncio
-    async def test_returns_forecast_key(self):
-        mock_structured = MagicMock(spec=ForecastOutput)
-        mock_structured.model_dump.return_value = _VALID_FORECAST_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.forecasting.create_forecasting_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await forecasting_node(
-                {"ticker": "AAPL", "query": "AI compounder"},
-                MagicMock(),  # type: ignore[arg-type]
+            # The agent now returns the WRAPPER, whose single field name is the
+            # parent state key — that is what makes auto-unpacking land in
+            # `forecast` without a node function.
+            assert response_format.schema is ForecastingNodeOutput
+            assert list(ForecastingNodeOutput.model_fields) == ["forecast"]
+            assert (
+                ForecastingNodeOutput.model_fields["forecast"].annotation
+                is ForecastOutput
             )
-
-        assert "forecast" in result
-        fc = result["forecast"]
-        assert fc["ticker"] == "AAPL"
-        assert "base_case" in fc
-        assert "bull_case" in fc
-        assert "bear_case" in fc
-        assert "consensus_anchoring" in fc
-
-    @pytest.mark.asyncio
-    async def test_error_fallback_on_missing_structured_response(self):
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "output": "Sorry, I could not produce a forecast."
-        }
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.forecasting.create_forecasting_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await forecasting_node(
-                {"ticker": "AAPL", "query": "AI compounder"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        assert "forecast" in result
-        assert "error" in result["forecast"]
-
-    @pytest.mark.asyncio
-    async def test_error_fallback_preserves_raw_output(self):
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "structured_response": None,
-            "output": "Partial forecast text.",
-        }
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.forecasting.create_forecasting_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await forecasting_node(
-                {"ticker": "AAPL"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        assert result["forecast"]["raw_output"] == "Partial forecast text."
-        assert "error" in result["forecast"]
-
-    @pytest.mark.asyncio
-    async def test_runs_regardless_of_company_signal_fail(self):
-        """Node runs full analysis even when company_signal='fail'."""
-        mock_structured = MagicMock(spec=ForecastOutput)
-        mock_structured.model_dump.return_value = _VALID_FORECAST_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.forecasting.create_forecasting_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.forecasting"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await forecasting_node(
-                {
-                    "ticker": "AAPL",
-                    "query": "short thesis",
-                    "company_analysis": {"company_signal": "fail"},
-                },
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        # Agent was invoked (not short-circuited)
-        assert mock_agent.ainvoke.called
-        assert "forecast" in result

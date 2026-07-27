@@ -23,41 +23,104 @@ Group 3 — sequential:
 
 LangGraph fires a node only when all its incoming edges have data, so barrier
 synchronisation is implicit — no extra code required.
+
+Every stage is a **compiled deep agent added directly via ``add_node``**, so each owns
+its own ``checkpoint_ns`` and its transcript, tool calls and nested subagents are
+readable per-namespace. Errors propagate (``RetryPolicy`` per node + the model-fallback
+chain); the previous ``run_deep_agent_node`` wrapper swallowed every failure into an
+error dict, which hid a live config-type bug for as long as it existed.
 """
 
-from functools import partial
-
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
+from langgraph.types import RetryPolicy
 
-from .investment import (
-    company_analysis_node,
-    forecasting_node,
-    market_regime_node,
-    risk_assessment_node,
-    sector_analysis_node,
-    thesis_synthesis_node,
-    valuation_node,
+from .investment import thesis_synthesis_node
+from .investment.company_analysis import (
+    CompanyAnalysisInputState,
+    create_company_analysis_agent,
+)
+from .investment.forecasting import ForecastingInputState, create_forecasting_agent
+from .investment.market_regime import (
+    MarketRegimeInputState,
+    create_market_regime_agent,
+)
+from .investment.risk_assessment import (
+    RiskAssessmentInputState,
+    create_risk_assessment_agent,
+)
+from .investment.sector_analysis import (
+    SectorAnalysisInputState,
+    create_sector_analysis_agent,
 )
 from .investment.state import TickerAnalysisState
+from .investment.valuation import ValuationInputState, create_valuation_agent
+
+_AGENT_RETRY = RetryPolicy(max_attempts=2)
 
 
-def build_investment_analysis_graph(
+async def build_investment_analysis_graph(
+    config: RunnableConfig | None = None,
+    *,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
 ) -> CompiledStateGraph:
-    """Build and compile the per-ticker investment analysis graph."""
+    """Build and compile the per-ticker investment analysis graph.
+
+    Async because each stage's compiled deep agent (and its subagents) is built at
+    graph-construction time, amortising agent construction out of the per-request hot
+    path — the same shape as ``build_criteria_analysis_graph``.
+    """
+    cfg: RunnableConfig = config or {}
+    market_regime_agent = await create_market_regime_agent(cfg, store=store)
+    sector_analysis_agent = await create_sector_analysis_agent(cfg, store=store)
+    company_analysis_agent = await create_company_analysis_agent(cfg, store=store)
+    forecasting_agent = await create_forecasting_agent(cfg, store=store)
+    risk_assessment_agent = await create_risk_assessment_agent(cfg, store=store)
+    valuation_agent = await create_valuation_agent(cfg, store=store)
+
     graph: StateGraph = StateGraph(TickerAnalysisState)
 
     # ── Nodes ─────────────────────────────────────────────────────────────────
-    graph.add_node("market_regime", partial(market_regime_node, store=store))
-    graph.add_node("sector_analysis", partial(sector_analysis_node, store=store))
-    graph.add_node("company_analysis", partial(company_analysis_node, store=store))
-    graph.add_node("forecasting", partial(forecasting_node, store=store))
-    graph.add_node("risk_assessment", partial(risk_assessment_node, store=store))
-    graph.add_node("valuation", partial(valuation_node, store=store))
+    graph.add_node(
+        "market_regime",
+        market_regime_agent,
+        input_schema=MarketRegimeInputState,
+        retry_policy=_AGENT_RETRY,
+    )
+    graph.add_node(
+        "sector_analysis",
+        sector_analysis_agent,
+        input_schema=SectorAnalysisInputState,
+        retry_policy=_AGENT_RETRY,
+    )
+    graph.add_node(
+        "company_analysis",
+        company_analysis_agent,
+        input_schema=CompanyAnalysisInputState,
+        retry_policy=_AGENT_RETRY,
+    )
+    graph.add_node(
+        "forecasting",
+        forecasting_agent,
+        input_schema=ForecastingInputState,
+        retry_policy=_AGENT_RETRY,
+    )
+    graph.add_node(
+        "risk_assessment",
+        risk_assessment_agent,
+        input_schema=RiskAssessmentInputState,
+        retry_policy=_AGENT_RETRY,
+    )
+    graph.add_node(
+        "valuation",
+        valuation_agent,
+        input_schema=ValuationInputState,
+        retry_policy=_AGENT_RETRY,
+    )
     graph.add_node("thesis_synthesis", thesis_synthesis_node)
 
     # ── Group 1: all start in parallel ───────────────────────────────────────

@@ -1,8 +1,9 @@
 """Stage 6: Forecasting & Scenario Modeling."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
@@ -27,7 +28,6 @@ from ..data_collection import (
 )
 from ..subagents import build_validation_subagent
 from .schemas import DataSource
-from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -65,6 +65,23 @@ class ForecastingInputState(TypedDict, total=False):
     Provides macro assumptions: GDP growth label, monetary policy stance,
     inflation regime, and ``key_risks`` for bear-case grounding.
     """
+
+
+class ForecastingAgentState(DeepAgentState):
+    """State schema for the forecast stage agent.
+
+    Inputs flow IN from the parent graph (``OmitFromSchema(output=True)``
+    keeps them out of the node's output); ``forecast`` is written by the
+    structured-response unpacker and flows OUT to the parent channel.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    company_analysis: Annotated[
+        dict[str, Any], OmitFromSchema(input=False, output=True)
+    ]
+    market_regime: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    forecast: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
 
 
 # ── Output schema ─────────────────────────────────────────────────────────────
@@ -293,6 +310,17 @@ class ForecastOutput(BaseModel):
     """
 
 
+class ForecastingNodeOutput(BaseModel):
+    """Node output — unpacks into the ``forecast`` state channel.
+
+    The single field name IS the parent state key —
+    ``_StructuredResponseToStateMiddleware`` ``model_dump()``s this
+    straight into state.
+    """
+
+    forecast: ForecastOutput
+
+
 # ── Subagent builder ──────────────────────────────────────────────────────────
 
 
@@ -376,17 +404,8 @@ async def _build_forecasting_subagents(
 # ── Agent factory ─────────────────────────────────────────────────────────────
 
 
-_PROBABILITY_ANCHORS: dict[str, tuple[float, float, float]] = {
-    "pass": (0.60, 0.25, 0.15),
-    "watch": (0.50, 0.25, 0.25),
-    "fail": (0.40, 0.25, 0.35),
-}
-"""company_signal → (base, bull, bear) probability anchors."""
-
-
 async def create_forecasting_agent(
     config: RunnableConfig,
-    company_signal: str | None = None,
     store: BaseStore | None = None,
 ):
     """Build the forecasting deep agent.
@@ -398,34 +417,30 @@ async def create_forecasting_agent(
 
     Args:
         config: Application configuration.
-        company_signal: Triage gate signal from company_analysis_node
-            ('pass', 'watch', or 'fail').  Used to set scenario probability
-            anchors in the prompt template.  Defaults to 'pass' if absent.
         store: Shared ``BaseStore`` for cross-agent tool result caching.
+
+    Note:
+        Scenario probability anchors (pass 60/25/15, watch 50/25/25, fail
+        40/25/35) are now derived inside ``investment/forecasting.jinja`` from the
+        upstream ``company_analysis.company_signal``. They used to be computed here
+        and injected at build time, which is impossible now the agent is compiled
+        once per graph rather than once per request.
     """
     subagents = await _build_forecasting_subagents(config)
-    base_p, bull_p, bear_p = _PROBABILITY_ANCHORS.get(
-        company_signal or "pass", _PROBABILITY_ANCHORS["pass"]
-    )
     configuration = ModelConfiguration.from_runnable_config(config)
     primary, *fallbacks = configuration.get_llm_for_role("orchestrator")
     summariser = configuration.get_summariser()
 
     builder = (
         MuffinAgentBuilder(primary, name="forecasting")
-        .with_system_prompt_template(
-            "investment/forecasting.jinja",
-            base_probability=base_p,
-            bull_probability=bull_p,
-            bear_probability=bear_p,
-            company_signal=company_signal or "pass",
-        )
+        .with_state_schema(ForecastingAgentState)
+        .with_input_prompt_template("investment/forecasting.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=ForecastOutput))
+        .with_response_format(AutoStrategy(schema=ForecastingNodeOutput))
         .with_store(store)
     )
     if summariser is not None:
@@ -438,49 +453,3 @@ async def create_forecasting_agent(
     ):
         builder = builder.with_tool(tool)
     return builder.build_deep_agent()
-
-
-# ── Node ──────────────────────────────────────────────────────────────────────
-
-
-async def forecasting_node(
-    state: ForecastingInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 6: Forecasting & Scenario Modeling.
-
-    Builds a 3-year forward financial model with bull / base / bear scenarios
-    anchored to analyst consensus and calibrated against the 5-year historical
-    financial time series from ``company_analysis_node``.
-
-    Runs in **parallel** with ``risk_assessment_node`` (Group 2) after all
-    Group 1 nodes complete.  Reads ``ForecastingInputState`` fields (ticker,
-    query, company_analysis, market_regime) and writes ``forecast`` to state.
-
-    The node runs the full modeling workflow regardless of
-    ``company_analysis.company_signal`` — forecasting data is valuable for
-    both long and short investment theses.
-    """
-    company_signal = (
-        state.get("company_analysis", {}).get("company_signal")
-        if isinstance(state.get("company_analysis"), dict)
-        else None
-    )
-
-    async def _factory(cfg: RunnableConfig, **_kw):
-        return await create_forecasting_agent(
-            cfg,
-            company_signal=company_signal,
-            store=store,
-        )
-
-    return await run_deep_agent_node(
-        state=state,
-        config=config,
-        agent_factory=_factory,
-        input_state_type=ForecastingInputState,
-        state_key="forecast",
-        store=store,
-    )

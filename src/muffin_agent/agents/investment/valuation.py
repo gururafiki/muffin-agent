@@ -1,8 +1,9 @@
 """Stage 7: Valuation & Relative Value."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from deepagents import CompiledSubAgent
+from deepagents import CompiledSubAgent, DeepAgentState
+from langchain.agents.middleware.types import OmitFromSchema
 from langchain.agents.structured_output import AutoStrategy
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
@@ -26,7 +27,6 @@ from ..data_collection import (
 )
 from ..subagents import build_validation_subagent
 from .schemas import DataSource
-from .utils import run_deep_agent_node
 
 # ── Input state schema ─────────────────────────────────────────────────────────
 
@@ -84,6 +84,23 @@ class ValuationInputState(TypedDict, total=False):
     Provides regime label for terminal growth rate calibration and equity risk
     premium adjustment.
     """
+
+
+class ValuationAgentState(DeepAgentState):
+    """State schema for the valuation stage agent.
+
+    Inputs flow IN from the parent graph (``OmitFromSchema(output=True)``
+    keeps them out of the node's output); ``valuation`` is written by the
+    structured-response unpacker and flows OUT to the parent channel.
+    """
+
+    ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
+    query: Annotated[str, OmitFromSchema(input=False, output=True)]
+    forecast: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    risk_assessment: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    sector_view: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    market_regime: Annotated[dict[str, Any], OmitFromSchema(input=False, output=True)]
+    valuation: Annotated[dict[str, Any], OmitFromSchema(input=True, output=False)]
 
 
 # ── Output schema ──────────────────────────────────────────────────────────────
@@ -290,6 +307,17 @@ class ValuationOutput(BaseModel):
     """
 
 
+class ValuationNodeOutput(BaseModel):
+    """Node output — unpacks into the ``valuation`` state channel.
+
+    The single field name IS the parent state key —
+    ``_StructuredResponseToStateMiddleware`` ``model_dump()``s this
+    straight into state.
+    """
+
+    valuation: ValuationOutput
+
+
 # ── Subagent builder ───────────────────────────────────────────────────────────
 
 
@@ -399,13 +427,14 @@ async def create_valuation_agent(
 
     builder = (
         MuffinAgentBuilder(primary, name="valuation")
-        .with_system_prompt_template("investment/valuation.jinja")
+        .with_state_schema(ValuationAgentState)
+        .with_input_prompt_template("investment/valuation.jinja")
         .with_fallback_models(*fallbacks)
         .with_sandbox()
         .with_short_term_memory()
         .with_persistent_memory()
         .with_subagents(subagents)
-        .with_response_format(AutoStrategy(schema=ValuationOutput))
+        .with_response_format(AutoStrategy(schema=ValuationNodeOutput))
         .with_store(store)
     )
     if summariser is not None:
@@ -418,41 +447,3 @@ async def create_valuation_agent(
     ):
         builder = builder.with_tool(tool)
     return builder.build_deep_agent()
-
-
-# ── Node ───────────────────────────────────────────────────────────────────────
-
-
-async def valuation_node(
-    state: ValuationInputState,
-    config: RunnableConfig,
-    *,
-    store: BaseStore | None = None,
-) -> dict[str, Any]:
-    """Stage 7: Valuation & Relative Value.
-
-    Derives an intrinsic-value range via blended DCF (exit-multiple and Gordon
-    Growth terminal values averaged), NTM EV/EBITDA multiples, NTM P/E
-    multiples, and FCF yield.  Benchmarks the stock against its peer group and
-    own 5-year history.  Produces a probability-weighted NAV, upside/downside
-    metrics, and a ``valuation_signal`` for downstream use.
-
-    Runs **sequentially** after both ``forecasting_node`` and
-    ``risk_assessment_node`` complete (Group 3, first node).  Reads
-    ``ValuationInputState`` fields (ticker, query, forecast, risk_assessment,
-    sector_view, market_regime) and writes ``valuation`` to state.
-
-    Its output flows into ``thesis_synthesis_node`` which uses the
-    ``valuation_signal``, ``probability_weighted_nav``, ``upside_base``,
-    ``downside_bear``, ``risk_reward_ratio``, and ``relative_value`` to
-    formulate the final investment thesis and conviction score.
-    """
-    return await run_deep_agent_node(
-        state=state,
-        config=config,
-        agent_factory=create_valuation_agent,
-        input_state_type=ValuationInputState,
-        state_key="valuation",
-        error_fallback={"valuation_signal": "fairly_valued"},
-        store=store,
-    )

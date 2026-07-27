@@ -1,3 +1,30 @@
+{#- Scenario probability anchors are derived from the upstream triage gate.
+     They used to be computed in Python and injected at agent-build time; the agent
+     is now compiled once per graph, so `company_signal` (runtime state) is read
+     here instead. Keep in sync with the table in forecasting.py's docstring. -#}
+{% set company_signal = (company_analysis or {}).get('company_signal', 'pass') %}
+{% if company_signal == 'fail' %}{% set base_probability, bull_probability, bear_probability = 0.40, 0.25, 0.35 %}
+{% elif company_signal == 'watch' %}{% set base_probability, bull_probability, bear_probability = 0.50, 0.25, 0.25 %}
+{% else %}{% set base_probability, bull_probability, bear_probability = 0.60, 0.25, 0.15 %}
+{% endif %}
+## Task context
+
+{% if ticker %}- **Ticker:** {{ ticker }}{% endif %}
+{% if query %}- **Analysis mandate:** {{ query }}{% endif %}
+{% if company_analysis %}- **Company analysis (upstream):**
+```json
+{{ company_analysis | tojson(indent=2) }}
+```
+{% endif %}
+{% if market_regime %}- **Market regime (upstream):**
+```json
+{{ market_regime | tojson(indent=2) }}
+```
+{% endif %}
+
+Everything below is your operating manual for this task.
+
+---
 You are a buy-side equity analyst. Your task is to build a 3-year forward financial model with bull, base, and bear scenarios anchored to analyst consensus and grounded in historical financial trends.
 
 **Downstream consumers**: Your scenario projections and consensus anchoring are the primary input for `valuation_node` (DCF inputs, scenario-weighted price targets, exit multiples). `thesis_synthesis_node` uses your probability-weighted expected return distribution and earnings quality flags.

@@ -1,6 +1,5 @@
 """Tests for the company analysis investment agent (Steps 4-5)."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,8 +8,8 @@ from pydantic import ValidationError
 
 from muffin_agent.agents.investment.company_analysis import (
     CompanyAnalysisInputState,
+    CompanyAnalysisNodeOutput,
     CompanyAnalysisOutput,
-    company_analysis_node,
     create_company_analysis_agent,
 )
 from muffin_agent.prompts import render_template
@@ -440,107 +439,6 @@ class TestCompanyAnalysisOutputModel:
 
 
 @pytest.mark.unit
-class TestCompanyAnalysisNodeJsonInput:
-    """Verify the node serializes state context correctly."""
-
-    @pytest.mark.asyncio
-    async def test_passes_ticker_and_query_in_input(self):
-        mock_structured = MagicMock(spec=CompanyAnalysisOutput)
-        mock_structured.model_dump.return_value = _VALID_COMPANY_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_company_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            state = {"ticker": "AAPL", "query": "quality compounder"}
-            await company_analysis_node(state, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert ctx["ticker"] == "AAPL"
-        assert ctx["query"] == "quality compounder"
-
-    @pytest.mark.asyncio
-    async def test_omits_missing_state_fields(self):
-        mock_structured = MagicMock(spec=CompanyAnalysisOutput)
-        mock_structured.model_dump.return_value = _VALID_COMPANY_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_company_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            state = {"query": "quality software companies"}
-            await company_analysis_node(state, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert "ticker" not in ctx
-        assert ctx["query"] == "quality software companies"
-
-    @pytest.mark.asyncio
-    async def test_excludes_non_input_state_fields(self):
-        """Fields outside CompanyAnalysisInputState are not sent to the agent."""
-        mock_structured = MagicMock(spec=CompanyAnalysisOutput)
-        mock_structured.model_dump.return_value = _VALID_COMPANY_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_company_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            # Simulate full TickerAnalysisState with extra fields
-            state = {
-                "ticker": "AAPL",
-                "query": "quality tech",
-                "market_regime": {"regime_label": "Goldilocks"},
-                "sector_view": {"sector": "Information Technology"},
-                "forecast": None,
-            }
-            await company_analysis_node(state, MagicMock())  # type: ignore[arg-type]
-
-        raw = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        ctx = json.loads(raw)
-        assert set(ctx.keys()) <= set(CompanyAnalysisInputState.__annotations__)
-        assert "market_regime" not in ctx
-        assert "sector_view" not in ctx
-        assert "forecast" not in ctx
-
-
-# ── create_company_analysis_agent tests ───────────────────────────────────────
-
-
 @pytest.mark.unit
 class TestCreateCompanyAnalysisAgent:
     """Verify agent factory wires subagents and response_format correctly."""
@@ -740,157 +638,12 @@ class TestCreateCompanyAnalysisAgent:
 
             response_format = mock_create.call_args.kwargs["response_format"]
             assert isinstance(response_format, AutoStrategy)
-            assert response_format.schema is CompanyAnalysisOutput
-
-
-# ── company_analysis_node tests ───────────────────────────────────────────────
-
-
-@pytest.mark.unit
-class TestCompanyAnalysisNode:
-    """Verify node behavior: output key, structured response, error fallback."""
-
-    @pytest.mark.asyncio
-    async def test_returns_company_analysis_key(self):
-        mock_structured = MagicMock(spec=CompanyAnalysisOutput)
-        mock_structured.model_dump.return_value = _VALID_COMPANY_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_company_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await company_analysis_node(
-                {"ticker": "AAPL", "query": "quality compounder"},
-                MagicMock(),  # type: ignore[arg-type]
+            # The agent now returns the WRAPPER, whose single field name is the
+            # parent state key — that is what makes auto-unpacking land in
+            # `company_analysis` without a node function.
+            assert response_format.schema is CompanyAnalysisNodeOutput
+            assert list(CompanyAnalysisNodeOutput.model_fields) == ["company_analysis"]
+            assert (
+                CompanyAnalysisNodeOutput.model_fields["company_analysis"].annotation
+                is CompanyAnalysisOutput
             )
-
-        assert "company_analysis" in result
-        ca = result["company_analysis"]
-        assert ca["ticker"] == "AAPL"
-        assert ca["company_signal"] == "pass"
-        assert "moat_assessment" in ca
-        assert "financial_quality" in ca
-        assert "financial_history" in ca
-
-    @pytest.mark.asyncio
-    async def test_passes_ticker_in_task(self):
-        mock_structured = MagicMock(spec=CompanyAnalysisOutput)
-        mock_structured.model_dump.return_value = _VALID_COMPANY_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_company_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            await company_analysis_node(
-                {"ticker": "AAPL", "query": "quality compounder"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        task_input = mock_agent.ainvoke.call_args[0][0]["messages"][0].content
-        assert "AAPL" in task_input
-
-    @pytest.mark.asyncio
-    async def test_works_without_ticker(self):
-        mock_structured = MagicMock(spec=CompanyAnalysisOutput)
-        mock_structured.model_dump.return_value = _VALID_COMPANY_DICT
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {"structured_response": mock_structured}
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_company_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await company_analysis_node(
-                {"query": "quality compounders in software"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        assert "company_analysis" in result
-
-    @pytest.mark.asyncio
-    async def test_error_fallback_on_missing_structured_response(self):
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "output": "Sorry, I could not complete the analysis."
-        }
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_company_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await company_analysis_node(
-                {"ticker": "AAPL", "query": "quality"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        assert "company_analysis" in result
-        assert "error" in result["company_analysis"]
-
-    @pytest.mark.asyncio
-    async def test_error_fallback_preserves_raw_output(self):
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "structured_response": None,
-            "output": "Partial analysis text.",
-        }
-
-        with (
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".create_company_analysis_agent",
-                new_callable=AsyncMock,
-                return_value=mock_agent,
-            ),
-            patch(
-                "muffin_agent.agents.investment.company_analysis"
-                ".ModelConfiguration.from_runnable_config",
-                return_value=MagicMock(),
-            ),
-        ):
-            result = await company_analysis_node(
-                {"ticker": "AAPL"},
-                MagicMock(),  # type: ignore[arg-type]
-            )
-
-        assert result["company_analysis"]["raw_output"] == "Partial analysis text."
-        assert "error" in result["company_analysis"]

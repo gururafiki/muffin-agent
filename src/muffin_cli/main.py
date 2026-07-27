@@ -718,7 +718,9 @@ async def _run_analyze(ticker: str, query: str | None, user: str) -> None:
 
     callbacks = setup_tracing(session_id=ticker)
     store = InMemoryStore()
-    graph = build_investment_analysis_graph(
+    build_config = RunnableConfig(configurable={"thread_id": ticker, "user_id": user})
+    graph = await build_investment_analysis_graph(
+        build_config,
         checkpointer=_get_checkpointer(),
         store=store,
     )
@@ -778,7 +780,11 @@ async def _run_screen(query: str, max_tickers: int, user: str) -> None:
     session_id = f"screen-{query[:40].replace(' ', '-')}"
     callbacks = setup_tracing(session_id=session_id)
     store = InMemoryStore()
-    graph = build_equity_screening_graph(
+    build_config = RunnableConfig(
+        configurable={"thread_id": session_id, "user_id": user}
+    )
+    graph = await build_equity_screening_graph(
+        build_config,
         checkpointer=_get_checkpointer(),
         store=store,
     )
