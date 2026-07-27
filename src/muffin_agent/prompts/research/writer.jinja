@@ -12,7 +12,7 @@ sources, confidence, missing-information, and follow-ups.
 </today>
 
 <query>
-{{ query }}
+{{ standalone_query }}
 </query>
 
 <task_type>
@@ -86,7 +86,7 @@ padding.
 </mode_guidance>
 
 <context>
-{%- if skip_search_flag %}
+{%- if skip_search %}
 **No external evidence was retrieved** (the classifier judged this
 query answerable from general knowledge).  Answer concisely from
 internal knowledge.  Set ``confidence`` < 0.9.  Set ``sources`` to
@@ -98,7 +98,7 @@ The following evidence chunks have been pre-filtered for relevance.
 Cite them as ``[1]``, ``[2]``, etc. matching the numbers shown
 below.  Skip any chunk you don't actually need to cite.
 
-{% for chunk in evidence -%}
+{% for chunk in reranked_evidence -%}
 **[{{ loop.index }}]** {{ chunk.title }} — {{ chunk.url }}
 {{ chunk.content if chunk.content else chunk.snippet }}
 

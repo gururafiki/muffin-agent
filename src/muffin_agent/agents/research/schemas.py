@@ -92,16 +92,21 @@ class EvidenceChunk(BaseModel):
     )
 
 
-class ResearchEvidenceFindings(BaseModel):
+class ResearcherNodeOutput(BaseModel):
     """Researcher node's structured output.
 
-    The deep agent emits this as ``structured_response`` once it decides
-    it has gathered enough evidence (or hits the iteration cap).  Free-
-    form messages from the researcher are NOT consumed downstream — the
-    rerank and writer stages read ``evidence_chunks`` only.
+    The deep agent emits this as ``structured_response`` once it decides it has
+    gathered enough evidence (or hits the iteration cap).  Free-form messages from
+    the researcher are NOT consumed downstream — the rerank and writer stages read
+    ``evidence`` only.
+
+    **Field names map 1:1 onto ``ResearchState`` keys** — the researcher is a compiled
+    agent added via ``add_node``, so ``_StructuredResponseToStateMiddleware``
+    ``model_dump()``s this straight into state. Renaming a field here silently
+    renames a state channel; keep the two in sync.
     """
 
-    evidence_chunks: list[EvidenceChunk] = Field(
+    evidence: list[EvidenceChunk] = Field(
         description="All retrieved evidence the researcher believes is relevant.",
     )
     notes: str = Field(
@@ -154,3 +159,27 @@ class ResearchOutput(BaseModel):
     )
     task_type: str = Field(description="Echoed from classifier.")
     mode_used: str = Field(description="Echoed from classifier (or override).")
+
+
+# ── Node wrapper outputs ──────────────────────────────────────────────────────
+# Each wraps a stage's real output model in a single field NAMED AFTER the
+# ``ResearchState`` channel it lands in, so ``_StructuredResponseToStateMiddleware``
+# unpacks it there. Mirrors ``criteria_analysis.schemas``'s
+# ``TickerClassificationNodeOutput`` / ``ValuationMethodologyNodeOutput``.
+
+
+class ClassifierNodeOutput(BaseModel):
+    """Classifier node output — unpacks into the ``classification`` channel.
+
+    ``lift_classification_node`` then flattens it into the ``mode`` / ``task_type`` /
+    ``sources_to_use`` / ``skip_search`` / ``standalone_query`` keys, applying the
+    caller's overrides and the allowed-sources intersection.
+    """
+
+    classification: ResearchClassification
+
+
+class WriterNodeOutput(BaseModel):
+    """Writer node output — unpacks into the ``output`` channel."""
+
+    output: ResearchOutput

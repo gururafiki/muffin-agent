@@ -1,33 +1,33 @@
-"""Researcher node: deep agent that gathers evidence.
+"""Researcher stage: the deep agent that gathers evidence.
 
-Single ``create_deep_agent`` call per request.  Tools come from the
-Firecrawl MCP (``firecrawl_search`` + ``firecrawl_scrape``) plus any
-caller-supplied ``extra_tools``.  Skills under ``/skills/research/``
-are loaded and filtered to the current mode + task_type via
-``SkillFilterMiddleware``.
+A compiled deep agent added to the graph via ``add_node``, so it owns its own
+``checkpoint_ns`` — its transcript, tool calls and nested ``task`` sub-agents are
+readable per-namespace without any capture plumbing.
 
-LLM-call budget is mode-driven (``research_iter_*``).  Universal
-middleware (retries, fallback, tool-cache, tool-knowledge) applies.
+Tools come from the Firecrawl MCP (``firecrawl_search`` + ``firecrawl_scrape``) plus
+any caller-supplied ``extra_tools``. Skills under ``/skills/research/`` are loaded and
+filtered to the current mode + task_type via ``SkillFilterMiddleware``.
 
-Output: ``ResearchEvidenceFindings`` via ``response_format`` — the
-node copies the evidence chunks into the state's ``evidence``
-accumulator.  Free-form chat content is discarded.
+**One agent per mode.** The LLM-call budget is mode-driven (``research_iter_*``:
+speed=2 / balanced=6 / quality=25) and ``with_model_call_limit`` bakes it in at build
+time, so the graph builds all three and routes to one on ``state["mode"]`` — see
+``graph.py:_route_researcher``. The node name (``researcher_speed`` / ``_balanced`` /
+``_quality``) therefore also records which depth actually ran.
 
-Migration note: when (and if) we want streaming progress to a UI
-panel, swap this node's internals to a multi-node sub-graph.  The
-public state contract (``state["query"] → state["evidence"]``) is
-unchanged.
+Output: ``ResearcherNodeOutput`` via ``response_format``, auto-unpacked into the
+``evidence`` (``operator.add``) and ``notes`` state channels. Free-form chat content
+is discarded. Errors propagate — ``RetryPolicy`` on the node plus the model-fallback
+chain are the resilience layers.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Sequence
 from typing import Any
 
 from langchain.agents.structured_output import AutoStrategy
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.store.base import BaseStore
 
@@ -36,8 +36,12 @@ from ....model_config import ModelConfiguration
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
 from ..config import ResearchConfiguration
-from ..schemas import ResearchEvidenceFindings
-from ..state import ResearchClassificationFilterState, ResearchState
+from ..schemas import ResearcherNodeOutput
+from ..state import (
+    RESEARCH_MODES,
+    ResearchClassificationFilterState,
+    ResearcherAgentState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +79,9 @@ async def create_researcher_agent(
     firecrawl_tools = await get_tools(config, allowed_tools=list(FIRECRAWL_TOOLS))
 
     builder = (
-        MuffinAgentBuilder(primary, name="researcher")
-        .with_system_prompt_template("research/researcher.jinja")
+        MuffinAgentBuilder(primary, name=f"researcher_{mode}")
+        .with_state_schema(ResearcherAgentState)
+        .with_input_prompt_template("research/researcher.jinja")
         .with_fallback_models(*fallbacks)
         .with_short_term_memory()
         .with_persistent_memory()
@@ -93,7 +98,7 @@ async def create_researcher_agent(
             ),
         )
         .with_model_call_limit(run_limit=iter_budget, exit_behavior="end")
-        .with_response_format(AutoStrategy(schema=ResearchEvidenceFindings))
+        .with_response_format(AutoStrategy(schema=ResearcherNodeOutput))
     )
     for tool in firecrawl_tools:
         builder = builder.with_tool(tool, is_cacheable=True, run_limit=None)
@@ -106,72 +111,21 @@ async def create_researcher_agent(
     return builder.build_deep_agent()
 
 
-async def researcher_node(
-    state: ResearchState,
+async def build_researchers_by_mode(
     config: RunnableConfig,
     *,
     store: BaseStore | None = None,
     extra_tools: Sequence[BaseTool] | None = None,
-) -> dict[str, Any]:
-    """Run the researcher deep agent and stash its evidence in state.
+) -> dict[str, Runnable[Any, Any]]:
+    """Build one compiled researcher per mode, keyed by mode name.
 
-    Short-circuits on ``skip_search=True`` (classifier decided no
-    research was needed).  Returns ``{"evidence": []}`` in that case so
-    the rerank step has a sensible empty input.
+    ``with_model_call_limit`` bakes the iteration budget in at build time, so the
+    only way to keep per-run ``mode_override`` meaningful is to build all three and
+    route. See ``graph.py:_route_researcher``.
     """
-    if state.get("skip_search"):
-        return {
-            "evidence": [],
-            "mode": state.get("mode", "balanced"),
-            "task_type": state.get("task_type", "research_report"),
-        }
-
-    mode = state.get("mode", "balanced")
-    task_type = state.get("task_type", "research_report")
-
-    try:
-        agent = await create_researcher_agent(
-            config,
-            mode=mode,
-            store=store,
-            extra_tools=extra_tools,
-        )
-        payload = {
-            "query": state.get("standalone_query") or state.get("query", ""),
-            "task_type": task_type,
-            "mode": mode,
-            "sources_to_use": state.get("sources_to_use") or ["web"],
-        }
-        # Pass classification-filtering fields on the runtime state so
-        # SkillFilterMiddleware can read them.
-        result = await agent.ainvoke(
-            {
-                "messages": [{"role": "user", "content": json.dumps(payload)}],
-                "mode": mode,
-                "task_type": task_type,
-            },
-            config=config,
-        )
-        structured = (
-            result.get("structured_response") if isinstance(result, dict) else None
-        )
-    except Exception:
-        logger.exception("researcher_node failed; returning empty evidence")
-        return {"evidence": []}
-
-    if structured is None:
-        logger.warning("researcher_node: no structured_response on agent result")
-        return {"evidence": []}
-
-    chunks = [chunk.model_dump() for chunk in structured.evidence_chunks]
-    # Forward the deep agent's captured tool_runs (its own + nested subagents')
-    # so the run view's "Tool execution" panel populates. It's a function node,
-    # so the records don't auto-propagate like a compiled-agent graph node.
-    tool_runs = result.get("tool_runs") if isinstance(result, dict) else None
-    # Same treatment for the sub-agent execution tree (see tool_runs above).
-    subagent_tree = result.get("subagent_tree") if isinstance(result, dict) else None
     return {
-        "evidence": chunks,
-        "tool_runs": tool_runs or [],
-        "subagent_tree": subagent_tree or {},
+        mode: await create_researcher_agent(
+            config, mode=mode, store=store, extra_tools=extra_tools
+        )
+        for mode in RESEARCH_MODES
     }
