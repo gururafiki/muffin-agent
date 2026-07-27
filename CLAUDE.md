@@ -314,6 +314,47 @@ Wired via `langgraph.json` (`"auth": {"path": "./auth.py:auth"}`); gates the Lan
 
 Tests: `tests/test_auth.py` (fresh-module loads with controlled env; minted HS256 tokens for the accept/reject matrix; scoping handler behaviour).
 
+## Graph authoring rule — observability is structural, not telemetry
+
+**A node is inspectable if and only if it is a compiled agent/subgraph added via `add_node`.**
+LangGraph gives every such node its own `checkpoint_ns`, and `POST /threads/{id}/history` exposes
+the whole tree by recursion: each snapshot's `tasks[]` carry `{id, name, checkpoint:{checkpoint_ns}}`,
+and that namespace's `values.messages` is the node's transcript with its tool calls. Nothing needs
+capturing — muffin-ui reads this directly (`lib/agent/run-history.ts`).
+
+Measured against production thread `019f81a0` (2026-07-27):
+
+| Pattern | Example | Child ns | Observable |
+|---|---|---|---|
+| **A. Compiled agent/subgraph via `add_node`** | trading analysts, council personas, criteria workers, conference subgraphs, research stages, investment stages | `market_analyst:<uuid>` | **full** — messages, tool calls, nested tasks |
+| **B. Agent `.ainvoke()` inside a function body** | *(eliminated — do not reintroduce)* | none | **black box** — not a pregel task, not checkpointed, unrecoverable |
+| **C. Plain function node calling an LLM** | `investment_judge`, `trader`, `portfolio_manager`, `council_judge`, persona `render_verdict` | `None` | partial — named task + status; output in parent `values`; no transcript. **Legitimate**: a single LLM call has no sub-structure. |
+| **D. Direct tool call in a node** | *(eliminated — see `specialists/_fetch_tools.py`)* | none | no `ToolMessage` exists at all |
+| **E. deepagents `task` subagent** | `stock_evaluation`'s 15 subagents | `tools:<uuid>` | full |
+
+Rules that follow:
+
+1. **Never invoke an agent with `.ainvoke()` inside a node function.** Add it via `add_node` with an
+   explicit `<Name>Input` TypedDict (never `agent.input_schema` — a property-less `RootModel`), and
+   let `_StructuredResponseToStateMiddleware` unpack a `<Name>NodeOutput` wrapper whose single field
+   name IS the parent state key. Pattern B also *hides bugs*: `run_deep_agent_node` passed a
+   `ModelConfiguration` where a `RunnableConfig` was expected, so all six investment stages failed on
+   every run while the graph reported success — for as long as that wrapper existed.
+2. **A parent pipeline state must NOT extend `AgentState`.** `CriteriaAnalysisState` /
+   `TradingDecisionState` / `CouncilState` / `ResearchState` are plain TypedDicts precisely so an
+   agent node's internal `messages` don't merge into the parent channel — that would bloat
+   checkpoints and destroy the per-namespace isolation the tree depends on.
+3. **Deterministic fetches go through a bare `ToolNode`**, not a direct call. `plan_fetch` emits a
+   synthetic `AIMessage` with hand-built tool calls (`ToolNode` documents "Direct Tool Calls" as a
+   supported input format); execution stays fully deterministic but produces a real
+   AIMessage/ToolMessage pair. Wrap the MCP tool so it still routes through `cached_invoke` with an
+   explicit `tool_name=` — otherwise the wrapper's name forks the shared cache.
+4. **Don't add telemetry to graph state.** A channel exists because a *node* needs it for logic,
+   never because a UI needs to see it. Observability-as-state is what forced the three-place channel
+   declarations, the criteria re-homing, and the conference `output_schema` gymnastics.
+5. **Middleware hooks compile to their own graph nodes** and surface as tasks
+   (`*Middleware*.{before,after}_{agent,model}`). Consumers must filter them; they are plumbing.
+
 ## Conventions
 
 - **Ruff** with Google-style docstrings (`D401` imperative mood enforced). `D` and `UP` rules are relaxed in `tests/`.

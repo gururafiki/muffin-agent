@@ -39,6 +39,41 @@ reopen work documented — and reconstruction is complex; rejected.)
 This is why `AgentCaptureMiddleware` is the right vehicle: it already runs `aafter_agent` on every
 agent (compiled subgraph nodes **and** `task` subagents), and can read its own `checkpoint_ns`.
 
+> ### CORRECTION (2026-07-27) — the rejected alternative actually works
+>
+> The probe above is accurate about `GET /threads/{id}/state?subgraphs=true`: a finished run has no
+> pending `tasks`, so that endpoint yields nothing. But the **conclusion drawn from it is wrong**,
+> and the parenthetical that rejects the checkpoint-history walk is wrong on both counts.
+>
+> **The history walk works.** `POST /threads/{id}/history` returns one snapshot per superstep, each
+> carrying the `tasks[]` that ran in it, and every task has `{id, name, checkpoint:{checkpoint_ns}}`.
+> Passing that namespace back to `getHistory` returns the child's own supersteps and *its* tasks — so
+> the tree is fully reachable by recursion on a finished run, and each namespace's `values.messages`
+> is that node's transcript, tool calls included. Verified against production thread `019f81a0`:
+> namespace `market_analyst:<uuid>` returns 13 messages (1 human / 2 ai / 10 tool) with 10 tool calls.
+> (Note `subgraphs` is not even a field on this API version's `ThreadStateSearch`; `checkpoint`
+> targeting is the mechanism.)
+>
+> **"Reconstruction is complex" overstated it.** It is ~40 lines of pure mapping —
+> `muffin-ui/src/lib/agent/run-history.ts`.
+>
+> **The latency objection was directionally right but misattributed.** It is not a "flat
+> ~17–27 s checkpointer read" per level. Measured on the node 2026-07-27: the DB is not involved —
+> `EXPLAIN ANALYZE` of the history query is an Index Scan at **0.105 ms**, zero dead tuples, correct
+> indexes; 27.3 s reproduces from *inside* the langgraph-api container at 0.59% CPU. The cost scales
+> with the thread's **namespace count** at roughly ~1 s each (criteria: 27 namespaces / 27.3 s;
+> trading: 7 namespaces / 4.1 s — near-identical checkpoint counts). That is an app-side N+1 in
+> langgraph-api's history endpoint, fixable upstream, not an inherent cost of the approach.
+>
+> **Consequence.** `AgentCaptureMiddleware` was built to solve a problem LangGraph had already
+> solved. Its channels also make observability fight state isolation: every `output_schema` boundary
+> must re-declare all three with the exact reducer or the subtree is silently dropped. It is being
+> removed in favour of the native path. Its one genuine benefit — capture *while running* — is
+> served instead by the live stream (`stream.subagents` + `stream.subgraphsByNode`), which the probe
+> correctly noted was going unused.
+>
+> Do not cite the probe finding above as a reason to reintroduce a bespoke capture channel.
+
 ## Design
 
 Two data tiers feed one recursive UI. Design goal: the tree must be reconstructable at **any depth**
