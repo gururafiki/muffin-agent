@@ -57,13 +57,17 @@ agent (compiled subgraph nodes **and** `task` subagents), and can read its own `
 > **"Reconstruction is complex" overstated it.** It is ~40 lines of pure mapping —
 > `muffin-ui/src/lib/agent/run-history.ts`.
 >
-> **The latency objection was directionally right but misattributed.** It is not a "flat
-> ~17–27 s checkpointer read" per level. Measured on the node 2026-07-27: the DB is not involved —
-> `EXPLAIN ANALYZE` of the history query is an Index Scan at **0.105 ms**, zero dead tuples, correct
-> indexes; 27.3 s reproduces from *inside* the langgraph-api container at 0.59% CPU. The cost scales
-> with the thread's **namespace count** at roughly ~1 s each (criteria: 27 namespaces / 27.3 s;
-> trading: 7 namespaces / 4.1 s — near-identical checkpoint counts). That is an app-side N+1 in
-> langgraph-api's history endpoint, fixable upstream, not an inherent cost of the approach.
+> **The latency objection was real but had nothing to do with checkpoints — and the cause was
+> ours.** It is not a "flat ~17–27 s checkpointer read" per level (and not, as a first correction
+> to this block wrongly claimed, an upstream N+1 scaling with namespace count). Measured on the
+> node 2026-07-27: the DB is not involved — `EXPLAIN ANALYZE` of the history query is an Index Scan
+> at **0.105 ms**, zero dead tuples, correct indexes; 27.3 s reproduces from *inside* the
+> langgraph-api container at 0.59% CPU. LangGraph Platform rebuilds a factory-registered graph on
+> every request, and each agent factory opened a fresh MCP session to list tools: **23 round trips
+> to build `criteria_analysis`, 4 for `trading_decision`, at ~1.1 s each** — which is exactly the
+> 27.3 s and 4.1 s observed. Caching tool discovery (`agents/data_collection/utils.py`) cut a build
+> to one round trip. See
+> [`docs/backend-notes/2026-07-27-api-read-latency-mcp-tool-discovery.md`](../../backend-notes/2026-07-27-api-read-latency-mcp-tool-discovery.md).
 >
 > **Consequence.** `AgentCaptureMiddleware` was built to solve a problem LangGraph had already
 > solved. Its channels also make observability fight state isolation: every `output_schema` boundary
