@@ -354,6 +354,17 @@ Rules that follow:
    declarations, the criteria re-homing, and the conference `output_schema` gymnastics.
 5. **Middleware hooks compile to their own graph nodes** and surface as tasks
    (`*Middleware*.{before,after}_{agent,model}`). Consumers must filter them; they are plumbing.
+6. **Graph construction runs on EVERY API request — keep it free of network I/O.** All five graphs
+   are factories in `langgraph.json`, and LangGraph Platform calls the factory per request
+   (`langgraph_api/graph.py` → `invoke_factory`, no caching) — for reads like
+   `POST /threads/{id}/history` just as much as for runs. So anything a `create_*_agent` factory
+   does at build time is paid on every single request, serially. This was the entire cause of the
+   API's read latency: `get_tools` opened a fresh MCP session per agent, 23 of them to build
+   `criteria_analysis`, at ~1.1 s each = the observed 27.3 s. `get_tools` now caches per connection
+   set; **anything else added to a build path must be cached the same way or it re-creates the
+   problem.** See [`docs/backend-notes/2026-07-27-api-read-latency-mcp-tool-discovery.md`](docs/backend-notes/2026-07-27-api-read-latency-mcp-tool-discovery.md).
+   Tests that patch `data_collection.utils.MultiServerMCPClient` rely on the root conftest's
+   autouse `reset_mcp_tool_cache()` for isolation.
 
 ## Conventions
 
