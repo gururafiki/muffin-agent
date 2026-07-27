@@ -1,36 +1,46 @@
 """Sentiment specialist — compiled deterministic subgraph.
 
-Three-node parallel-fetch :class:`StateGraph`:
+Three-node :class:`StateGraph`:
 
-* ``fetch_insider_trades`` and ``fetch_company_news`` run in parallel from
-  ``START`` (both deterministic MCP calls via ``cached_invoke``).
-* ``compute_sentiment_signal`` runs after the implicit barrier and
-  applies the deterministic 30/70 weighted insider+news aggregation.
+* ``plan_fetch`` — pure Python; emits ONE synthetic ``AIMessage`` carrying BOTH tool
+  calls (insider trades + company news). No LLM.
+* ``fetch`` — a bare :class:`~langgraph.prebuilt.ToolNode`. Several tool calls in one
+  message are executed **concurrently**, so this keeps the previous two-node parallel
+  fan-out without the extra nodes.
+* ``compute_sentiment_signal`` — the deterministic 30/70 weighted insider+news
+  aggregation, reading each payload back off its ``ToolMessage``.
 
-**No LLM call** — fully deterministic, mirrors ai-hedge-fund's upstream
-``sentiment.py``.
+**Still no LLM call** — fully deterministic, mirrors ai-hedge-fund's upstream
+``sentiment.py``. The fetches now produce genuine AIMessage/ToolMessage pairs so they
+are visible wherever this namespace's messages are read; see ``_fetch_tools``.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, cast
 
 from langchain.agents.middleware.types import OmitFromSchema
-from langchain_core.runnables import RunnableConfig
-from langgraph.config import get_store
+from langchain_core.messages import AnyMessage
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode
 from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from ....middlewares.tool_result_cache import cached_invoke
-from ...data_collection.utils import get_tools
 from ..schemas import AnalystSignal, InvestmentSignal
 from ..tools.sentiment import combine_sentiment_signals
+from ._fetch_tools import (
+    deterministic_tool_call,
+    fetch_company_news,
+    fetch_insider_trades,
+    parse_result_rows,
+    plan_message,
+    tool_payload,
+)
 
 logger = logging.getLogger(__name__)
 _RETRY = RetryPolicy(max_attempts=2)
@@ -73,12 +83,9 @@ class SentimentAnalysisState(TypedDict, total=False):
     ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
-    insider_trades: Annotated[
-        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
-    ]
-    company_news: Annotated[
-        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
-    ]
+    # The fetches' AIMessage + ToolMessage pairs. Internal to this subgraph — the
+    # explicit output_schema keeps them out of CouncilState.
+    messages: Annotated[list[AnyMessage], add_messages]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
 
@@ -141,87 +148,51 @@ def _empty_fallback(reason: str) -> SentimentSignal:
     )
 
 
-# ── Response parsing ──────────────────────────────────────────────────────────
-
-
-def _parse_response(raw: Any) -> list[dict[str, Any]]:
-    payload: Any = raw
-    if isinstance(raw, str):
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
-            return []
-    if isinstance(payload, dict):
-        results = payload.get("results")
-        if isinstance(results, list):
-            return [r for r in results if isinstance(r, dict)]
-    if isinstance(payload, list):
-        return [r for r in payload if isinstance(r, dict)]
-    return []
-
-
 # ── Graph nodes ───────────────────────────────────────────────────────────────
 
 
-async def fetch_insider_trades_node(
-    state: SentimentAnalysisState, config: RunnableConfig
-) -> dict[str, Any]:
-    """Deterministic insider-trading fetch via ``cached_invoke``."""
-    ticker = state.get("ticker") or ""
-    if not ticker:
-        return {"insider_trades": []}
-    store = get_store()
-    tools = await get_tools(config, ["equity_ownership_insider_trading"])
-    if not tools:
-        return {"insider_trades": []}
-    try:
-        raw = await cached_invoke(tools[0], {"symbol": ticker, "limit": 100}, store)
-    except Exception:
-        logger.exception("sentiment fetch_insider_trades failed for %s", ticker)
-        return {"insider_trades": []}
-    return {"insider_trades": _parse_response(raw)}
-
-
-async def fetch_company_news_node(
-    state: SentimentAnalysisState, config: RunnableConfig
-) -> dict[str, Any]:
-    """Deterministic news fetch via ``cached_invoke`` (benzinga provider).
-
-    benzinga is the only OpenBB news provider that consistently exposes a
-    per-article ``sentiment`` field, which is what
-    ``combine_sentiment_signals`` reads in pure Python.
-    """
+def plan_fetch_node(state: SentimentAnalysisState) -> dict[str, Any]:
+    """Emit BOTH fetches as tool calls in one message (executed concurrently)."""
     ticker = state.get("ticker") or ""
     as_of_date = state.get("as_of_date") or datetime.now(UTC).date().isoformat()
-    if not ticker:
-        return {"company_news": []}
-    store = get_store()
-    tools = await get_tools(config, ["news_company"])
-    if not tools:
-        return {"company_news": []}
     end_dt = datetime.strptime(as_of_date[:10], "%Y-%m-%d").date()
     start_dt = end_dt - timedelta(days=_NEWS_LOOKBACK_DAYS)
-    args = {
-        "provider": "benzinga",
-        "symbol": ticker,
-        "start_date": start_dt.isoformat(),
-        "end_date": end_dt.isoformat(),
-        "limit": 50,
+    calls = [
+        deterministic_tool_call(
+            fetch_insider_trades.name, {"symbol": ticker, "limit": 100}
+        ),
+        deterministic_tool_call(
+            fetch_company_news.name,
+            {
+                "symbol": ticker,
+                "start_date": start_dt.isoformat(),
+                "end_date": end_dt.isoformat(),
+                "limit": 50,
+                "provider": "benzinga",
+            },
+        ),
+    ]
+    return {
+        "messages": [
+            plan_message(calls, note=f"Fetching insider trades + news for {ticker}")
+        ]
     }
-    try:
-        raw = await cached_invoke(tools[0], args, store)
-    except Exception:
-        logger.exception("sentiment fetch_company_news failed for %s", ticker)
-        return {"company_news": []}
-    return {"company_news": _parse_response(raw)}
+
+
+def route_after_plan(state: SentimentAnalysisState) -> str:
+    """Skip the fetches entirely when there is no ticker to fetch for."""
+    return "fetch" if (state.get("ticker") or "") else "compute_sentiment_signal"
 
 
 def compute_sentiment_signal_node(
     state: SentimentAnalysisState,
 ) -> dict[str, Any]:
     """Pure-Python 30/70 weighted aggregation (no LLM)."""
-    insider_trades = state.get("insider_trades") or []
-    company_news = state.get("company_news") or []
+    messages = state.get("messages")
+    insider_trades = parse_result_rows(
+        tool_payload(messages, fetch_insider_trades.name)
+    )
+    company_news = parse_result_rows(tool_payload(messages, fetch_company_news.name))
     if not insider_trades and not company_news:
         sig = _empty_fallback("No insider or news data available")
         return {"persona_signals": [sig.model_dump()]}
@@ -257,14 +228,19 @@ def build_sentiment_analysis_agent() -> CompiledStateGraph:
         input_schema=SentimentAnalysisInput,
         output_schema=SentimentAnalysisOutput,
     )
+    graph.add_node("plan_fetch", plan_fetch_node)
     graph.add_node(
-        "fetch_insider_trades", fetch_insider_trades_node, retry_policy=_RETRY
+        "fetch",
+        ToolNode([fetch_insider_trades, fetch_company_news]),
+        retry_policy=_RETRY,
     )
-    graph.add_node("fetch_company_news", fetch_company_news_node, retry_policy=_RETRY)
     graph.add_node("compute_sentiment_signal", compute_sentiment_signal_node)
-    graph.add_edge(START, "fetch_insider_trades")
-    graph.add_edge(START, "fetch_company_news")
-    graph.add_edge("fetch_insider_trades", "compute_sentiment_signal")
-    graph.add_edge("fetch_company_news", "compute_sentiment_signal")
+    graph.add_edge(START, "plan_fetch")
+    graph.add_conditional_edges(
+        "plan_fetch",
+        route_after_plan,
+        ["fetch", "compute_sentiment_signal"],
+    )
+    graph.add_edge("fetch", "compute_sentiment_signal")
     graph.add_edge("compute_sentiment_signal", END)
     return graph.compile()

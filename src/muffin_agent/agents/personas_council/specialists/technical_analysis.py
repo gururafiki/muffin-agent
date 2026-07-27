@@ -1,32 +1,39 @@
 """Technical analysis specialist — compiled deterministic subgraph.
 
-Two-node :class:`StateGraph`:
+Three-node :class:`StateGraph`:
 
-1. ``fetch_ohlcv`` — pulls 1 year of daily OHLCV from OpenBB MCP via
-   ``cached_invoke`` (shares the cache with personas + middleware-driven
-   tool calls).
-2. ``compute_technical_signal`` — pure Python 5-strategy ensemble via
-   the package-local ``tools.technicals``. **No LLM call.**
+1. ``plan_fetch`` — pure Python; computes the OHLCV window and emits a synthetic
+   ``AIMessage`` carrying one tool call. No LLM.
+2. ``fetch_ohlcv`` — a bare :class:`~langgraph.prebuilt.ToolNode` that executes it,
+   appending a real ``ToolMessage``. The tool goes through ``cached_invoke`` under the
+   MCP tool's own name, so the cache is still shared with personas and
+   middleware-driven tool calls.
+3. ``compute_technical_signal`` — pure Python 5-strategy ensemble via the
+   package-local ``tools.technicals``.
+
+**Still no LLM call anywhere** — execution is exactly as deterministic as the previous
+``cached_invoke``-from-a-node version. The difference is that the fetch now produces a
+genuine AIMessage/ToolMessage pair in ``values.messages``, so it is visible to anything
+reading this namespace's messages (UI execution tree, LangSmith, evals) with no
+special-casing. See ``_fetch_tools`` for the rationale.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from langchain.agents.middleware.types import OmitFromSchema
-from langchain_core.runnables import RunnableConfig
-from langgraph.config import get_store
+from langchain_core.messages import AnyMessage
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode
 from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from ....middlewares.tool_result_cache import cached_invoke
-from ...data_collection.utils import get_tools
 from ..schemas import AnalystSignal, InvestmentSignal
 from ..tools.technicals import (
     StrategyResult,
@@ -36,6 +43,13 @@ from ..tools.technicals import (
     compute_stat_arb_signal,
     compute_trend_signal,
     compute_volatility_regime_signal,
+)
+from ._fetch_tools import (
+    deterministic_tool_call,
+    fetch_equity_ohlcv,
+    parse_result_rows,
+    plan_message,
+    tool_payload,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,9 +92,9 @@ class TechnicalAnalysisState(TypedDict, total=False):
     ticker: Annotated[str, OmitFromSchema(input=False, output=True)]
     as_of_date: Annotated[str, OmitFromSchema(input=False, output=True)]
     query: Annotated[str | None, OmitFromSchema(input=False, output=True)]
-    prices_1y: Annotated[
-        list[dict[str, Any]] | None, OmitFromSchema(input=True, output=True)
-    ]
+    # The fetch's AIMessage/ToolMessage pair. Internal to this subgraph — the
+    # explicit output_schema keeps it out of CouncilState.
+    messages: Annotated[list[AnyMessage], add_messages]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
 
 
@@ -130,66 +144,46 @@ def _empty_fallback(reason: str) -> TechnicalSignal:
     )
 
 
-# ── OHLCV parsing ─────────────────────────────────────────────────────────────
-
-
-def _parse_ohlcv_response(raw: Any) -> list[dict[str, Any]]:
-    """Extract OHLCV bar dicts from an OpenBB ``equity_price_historical`` response."""
-    payload: Any = raw
-    if isinstance(raw, str):
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
-            return []
-    if isinstance(payload, dict):
-        results = payload.get("results")
-        if isinstance(results, list):
-            return [r for r in results if isinstance(r, dict)]
-    if isinstance(payload, list):
-        return [r for r in payload if isinstance(r, dict)]
-    return []
-
-
 # ── Graph nodes ───────────────────────────────────────────────────────────────
 
 
-async def fetch_ohlcv_node(
-    state: TechnicalAnalysisState, config: RunnableConfig
-) -> dict[str, Any]:
-    """Deterministic OHLCV fetch via ``cached_invoke``."""
+def plan_fetch_node(state: TechnicalAnalysisState) -> dict[str, Any]:
+    """Compute the OHLCV window and emit the tool call for ``ToolNode`` (no LLM)."""
     ticker = state.get("ticker") or ""
     as_of_date = state.get("as_of_date") or datetime.now(UTC).date().isoformat()
-    if not ticker:
-        return {"prices_1y": []}
-
-    store = get_store()
-    tools = await get_tools(config, ["equity_price_historical"])
-    if not tools:
-        return {"prices_1y": []}
-
     end_dt = datetime.strptime(as_of_date[:10], "%Y-%m-%d").date()
     start_dt = end_dt - timedelta(days=_PRICE_LOOKBACK_DAYS)
-    args = {
-        "provider": "yfinance",
-        "symbol": ticker,
-        "start_date": start_dt.isoformat(),
-        "end_date": end_dt.isoformat(),
-        "interval": "1d",
+    call = deterministic_tool_call(
+        fetch_equity_ohlcv.name,
+        {
+            "symbol": ticker,
+            "start_date": start_dt.isoformat(),
+            "end_date": end_dt.isoformat(),
+            "interval": "1d",
+            "provider": "yfinance",
+        },
+    )
+    return {
+        "messages": [
+            plan_message(
+                [call], note=f"Fetching {_PRICE_LOOKBACK_DAYS}d OHLCV for {ticker}"
+            )
+        ]
     }
-    try:
-        raw = await cached_invoke(tools[0], args, store)
-    except Exception:
-        logger.exception("technical_analysis fetch_ohlcv failed for %s", ticker)
-        return {"prices_1y": []}
 
-    return {"prices_1y": _parse_ohlcv_response(raw)}
+
+def route_after_plan(state: TechnicalAnalysisState) -> str:
+    """Skip the fetch entirely when there is no ticker to fetch for."""
+    return "fetch_ohlcv" if (state.get("ticker") or "") else "compute_technical_signal"
 
 
 def compute_technical_signal_node(
     state: TechnicalAnalysisState,
 ) -> dict[str, Any]:
     """Pure-Python 5-strategy ensemble (no LLM)."""
-    prices_1y = state.get("prices_1y") or []
+    prices_1y = parse_result_rows(
+        tool_payload(state.get("messages"), fetch_equity_ohlcv.name)
+    )
     if len(prices_1y) < 20:
         sig = _empty_fallback("Insufficient OHLCV history (need 20+ daily bars)")
         return {"persona_signals": [sig.model_dump()]}
@@ -235,9 +229,15 @@ def build_technical_analysis_agent() -> CompiledStateGraph:
         input_schema=TechnicalAnalysisInput,
         output_schema=TechnicalAnalysisOutput,
     )
-    graph.add_node("fetch_ohlcv", fetch_ohlcv_node, retry_policy=_RETRY)
+    graph.add_node("plan_fetch", plan_fetch_node)
+    graph.add_node("fetch_ohlcv", ToolNode([fetch_equity_ohlcv]), retry_policy=_RETRY)
     graph.add_node("compute_technical_signal", compute_technical_signal_node)
-    graph.add_edge(START, "fetch_ohlcv")
+    graph.add_edge(START, "plan_fetch")
+    graph.add_conditional_edges(
+        "plan_fetch",
+        route_after_plan,
+        ["fetch_ohlcv", "compute_technical_signal"],
+    )
     graph.add_edge("fetch_ohlcv", "compute_technical_signal")
     graph.add_edge("compute_technical_signal", END)
     return graph.compile()
