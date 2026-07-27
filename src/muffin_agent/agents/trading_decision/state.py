@@ -35,9 +35,6 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-from muffin_agent.middlewares.agent_capture.records import merge_tool_runs
-from muffin_agent.middlewares.agent_capture.tree import merge_subagent_tree
-
 
 class AnalystInput(TypedDict, total=False):
     """Input contract for the four analyst nodes (market/fundamentals/news/social).
@@ -60,9 +57,8 @@ class InvestmentDebateOutput(TypedDict, total=False):
     subgraph emits ONLY its own conference-owned channels back to the parent
     graph. Without this restriction the subgraph — compiled against the full
     ``TradingDecisionState`` — would echo the parent's other reducer channels
-    (e.g. ``tool_runs``) through its final state, and the parent's reducer
-    would re-apply them. See ``multi_agent.build_conference_graph``'s
-    ``output_schema`` docstring.
+    through its final state, and the parent's reducer would re-apply them. See
+    ``multi_agent.build_conference_graph``'s ``output_schema`` docstring.
     """
 
     investment_debate_messages: Annotated[list[BaseMessage], add_messages]
@@ -176,16 +172,3 @@ class TradingDecisionState(TypedDict, total=False):
 
     resolved_decisions: list[dict[str, Any]]
     """Observability: list of decisions the resolver resolved this run."""
-
-    # ── Tool-execution capture (declaring the channel opts this graph in) ────
-    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
-    """Tool-execution records captured by ``AgentCaptureMiddleware``. The four
-    analyst agents are added as parent-graph nodes (no ``output_schema``
-    restriction), so their records merge up here automatically; the downstream
-    Bull/Bear/Judge/Trader/PM nodes make no tool calls."""
-
-    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
-    """Sub-agent execution tree nodes captured by ``AgentCaptureMiddleware``,
-    same propagation scope as ``tool_runs`` above (the four analyst agents;
-    the two debate conference subgraphs deliberately do NOT carry this — see
-    ``InvestmentDebateOutput`` / ``RiskDebateOutput``)."""

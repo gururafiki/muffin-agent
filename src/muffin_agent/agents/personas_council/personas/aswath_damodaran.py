@@ -24,7 +24,7 @@ from ....prompts import render_template
 from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
-from ..schemas import AnalystSignal, merge_subagent_tree, merge_tool_runs
+from ..schemas import AnalystSignal
 from ..tools.scoring_helpers import compute_damodaran_fcff_dcf
 
 logger = logging.getLogger(__name__)
@@ -107,8 +107,6 @@ class AswathDamodaranInput(TypedDict, total=False):
 
 class AswathDamodaranOutput(TypedDict, total=False):
     persona_signals: list[dict[str, Any]]
-    tool_runs: list[dict[str, Any]]
-    subagent_tree: dict[str, Any]
 
 
 class AswathDamodaranState(AgentState):
@@ -137,8 +135,6 @@ class AswathDamodaranState(AgentState):
         AswathDamodaranEvidence | None, OmitFromSchema(input=True, output=False)
     ]
     persona_signals: Annotated[list[dict], OmitFromSchema(input=True, output=False)]
-    tool_runs: Annotated[list[dict[str, Any]], merge_tool_runs]
-    subagent_tree: Annotated[dict[str, Any], merge_subagent_tree]
 
 
 # ── Composite scorers ─────────────────────────────────────────────────────────

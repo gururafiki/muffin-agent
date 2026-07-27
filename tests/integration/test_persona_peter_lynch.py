@@ -129,24 +129,14 @@ async def test_full_subgraph_runs_collect_compute_verdict(config):
     # (collect_data) + 1 verdict turn (render_verdict).
     assert cursor.consumed == 3
 
-    # subagent_tree: the collect_data ReAct agent is the sole capturing node
-    # here (compute_evidence/render_verdict are plain/LLM-direct, not agents),
-    # and it runs at the graph root (this test drives the persona subgraph
-    # directly, not nested inside the council) — so it roots at "__root__"
-    # and its tool_summary reflects the ONE real (fixture-backed) MCP tool
-    # call scripted above, proving tool_runs really feeds the tree.
-    tree = result.get("subagent_tree") or {}
-    assert tree, "subagent_tree should be populated"
-    [node] = list(tree.values())
-    assert node["name"] == "peter_lynch_data_collection"
-    assert node["parent_id"] == "__root__"
-    assert node["tool_summary"] == {
-        "count": 1,
-        "tools": ["equity_fundamental_metrics"],
-        "ok": 1,
-        "failed": 0,
-        "cached": 0,
-    }
+    # The persona emits its verdict and nothing else. Its collect_data agent's
+    # transcript and that one fixture-backed MCP call live in that agent's own
+    # checkpoints, where the UI reads them — not in a capture channel riding on
+    # this state. `test_graph_observability.py` asserts the node really is a
+    # compiled subgraph, which is what makes them reachable.
+    assert "tool_runs" not in result
+    assert "subagent_tree" not in result
+    assert "subagent_runs" not in result
 
     # Proof the REAL compute_evidence ran on the genuinely-unpacked raw data:
     # the verdict prompt renders "Revenue CAGR:" only when revenue_cagr is

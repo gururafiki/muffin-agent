@@ -16,9 +16,7 @@ from langchain_core.messages import BaseMessage
 class Terminator(Protocol):
     """Returns ``(True, reason)`` when the conference should end."""
 
-    def should_stop(
-        self, state: dict[str, Any]
-    ) -> tuple[bool, str | None]:
+    def should_stop(self, state: dict[str, Any]) -> tuple[bool, str | None]:
         """Return ``(True, reason)`` to stop or ``(False, None)`` to continue."""
         ...
 
@@ -34,9 +32,7 @@ class MaxRoundsTerminator:
     max_rounds: int
     num_participants: int
 
-    def should_stop(
-        self, state: dict[str, Any]
-    ) -> tuple[bool, str | None]:
+    def should_stop(self, state: dict[str, Any]) -> tuple[bool, str | None]:
         """Stop once the message count hits the configured budget."""
         messages: list[BaseMessage] = state.get("messages") or []
         if len(messages) >= self.max_rounds * self.num_participants:

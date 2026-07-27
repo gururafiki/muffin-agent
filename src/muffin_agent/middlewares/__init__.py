@@ -1,9 +1,5 @@
 """Middleware components for muffin agents."""
 
-from .agent_capture import (
-    AgentCaptureMiddleware,
-    AgentCaptureParentMiddleware,
-)
 from .skill_suggestion import SkillFilterMiddleware
 from .store_access import StoreAccessMiddleware
 from .subagent_refinement import (
@@ -17,8 +13,6 @@ from .tool_result_cache import (
 )
 
 __all__ = [
-    "AgentCaptureMiddleware",
-    "AgentCaptureParentMiddleware",
     "CollectionFindings",
     "SkillFilterMiddleware",
     "StoreAccessMiddleware",
