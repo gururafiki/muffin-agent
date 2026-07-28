@@ -23,6 +23,13 @@ dependencies = [
     # needs the crypto extra installed in the deployment image)
     "pyjwt>=2.13.0",
     "langchain-mcp-adapters>=0.2.2",
+    # mcp 2.0.0 removed `RequestContext` from `mcp.shared.context`, which
+    # langchain-mcp-adapters (through 0.3.1) still imports at module level — so
+    # an unpinned resolve takes mcp 2.0.0 and EVERY graph fails to load with
+    # `GraphLoadError: cannot import name 'RequestContext'`. This is not
+    # theoretical: it took the deployed API to 0/1 on 2026-07-28, on a rebuild
+    # that changed nothing else. Lift the cap once adapters supports mcp 2.
+    "mcp<2",
     "langgraph-cli>=0.4.31",
     "pydantic>=2.13.4",
     # Prompt templating
