@@ -389,7 +389,19 @@ Measured against production threads `019f81a0` (2026-07-27) and `019fa546` (2026
 > `…|tools` matches no subgraph and the lookup fails. **The namespace segment existing is not the
 > same as the namespace being addressable** — that is the distinction the original table missed.
 >
-> What a reader still gets, and it is most of the value: the `task` call and the sub-agent's returned
+> **UPDATE (2026-07-28): this is upstream's DOCUMENTED, INTENTIONAL behaviour, and muffin now lifts
+> it with a fork pin.** [Use subgraphs → View subgraph state](https://docs.langchain.com/oss/python/langgraph/use-subgraphs#view-subgraph-state):
+> *"Viewing subgraph state requires that LangGraph can statically discover the subgraph… It does not
+> work when a subgraph is called inside a tool function or other indirection (e.g. the subagents
+> pattern)."* An earlier version of this block said it was undocumented — wrong: only the repo's
+> `docs/` folder and source were searched, and the docs SITE is a separate content source. It was
+> also reported as a bug in deepagents#2629 and closed as not-supported. muffin pins a deepagents
+> fork that declares the subagent graphs on the tools node (deepagents#5136 / #5132), so those
+> namespaces now resolve (verified in prod: 40 snapshots, 53 messages). **Because it lifts an
+> intentional limitation rather than carrying a pending bugfix, that pin may never be upstreamed —
+> budget for maintaining it.**
+>
+> Before the pin, what a reader still got: the `task` call and the sub-agent's returned
 > report are both in the parent's transcript, so "which sub-agents did this call, and what came back"
 > is answerable. Only the sub-agent's own step-by-step is lost. Making it drillable would mean
 > promoting those sub-agents to `add_node` subgraphs, which trades away deepagents' dynamic dispatch.
