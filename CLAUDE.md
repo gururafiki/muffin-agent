@@ -362,7 +362,7 @@ the whole tree by recursion: each snapshot's `tasks[]` carry `{id, name, checkpo
 and that namespace's `values.messages` is the node's transcript with its tool calls. Nothing needs
 capturing — muffin-ui reads this directly (`lib/agent/run-history.ts`).
 
-Measured against production thread `019f81a0` (2026-07-27):
+Measured against production threads `019f81a0` (2026-07-27) and `019fa546` (2026-07-28):
 
 | Pattern | Example | Child ns | Observable |
 |---|---|---|---|
@@ -370,7 +370,41 @@ Measured against production thread `019f81a0` (2026-07-27):
 | **B. Agent `.ainvoke()` inside a function body** | *(eliminated — do not reintroduce)* | none | **black box** — not a pregel task, not checkpointed, unrecoverable |
 | **C. Plain function node calling an LLM** | `investment_judge`, `trader`, `portfolio_manager`, `council_judge`, persona `render_verdict` | `None` | partial — named task + status; output in parent `values`; no transcript. **Legitimate**: a single LLM call has no sub-structure. |
 | **D. Direct tool call in a node** | *(eliminated — see `specialists/_fetch_tools.py`)* | none | no `ToolMessage` exists at all |
-| **E. deepagents `task` subagent** | `stock_evaluation`'s 15 subagents | `tools:<uuid>` | full |
+| **E. deepagents `task` subagent** | `stock_evaluation`'s 15 subagents; every deep agent's `task` calls | `<parent>\|tools:<uuid>` exists in the DB but is **NOT reachable** | **partial** — the delegation and its returned report are in the parent's transcript; the sub-agent's OWN transcript cannot be fetched. See the correction below. |
+
+> ### CORRECTION (2026-07-28) — Pattern E is NOT fully drillable
+>
+> The first version of this table claimed deepagents `task` subagents were fully observable, based on
+> the old capture channel recording a `checkpoint_ns` of `<parent>|tools:<uuid>`. Those checkpoints do
+> exist — production thread `019fa546` has 295 of them under
+> `criteria_definition:…|tools:09485c46-…` — but they are **unreachable through the history API**:
+>
+> ```
+> POST /threads/{id}/history  {"checkpoint":{"checkpoint_ns":"criteria_definition:…|tools:…"}}
+> → HTTP 400  {"detail":"Subgraph criteria_definition|tools not found"}
+> ```
+>
+> `aget_state_history` resolves a namespace by walking `get_subgraphs()`, which only knows
+> `add_node`-registered subgraphs. A `task` subagent is invoked *inside a tool*, so the path
+> `…|tools` matches no subgraph and the lookup fails. **The namespace segment existing is not the
+> same as the namespace being addressable** — that is the distinction the original table missed.
+>
+> What a reader still gets, and it is most of the value: the `task` call and the sub-agent's returned
+> report are both in the parent's transcript, so "which sub-agents did this call, and what came back"
+> is answerable. Only the sub-agent's own step-by-step is lost. Making it drillable would mean
+> promoting those sub-agents to `add_node` subgraphs, which trades away deepagents' dynamic dispatch.
+>
+> ### Second correction (2026-07-28) — a deep agent's `values.messages` is EMPTY
+>
+> Every deep agent reports `values.messages == []` in its own namespace's history, while plain agents
+> populate it normally. Thread `019fa546`: `ticker_classification` had 31 snapshots with an empty
+> messages channel despite running 10 model turns and 8 tool calls; `criteria_definition` and each
+> criterion `evaluate` behave the same; only `synthesis` (a plain `AgentState` agent) was populated.
+> Applying pending writes does not help — `POST /state` on that namespace also returns 0.
+>
+> The transcript is fully recoverable from `tasks[].result.messages`, which is what
+> `muffin-ui/src/lib/agent/run-history.ts` now reads. The underlying reason the channel reads empty
+> is **not established** — do not assume one without measuring.
 
 Rules that follow:
 
