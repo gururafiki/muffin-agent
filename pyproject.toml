@@ -9,7 +9,19 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    "langgraph>=1.2.6",
+    # TEMPORARY FORK PIN — remove once langchain-ai/langgraph#8469 is released.
+    # Upstream bug: reading a NESTED subgraph's state hydrates every DeltaChannel
+    # EMPTY (silently). `_prepare_state_snapshot` hydrated channels with
+    # `self.checkpointer` alone, but a subgraph from `get_subgraphs()` was
+    # compiled without one — the parent supplies it via CONFIG_KEY_CHECKPOINTER —
+    # so DeltaChannels had no saver to replay their ancestor writes. Every deep
+    # agent's `messages` is a DeltaChannel, which is why muffin-ui saw empty
+    # transcripts for every nested agent while the blobs sat in the DB.
+    # Pinned to a commit, not a branch, so builds are reproducible. Installing
+    # from the monorepo also brings langgraph-checkpoint / -prebuilt / -sdk from
+    # the same commit (uv follows its workspace sources) — all within the ranges
+    # langgraph-api's /api/constraints.txt allows (`langgraph>=0.4.10,<2`).
+    "langgraph @ git+https://github.com/gururafiki/langgraph@602d3f4610039194650fe4c056e95ddd0d86cc1c#subdirectory=libs/langgraph",
     "langchain>=1.3",
     "langchain-openai>=1.3.3",
     "langchain-anthropic>=1.4.8",
