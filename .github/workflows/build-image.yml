@@ -38,6 +38,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # An outage on 2026-07-28 shipped because dependencies INSTALLED but the
+      # app no longer IMPORTED: mcp 2.0.0 dropped `RequestContext`, which
+      # langchain-mcp-adapters imports at module level, so every graph failed to
+      # load and the API sat at 0/1. Resolve + import against the same base
+      # image the runtime uses, BEFORE building. Runs on amd64 without QEMU —
+      # dependency resolution is what breaks here, and that is arch-independent.
+      # `muffin_agent.graph` is deliberately NOT imported: it builds a graph at
+      # module level and needs MCP reachable.
+      - name: Smoke-test resolution + imports in the runtime base image
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD":/src:ro langchain/langgraph-api:3.13 -c '
+            set -e
+            cp -r /src /build && cd /build && rm -rf .venv
+            uv pip install --system -q --no-cache-dir -c /api/constraints.txt -e .
+            python -c "import muffin_agent.agents.data_collection.utils"
+            python -c "import muffin_agent.agents.criteria_analysis.graph"
+            python -c "import muffin_agent.agents.personas_council.council_graph"
+            python -c "import auth"
+            python -c "import importlib.metadata as m; print(\"langgraph\", m.version(\"langgraph\"), \"mcp\", m.version(\"mcp\"))"
+          '
+
       - name: Generate LangGraph Dockerfile
         run: |
           pip install --upgrade langgraph-cli
