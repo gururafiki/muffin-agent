@@ -48,7 +48,17 @@ dependencies = [
     "rich>=15.0.0",
     # Observability
     "langfuse>=4.14.0",
-    "deepagents>=0.6.12",
+    # TEMPORARY FORK PIN — drop once langchain-ai/deepagents#5131 ships.
+    # A `task` subagent's checkpoints are written but unreadable:
+    # `get_state_history` on its namespace raises "Subgraph tools not found",
+    # because namespace resolution reads `node.subgraphs` and a subagent lives
+    # in the task tool's CLOSURE, invisible to auto-detection. Without this,
+    # muffin-ui can show which sub-agents a stage called and what each returned,
+    # but never what they did.
+    # Branched from the 0.6.12 TAG, not main: main has moved on (it drops
+    # `BackendFactory`, which subagent_refinement imports) and pinning it would
+    # drag in unrelated breaking changes. Pinned to a COMMIT for reproducibility.
+    "deepagents @ git+https://github.com/gururafiki/deepagents@f3a5d79574e18c57c31187a1c2cbbbefe097fd93#subdirectory=libs/deepagents",
     # Checkpointing (CLI persistence)
     "langgraph-checkpoint-sqlite>=3.1",
     # Sandbox
