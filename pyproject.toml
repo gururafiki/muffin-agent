@@ -22,7 +22,7 @@ dependencies = [
     # auth.py JWT verification (Supabase HS256; Cloudflare Access additionally
     # needs the crypto extra installed in the deployment image)
     "pyjwt>=2.13.0",
-    "langchain-mcp-adapters>=0.2.2",
+    "langchain-mcp-adapters>=0.3.1",
     # mcp 2.0.0 removed `RequestContext` from `mcp.shared.context`, which
     # langchain-mcp-adapters (through 0.3.1) still imports at module level — so
     # an unpinned resolve takes mcp 2.0.0 and EVERY graph fails to load with
