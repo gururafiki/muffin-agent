@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,42 @@ def _first_non_none(xs: list[float | None]) -> float | None:
 def _clean(xs: list[float | None]) -> list[float]:
     """Drop ``None`` entries; preserve order."""
     return [x for x in xs if x is not None]
+
+
+def to_float(value: Any) -> float | None:
+    """Coerce a possibly-string numeric to ``float`` (``None`` if not numeric).
+
+    The ``prices_1y`` / ``insider_trades`` fields on persona raw-data models are
+    ``list[dict[str, Any]]``, and Pydantic does NOT coerce their inner values the
+    way it coerces the ``*_series: list[float | None]`` fields. A weak LLM can
+    extract ``close`` / ``transaction_shares`` as strings ("185.23"), and
+    ``"185.23" > 0`` raises ``TypeError: '>' not supported between instances of
+    'str' and 'int'`` — hit in prod on the AMZN council run.
+
+    **Call this at every site that reads those dicts before comparing or doing
+    arithmetic.** It lived privately in ``nassim_taleb`` and was promoted here
+    when mypy showed ``stanley_druckenmiller`` reading the same dicts unguarded.
+    """
+    if isinstance(value, bool):  # bool is an int subclass — never a price/quantity
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def clean_series(values: Iterable[Any]) -> list[float]:
+    """Coerce an iterable of raw dict values to floats, dropping non-numerics.
+
+    The list-comprehension form of :func:`to_float` — use it for the common
+    ``[bar.get("close") for bar in bars]`` shape, which otherwise yields
+    ``list[Any | None]`` and blows up on the first subtraction.
+    """
+    return [f for f in (to_float(v) for v in values) if f is not None]
 
 
 # ── Sub-scoring helpers (used by 3+ personas) ─────────────────────────────────
@@ -314,9 +351,7 @@ def estimate_maintenance_capex(
 
     # capex/revenue ratios over the last 5 periods (most recent window)
     capex_ratios: list[float] = []
-    for capex, revenue in zip(
-        capex_series[-5:], revenue_series[-5:], strict=False
-    ):
+    for capex, revenue in zip(capex_series[-5:], revenue_series[-5:], strict=False):
         if capex is not None and revenue is not None and revenue > 0:
             capex_ratios.append(abs(capex) / revenue)
 

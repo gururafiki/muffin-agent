@@ -212,9 +212,9 @@ def calculate_residual_income_value(
     pv_ri = 0.0
     for yr in range(1, num_years + 1):
         pv_ri += ri0 * (1 + book_value_growth) ** yr / (1 + cost_of_equity) ** yr
-    term_ri = (
-        ri0 * (1 + book_value_growth) ** (num_years + 1)
-    ) / (cost_of_equity - terminal_growth_rate)
+    term_ri = (ri0 * (1 + book_value_growth) ** (num_years + 1)) / (
+        cost_of_equity - terminal_growth_rate
+    )
     pv_term = term_ri / (1 + cost_of_equity) ** num_years
     return (book_val + pv_ri + pv_term) * 0.8
 

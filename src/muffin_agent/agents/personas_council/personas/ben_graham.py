@@ -108,7 +108,7 @@ class BenGrahamEvidence(BaseModel):
     max_score: float
 
 
-class BenGrahamSignal(AnalystSignal):
+class BenGrahamSignal(AnalystSignal[BenGrahamEvidence]):
     """Narrowed signal with typed Graham evidence."""
 
     agent_id: Literal["ben_graham"] = Field(default="ben_graham")

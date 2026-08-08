@@ -79,7 +79,7 @@ class BillAckmanEvidence(BaseModel):
     max_score: float
 
 
-class BillAckmanSignal(AnalystSignal):
+class BillAckmanSignal(AnalystSignal[BillAckmanEvidence]):
     agent_id: Literal["bill_ackman"] = Field(default="bill_ackman")
     evidence: BillAckmanEvidence
 

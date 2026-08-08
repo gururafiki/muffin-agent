@@ -23,8 +23,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Protocol
 
-import pandas as pd  # type: ignore[import-untyped]
-import stockstats  # type: ignore[import-untyped]
+import pandas as pd
+import stockstats
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import InjectedToolArg, ToolException, tool
 

@@ -4,8 +4,9 @@
 Any]]`` — Pydantic does not coerce their inner values, so a weak LLM can extract
 ``close`` / ``transaction_shares`` as strings. Comparing a string against an int
 (``prev > 0``) raised ``TypeError: '>' not supported between instances of 'str'
-and 'int'`` on the AMZN council run (thread 019f8476-…). ``_to_float`` guards
-every dict-read site.
+and 'int'`` on the AMZN council run (thread 019f8476-…). ``to_float`` guards
+every dict-read site; it now lives in ``tools.scoring_helpers`` because
+``stanley_druckenmiller`` needs the same guard.
 """
 
 from __future__ import annotations
@@ -15,28 +16,28 @@ import pytest
 from muffin_agent.agents.personas_council.personas.nassim_taleb import (
     _daily_returns_from_bars,
     _score_taleb_skin_in_game,
-    _to_float,
 )
+from muffin_agent.agents.personas_council.tools.scoring_helpers import to_float
 
 
 @pytest.mark.unit
 class TestToFloat:
     def test_coerces_numeric_strings(self):
-        assert _to_float("185.23") == 185.23
-        assert _to_float(" 10 ") == 10.0
-        assert _to_float(42) == 42.0
-        assert _to_float(3.5) == 3.5
+        assert to_float("185.23") == 185.23
+        assert to_float(" 10 ") == 10.0
+        assert to_float(42) == 42.0
+        assert to_float(3.5) == 3.5
 
     def test_returns_none_for_non_numeric(self):
-        assert _to_float(None) is None
-        assert _to_float("") is None
-        assert _to_float("n/a") is None
-        assert _to_float({"x": 1}) is None
+        assert to_float(None) is None
+        assert to_float("") is None
+        assert to_float("n/a") is None
+        assert to_float({"x": 1}) is None
 
     def test_excludes_bool(self):
         # bool is an int subclass but is never a price/quantity.
-        assert _to_float(True) is None
-        assert _to_float(False) is None
+        assert to_float(True) is None
+        assert to_float(False) is None
 
 
 @pytest.mark.unit

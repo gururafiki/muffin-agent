@@ -93,9 +93,7 @@ class _StubAgentState(TypedDict, total=False):
     invocation_count: int
 
 
-def build_counter_stub_agent(
-    *, prefix: str = "stub reply"
-) -> CompiledStateGraph:
+def build_counter_stub_agent(*, prefix: str = "stub reply") -> CompiledStateGraph:
     """Compile a tiny LangGraph agent that emits a counter-incremented AIMessage.
 
     Useful for proving per-agent state persistence across wrapper-subgraph

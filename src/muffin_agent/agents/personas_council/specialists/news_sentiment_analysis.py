@@ -45,7 +45,7 @@ class NewsSentimentEvidence(BaseModel):
     neutral_articles: int
 
 
-class NewsSentimentSignal(AnalystSignal):
+class NewsSentimentSignal(AnalystSignal[NewsSentimentEvidence]):
     agent_id: Literal["news_sentiment"] = Field(default="news_sentiment")
     evidence: NewsSentimentEvidence
 

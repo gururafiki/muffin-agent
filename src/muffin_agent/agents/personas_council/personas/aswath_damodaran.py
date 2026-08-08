@@ -71,7 +71,7 @@ class AswathDamodaranEvidence(BaseModel):
     max_score: float
 
 
-class AswathDamodaranSignal(AnalystSignal):
+class AswathDamodaranSignal(AnalystSignal[AswathDamodaranEvidence]):
     agent_id: Literal["aswath_damodaran"] = Field(default="aswath_damodaran")
     evidence: AswathDamodaranEvidence
 

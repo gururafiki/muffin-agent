@@ -39,9 +39,7 @@ class TestStructuredOutputJudge:
         assert result == {"decision": "buy", "confidence": 0.8}
 
     async def test_prompt_includes_rendered_messages_text(self):
-        cfg, fake_llm = fake_model_config(
-            _Verdict(decision="hold", confidence=0.5)
-        )
+        cfg, fake_llm = fake_model_config(_Verdict(decision="hold", confidence=0.5))
         with patch.object(
             judges_mod.ModelConfiguration,
             "from_runnable_config",

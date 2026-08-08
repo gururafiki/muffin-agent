@@ -51,7 +51,7 @@ class FundamentalsEvidence(BaseModel):
     price_ratios: dict[str, Any]
 
 
-class FundamentalsSignal(AnalystSignal):
+class FundamentalsSignal(AnalystSignal[FundamentalsEvidence]):
     agent_id: Literal["fundamentals"] = Field(default="fundamentals")
     evidence: FundamentalsEvidence
 

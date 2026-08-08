@@ -2,7 +2,7 @@
 
 import os
 import typing
-from typing import Any
+from typing import Any, Self
 
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
@@ -26,13 +26,23 @@ class BaseConfiguration(BaseModel):
     """Base for all muffin-agent configuration models."""
 
     @classmethod
-    def from_runnable_config(cls, config: RunnableConfig):
+    def from_runnable_config(cls, config: RunnableConfig) -> Self:
         """Create Configuration from a LangGraph RunnableConfig.
 
         Extracts known fields from config["configurable"], ignoring unknown
         keys. Comma-separated env-var strings populate ``list[...]`` fields; a
         JSON-array string (``[...]``, e.g. ``LLM_CHAIN``) is passed through
         verbatim for the field's own validator to parse.
+
+        The ``-> Self`` annotation is load-bearing, not decoration. Without it
+        this returned ``Any``, and ``Any`` flows silently into anything: 16 CLI
+        commands passed the *result* of this call into agent factories that take
+        a ``RunnableConfig``, and every one of them died on
+        ``AttributeError: 'ModelConfiguration' object has no attribute 'get'``
+        the moment the factory called this method back on it. mypy could only see
+        the two that also misspelled the factory name. This is the same defect
+        class CLAUDE.md records for the retired ``run_deep_agent_node`` wrapper —
+        keep the annotation so it stays visible.
         """
         configurable = config.get("configurable", {})
 

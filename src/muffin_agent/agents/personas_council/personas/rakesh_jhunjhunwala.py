@@ -92,7 +92,7 @@ class RakeshJhunjhunwalaEvidence(BaseModel):
     max_score: float
 
 
-class RakeshJhunjhunwalaSignal(AnalystSignal):
+class RakeshJhunjhunwalaSignal(AnalystSignal[RakeshJhunjhunwalaEvidence]):
     agent_id: Literal["rakesh_jhunjhunwala"] = Field(default="rakesh_jhunjhunwala")
     evidence: RakeshJhunjhunwalaEvidence
 

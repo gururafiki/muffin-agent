@@ -70,7 +70,7 @@ class TechnicalEvidence(BaseModel):
     weighted: dict[str, Any]
 
 
-class TechnicalSignal(AnalystSignal):
+class TechnicalSignal(AnalystSignal[TechnicalEvidence]):
     agent_id: Literal["technicals"] = Field(default="technicals")
     evidence: TechnicalEvidence
 

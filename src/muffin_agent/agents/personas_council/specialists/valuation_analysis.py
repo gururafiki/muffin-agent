@@ -51,7 +51,7 @@ class ValuationEvidence(BaseModel):
     methods: dict[str, Any]
 
 
-class ValuationSignal(AnalystSignal):
+class ValuationSignal(AnalystSignal[ValuationEvidence]):
     agent_id: Literal["valuation"] = Field(default="valuation")
     evidence: ValuationEvidence
 

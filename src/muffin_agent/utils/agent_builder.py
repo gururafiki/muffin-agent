@@ -56,7 +56,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, cast
 
 import anthropic
 import openai
@@ -685,7 +685,12 @@ class MuffinAgentBuilder:
         summarisation_model = model if model is not None else self._model
         self._summarization = SummarizationMiddleware(
             model=summarisation_model,
-            trigger=trigger,
+            # Upstream accepts `ContextSize | TriggerClause` and lists thereof.
+            # This builder deliberately exposes only the `ContextSize` tuples, and
+            # `list` is invariant, so `list[ContextSize]` is not assignable to
+            # `list[ContextSize | TriggerClause]` even though every element is
+            # valid. The cast records that this is variance, not a type error.
+            trigger=cast("Any", trigger),
             keep=keep,
         )
         return self
@@ -799,8 +804,17 @@ class MuffinAgentBuilder:
         self._response_format = response_format
         return self
 
-    def with_store(self, store: BaseStore) -> Self:
-        """Attach a LangGraph :class:`BaseStore` instance."""
+    def with_store(self, store: BaseStore | None) -> Self:
+        """Attach a LangGraph :class:`BaseStore` instance, or ``None``.
+
+        ``None`` is accepted deliberately rather than defensively. Every graph
+        builder takes ``store: BaseStore | None`` — the Platform injects a real
+        one, the CLI passes ``InMemoryStore()``, and a plain compile passes
+        nothing — and all seven agent factories forward theirs straight here.
+        The attribute has always been ``BaseStore | None`` and is forwarded as-is
+        to ``create_agent`` / ``create_deep_agent``, which accept ``None``; only
+        this signature disagreed, producing the same error at all seven sites.
+        """
         self._store = store
         return self
 
