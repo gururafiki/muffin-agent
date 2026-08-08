@@ -401,6 +401,21 @@ Measured against production threads `019f81a0` (2026-07-27) and `019fa546` (2026
 > intentional limitation rather than carrying a pending bugfix, that pin may never be upstreamed —
 > budget for maintaining it.**
 >
+> **UPDATE (2026-08-08): treat that pin as PERMANENT.** #5131 was closed `NOT_PLANNED` by the triage
+> bot (filed programmatically) and #5132 auto-closed pending assignment; the live issue is **#5136**,
+> which has had no maintainer response. More decisively, a *langgraph* maintainer independently
+> adjudicated it while reviewing langgraph#8538: tool-indirection subagent reads are documented,
+> intentional behaviour, and the `tools:<uuid>` checkpoints were declared "internal" when
+> deepagents#4818 and #2629 were closed. One comment has been posted asking for a decision either
+> way; do not spend more effort pushing it. Re-check on each deepagents minor.
+>
+> **The delta-channel bug is PER-CHANNEL.** In the same review, `eliornl` found that in stored
+> deepagents data `files` reads back `{}` while `messages` in the *same* read is complete. Our
+> fork-pin guard originally asserted only on `messages` and would have missed it; `files` is a
+> `DeltaChannel` on the pinned deepagents 0.6.12 too (`FilesystemState.files`,
+> `DeltaChannel(_file_data_delta_reducer)`), so `tests/test_fork_pins.py` now asserts a second delta
+> channel hydrates in a nested namespace. If you add a delta channel that the UI reads, add it there.
+>
 > Before the pin, what a reader still got: the `task` call and the sub-agent's returned
 > report are both in the parent's transcript, so "which sub-agents did this call, and what came back"
 > is answerable. Only the sub-agent's own step-by-step is lost. Making it drillable would mean
@@ -451,6 +466,58 @@ Rules that follow:
    problem.** See [`docs/backend-notes/2026-07-27-api-read-latency-mcp-tool-discovery.md`](docs/backend-notes/2026-07-27-api-read-latency-mcp-tool-discovery.md).
    Tests that patch `data_collection.utils.MultiServerMCPClient` rely on the root conftest's
    autouse `reset_mcp_tool_cache()` for isolation.
+
+## CI gate (`.github/workflows/quality.yml`)
+
+Every PR must pass, and this is a **required status check** — it is the merge gate:
+`ruff check` → `ruff format --check` → `mypy src/` → `pytest -m unit` → the **resolve+import smoke
+test** against the `langchain/langgraph-api:3.13` base image with its own constraints file.
+
+Why the smoke test exists twice (here and in `build-image.yml`): an outage shipped because
+dependencies *installed* but the app no longer *imported*. In `build-image.yml` it is a pre-build gate
+(never build an image from a tree that cannot import); here it is the merge gate. The duplication is
+deliberate — the pre-build copy runs too late to keep a bad dependency bound out of `main`, and
+`cancel-in-progress` could kill it outright (which is exactly how #145 shipped unverified).
+
+Rules for this file:
+
+- **No `paths` filter, ever.** A filtered workflow never reports on a PR that misses the filter, and
+  the PR is then blocked on a required check that will never arrive.
+- **`mypy src/` must stay at zero.** It went 50 → 0 on 2026-08-08 and is the only check here that has
+  found real production defects rather than style violations (see below).
+- **`main` builds are never cancelled** — `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`.
+- 37 unit tests need `OPENAI_API_KEY` merely to **exist** (they build a graph, which constructs the
+  chat model; no request is made). CI passes a dummy value. This is invisible locally because
+  `BaseConfiguration` calls `load_dotenv()`. Roadmap item: compiling a graph should not need credentials.
+
+## Typing conventions
+
+`mypy src/` is enforced. `[tool.mypy]` is deliberately **not strict** — `disallow_untyped_defs` over
+176 modules would bury real findings under annotation chores. The settings that matter:
+`plugins = ["pydantic.mypy"]` (nearly everything here is a Pydantic model; the plugin alone removed 6
+false `arg-type` errors) and `warn_unused_ignores`.
+
+Two rules that exist because breaking them cost real bugs:
+
+1. **Annotate the return type of anything that produces a config object.**
+   `BaseConfiguration.from_runnable_config` had no annotation, so mypy inferred `Any` — and `Any`
+   satisfies every parameter. That hid **16 dead CLI commands** which passed a `ModelConfiguration`
+   into factories expecting a `RunnableConfig`, every one dying on `AttributeError:
+   'ModelConfiguration' object has no attribute 'get'`. It is annotated `-> Self` now; keep it. Same
+   defect class as the retired `run_deep_agent_node` wrapper (see the graph-authoring rules above).
+2. **A subclass cannot retype an inherited Pydantic field — parameterise the base instead.**
+   `AnalystSignal` is `Generic[EvidenceT]` with a PEP 696 `default="dict[str, Any]"`, so
+   `class WarrenBuffettSignal(AnalystSignal[WarrenBuffettEvidence])` states the narrowing the docstring
+   always claimed, and a bare `AnalystSignal` still behaves exactly as before. Use
+   `typing_extensions.TypeVar` for `default=` — `typing`'s only grew it in 3.13 and this package
+   supports >=3.11.
+
+**`prices_1y` / `insider_trades` inner values are NOT coerced by Pydantic.** They are
+`list[dict[str, Any]]`, so a weak LLM can extract `close` as `"185.23"` and any comparison raises
+`TypeError: '>' not supported between instances of 'str' and 'int'`. This took down the AMZN council
+run via `nassim_taleb`, and was still latent in `stanley_druckenmiller` until mypy found it. **Every
+site that reads those dicts must go through `to_float` / `clean_series`** in
+`agents/personas_council/tools/scoring_helpers.py`.
 
 ## Conventions
 
