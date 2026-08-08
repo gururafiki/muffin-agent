@@ -42,7 +42,7 @@ skills/investment/market-regime/ (loaded on demand)
 
 ### CompositeBackend
 
-Skills files live on the local filesystem, but the deep agent's default backend is `OpenSandboxBackend` (for code execution). A `CompositeBackend` routes file reads:
+Skills files live on the local filesystem, but the deep agent's default backend is `OpenSandboxSandbox` (for code execution). A `CompositeBackend` routes file reads:
 
 ```python
 def _composite_backend(runtime):
