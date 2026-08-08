@@ -14,10 +14,17 @@ one rating language.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Generic, Literal
 
 from pydantic import BaseModel, Field
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, TypeVar
+
+# `typing_extensions.TypeVar`, not `typing.TypeVar`: the PEP 696 `default=` is
+# what keeps a bare, unparameterised `AnalystSignal` meaning
+# `AnalystSignal[dict[str, Any]]`, so existing call sites and
+# `issubclass(x, AnalystSignal)` checks keep working untouched. `typing`'s
+# TypeVar only grew `default=` in 3.13 and this package supports >=3.11.
+EvidenceT = TypeVar("EvidenceT", default="dict[str, Any]")
 
 # ── Shared node input contract ────────────────────────────────────────────────
 
@@ -88,12 +95,25 @@ class ScoreDetail(BaseModel):
 # ── Universal AnalystSignal base ──────────────────────────────────────────────
 
 
-class AnalystSignal(BaseModel):
+class AnalystSignal(BaseModel, Generic[EvidenceT]):
     """Universal output contract for any council-eligible agent.
 
     Persona-specific schemas extend this and narrow ``evidence`` to a typed
     Pydantic model.  The council judge consumes ``list[AnalystSignal]`` and
     synthesises ``CouncilSynthesisOutput`` from the ensemble.
+
+    **Generic in its evidence type.**  All 20 subclasses (13 personas + 6
+    specialists) narrow ``evidence`` from a dict to their own Pydantic model,
+    which is what the docstring below always described — but a subclass cannot
+    retype an inherited field, so every one of them was a mypy ``assignment``
+    error (20 of the 50 this repo carried).  Parameterising the base states the
+    intent instead of contradicting it: write
+    ``class WarrenBuffettSignal(AnalystSignal[WarrenBuffettEvidence])``.
+
+    ``EvidenceT`` defaults to ``dict[str, Any]``, so a bare ``AnalystSignal`` is
+    still valid and still defaults ``evidence`` to ``{}``.  Nothing reads the
+    field's contents in ``src/`` — it is carried to the judge and serialised —
+    so this changes declarations only, never runtime behaviour.
     """
 
     agent_id: str
@@ -114,7 +134,8 @@ class AnalystSignal(BaseModel):
     """1–3 sentence persona-voiced explanation citing the specific
     sub-scores or evidence that drove the rating."""
 
-    evidence: dict[str, Any] = Field(default_factory=dict)
-    """Persona-specific facts dict (sub-scores, computed values, flags).
-    Narrowed to a typed Pydantic sub-model in persona-specific signals
-    (e.g. ``WarrenBuffettSignal.evidence: WarrenBuffettEvidence``)."""
+    evidence: EvidenceT = Field(default_factory=dict)
+    """Persona-specific facts (sub-scores, computed values, flags).
+    Narrowed to a typed Pydantic sub-model by parameterising the base
+    (e.g. ``WarrenBuffettSignal(AnalystSignal[WarrenBuffettEvidence])``);
+    defaults to an empty dict when left unparameterised."""

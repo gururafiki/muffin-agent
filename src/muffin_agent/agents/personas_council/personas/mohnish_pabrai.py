@@ -70,7 +70,7 @@ class MohnishPabraiEvidence(BaseModel):
     max_score: float
 
 
-class MohnishPabraiSignal(AnalystSignal):
+class MohnishPabraiSignal(AnalystSignal[MohnishPabraiEvidence]):
     agent_id: Literal["mohnish_pabrai"] = Field(default="mohnish_pabrai")
     evidence: MohnishPabraiEvidence
 

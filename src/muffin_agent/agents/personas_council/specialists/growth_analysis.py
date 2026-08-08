@@ -51,7 +51,7 @@ class GrowthEvidence(BaseModel):
     health: dict[str, Any]
 
 
-class GrowthSignal(AnalystSignal):
+class GrowthSignal(AnalystSignal[GrowthEvidence]):
     agent_id: Literal["growth"] = Field(default="growth")
     evidence: GrowthEvidence
 

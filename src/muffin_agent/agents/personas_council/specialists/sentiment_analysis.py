@@ -61,7 +61,7 @@ class SentimentEvidence(BaseModel):
     news_weight: float
 
 
-class SentimentSignal(AnalystSignal):
+class SentimentSignal(AnalystSignal[SentimentEvidence]):
     agent_id: Literal["sentiment"] = Field(default="sentiment")
     evidence: SentimentEvidence
 

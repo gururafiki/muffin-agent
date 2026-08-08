@@ -113,7 +113,7 @@ class NassimTalebEvidence(BaseModel):
     max_score: float
 
 
-class NassimTalebSignal(AnalystSignal):
+class NassimTalebSignal(AnalystSignal[NassimTalebEvidence]):
     agent_id: Literal["nassim_taleb"] = Field(default="nassim_taleb")
     evidence: NassimTalebEvidence
 
