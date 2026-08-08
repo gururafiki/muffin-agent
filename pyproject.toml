@@ -37,7 +37,8 @@ dependencies = [
     # auth.py JWT verification (Supabase HS256; Cloudflare Access additionally
     # needs the crypto extra installed in the deployment image)
     "pyjwt>=2.13.0",
-    # FLOOR IS LOAD-BEARING — do not lower below 0.3.2.
+    # FLOOR IS LOAD-BEARING — do not lower below 0.3.2. This line is the ONLY
+    # thing keeping mcp on 1.x.
     # mcp 2.0.0 removed `RequestContext` from `mcp.shared.context`, which
     # langchain-mcp-adapters imported at module level through 0.3.1 — so a
     # resolve that took mcp 2.0.0 made EVERY graph fail to load with
@@ -45,17 +46,23 @@ dependencies = [
     # took the deployed API to 0/1 on 2026-07-28, on a rebuild that changed
     # nothing else (muffin filed langchain-ai/langchain-mcp-adapters#589).
     # 0.3.2 fixed it upstream by declaring `mcp>=1.24.0,<2.0.0` itself, so the
-    # authoritative cap now lives in adapters' own metadata and this floor is
-    # what guarantees it is present. The local `mcp<3` below is only a second
-    # line of defence — it does NOT by itself exclude mcp 2.x.
+    # cap is inherited transitively and this floor is what guarantees the capped
+    # version is the one resolved.
+    #
+    # muffin deliberately declares NO direct `mcp` bound. It used to carry
+    # `mcp<3`, which was a no-op: adapters' `<2.0.0` is strictly stronger, and
+    # `<3` would have permitted mcp 2.0.0 — the exact version that caused the
+    # outage — the moment it ever became the binding constraint. A bound that
+    # cannot block the thing it names is worse than no bound, because it reads
+    # like protection.
+    #
+    # Consequence worth knowing: real mcp-2 support is tracked upstream in
+    # langchain-mcp-adapters#578. When it ships, adapters relaxes its cap and
+    # mcp 2.x will arrive through a routine Dependabot bump of adapters. CI's
+    # resolve+import smoke test gates that, but it imports four modules and does
+    # NOT exercise MCP tool calling — so validate the tool path by hand when the
+    # adapters major that enables mcp 2 lands. See roadmap.md.
     "langchain-mcp-adapters>=0.3.2",
-    # Real mcp-2 support is tracked upstream in langchain-mcp-adapters#578.
-    # When it ships, adapters drops its own `<2.0.0` cap and mcp 2.x becomes
-    # reachable through this bound — so that upgrade must be a deliberate,
-    # smoke-tested migration, not a passive resolve. Dependabot is configured to
-    # leave this bound alone (.github/dependabot.yml): it widened `<2` to `<3`
-    # unreviewed in #145, which reopened the outage class above.
-    "mcp<3",
     "langgraph-cli>=0.4.31",
     "pydantic>=2.13.4",
     # Prompt templating
