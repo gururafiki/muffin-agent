@@ -121,9 +121,7 @@ def score_financial_health(
     return SubSignal(
         signal=_three_tier(score),
         score=score,
-        details=(
-            f"current ratio {_fmt(current_ratio)}, D/E {_fmt(debt_to_equity)}"
-        ),
+        details=(f"current ratio {_fmt(current_ratio)}, D/E {_fmt(debt_to_equity)}"),
     )
 
 
@@ -146,9 +144,7 @@ def score_price_ratios(
     return SubSignal(
         signal=signal,
         score=rich,
-        details=(
-            f"P/E {_fmt(pe_ratio)}, P/B {_fmt(pb_ratio)}, P/S {_fmt(ps_ratio)}"
-        ),
+        details=(f"P/E {_fmt(pe_ratio)}, P/B {_fmt(pb_ratio)}, P/S {_fmt(ps_ratio)}"),
     )
 
 

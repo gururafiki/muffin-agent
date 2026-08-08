@@ -96,9 +96,7 @@ async def create_valuation_methodology_agent(
     builder = (
         MuffinAgentBuilder(primary, name="valuation_methodology")
         .with_state_schema(ValuationMethodologyAgentState)
-        .with_input_prompt_template(
-            "criteria_analysis/valuation_methodology.jinja"
-        )
+        .with_input_prompt_template("criteria_analysis/valuation_methodology.jinja")
         .with_fallback_models(*fallbacks)
         .with_short_term_memory()
         .with_subagents(subagents)
