@@ -26,7 +26,11 @@ from ....sandbox.tools import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
 from ..schemas import AnalystSignal
-from ..tools.scoring_helpers import compute_price_momentum, score_insider_buy_ratio
+from ..tools.scoring_helpers import (
+    clean_series,
+    compute_price_momentum,
+    score_insider_buy_ratio,
+)
 from ..tools.sentiment import aggregate_news_sentiment
 
 logger = logging.getLogger(__name__)
@@ -197,7 +201,7 @@ def _score_druckenmiller_growth(
             score += 2
         elif eps_cagr > 0.01:
             score += 1
-    close_series = [b.get("close") for b in prices if b.get("close") is not None]
+    close_series = clean_series(b.get("close") for b in prices)
     momentum_pct: float | None = None
     if len(close_series) >= 20:
         mom = compute_price_momentum(close_series)
@@ -232,7 +236,7 @@ def _score_druckenmiller_risk_reward(
         v for v in (state.get("shareholders_equity_series") or []) if v is not None
     ]
     prices = state.get("prices_1y") or []
-    closes = [b.get("close") for b in prices if b.get("close") is not None]
+    closes = clean_series(b.get("close") for b in prices)
     score = 0
     parts: list[str] = []
     de: float | None = None
