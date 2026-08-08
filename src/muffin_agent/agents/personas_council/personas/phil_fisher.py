@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import statistics
+from collections.abc import Sequence
 from typing import Annotated, Any, Literal, cast
 
 from langchain.agents import AgentState
@@ -180,7 +181,10 @@ class PhilFisherState(AgentState):
 # ── Composite scorers ─────────────────────────────────────────────────────────
 
 
-def _cagr(series: list[float | None]) -> float | None:
+def _cagr(series: Sequence[float | None]) -> float | None:
+    # Sequence, not list: `list` is invariant, so a caller that has already
+    # filtered out the Nones (giving `list[float]`) cannot pass it to a
+    # `list[float | None]` parameter. Both callers here do exactly that.
     vals = [v for v in series if v is not None]
     if len(vals) < 2 or vals[0] is None or vals[0] <= 0:
         return None
