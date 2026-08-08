@@ -31,15 +31,15 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       # An outage on 2026-07-28 shipped because dependencies INSTALLED but the
@@ -68,7 +68,7 @@ jobs:
           pip install --upgrade langgraph-cli
           langgraph dockerfile Dockerfile.langgraph
       - name: Build & push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile.langgraph
@@ -82,7 +82,7 @@ jobs:
       # built-in GITHUB_TOKEN can't dispatch to another repo.
       - name: Trigger deploy
         if: github.ref == 'refs/heads/main'
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
           repository: ${{ github.repository_owner }}/muffin-deployment
