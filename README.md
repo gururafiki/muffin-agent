@@ -623,10 +623,18 @@ The OpenSandbox server manages container lifecycle. Start it with Docker:
 docker run -d --name opensandbox \
   -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/alibaba/opensandbox/server:latest
+  opensandbox/server:latest
 ```
 
 The server starts on `http://localhost:8080`. No API key is needed for local development.
+
+> This used to name `ghcr.io/alibaba/opensandbox/server:latest`, which does not exist — it returns
+> `denied: denied`. The image is on Docker Hub, and `opensandbox/server:latest` is what
+> `muffin-deployment/stack/docker-compose.yaml` has always deployed. If you would rather not run an
+> image at all: `pip install opensandbox-server`, then `opensandbox-server init-config ~/.sandbox.toml
+> --example docker` and `opensandbox-server`. A host-native server on macOS needs
+> `OPENSANDBOX_USE_SERVER_PROXY=false`, because it cannot reach a sandbox container's bridge IP through
+> Docker Desktop's VM — only its published port.
 
 > **Local stack**: bringing up [`muffin-deployment/compose`](https://github.com/gururafiki/muffin-deployment/tree/main/compose) starts `opensandbox-server` automatically — no manual step required.
 
