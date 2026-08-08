@@ -18,7 +18,11 @@ on:
 
 concurrency:
   group: build-agent-${{ github.ref }}
-  cancel-in-progress: true
+  # NEVER cancel a `main` build. Two merges seconds apart used to cancel the
+  # first one's run, and with it the resolve+import smoke test below — which is
+  # exactly how #145 (`mcp<2` widened to `<3`) shipped with no verification.
+  # Queue main builds instead so every merged commit gets its own verdict.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:

@@ -10,6 +10,12 @@ license = { text = "MIT" }
 requires-python = ">=3.11,<4.0"
 dependencies = [
     # TEMPORARY FORK PIN — drop once langchain-ai/langgraph#8470 ships.
+    # Status 2026-08-08: a maintainer took the fix over. muffin's own PR #8471
+    # stayed closed (the require-issue-link bot), but langgraph#8538 is open and
+    # co-authored to us, with a broader fix than ours (it also covers
+    # `get_state(subgraphs=True)` and the update_state write path). NOT merged —
+    # under review, with the reviewer questioning whether it is a bug at all.
+    # Track #8538, not #8471.
     # Upstream: reading a NESTED subgraph's state hydrates every DeltaChannel
     # EMPTY, silently. `_prepare_state_snapshot` hydrates channels with
     # `self.checkpointer` alone, but a subgraph from `get_subgraphs()` was
@@ -31,13 +37,24 @@ dependencies = [
     # auth.py JWT verification (Supabase HS256; Cloudflare Access additionally
     # needs the crypto extra installed in the deployment image)
     "pyjwt>=2.13.0",
-    "langchain-mcp-adapters>=0.3.1",
+    # FLOOR IS LOAD-BEARING — do not lower below 0.3.2.
     # mcp 2.0.0 removed `RequestContext` from `mcp.shared.context`, which
-    # langchain-mcp-adapters (through 0.3.1) still imports at module level — so
-    # an unpinned resolve takes mcp 2.0.0 and EVERY graph fails to load with
-    # `GraphLoadError: cannot import name 'RequestContext'`. This is not
-    # theoretical: it took the deployed API to 0/1 on 2026-07-28, on a rebuild
-    # that changed nothing else. Lift the cap once adapters supports mcp 2.
+    # langchain-mcp-adapters imported at module level through 0.3.1 — so a
+    # resolve that took mcp 2.0.0 made EVERY graph fail to load with
+    # `GraphLoadError: cannot import name 'RequestContext'`. Not theoretical: it
+    # took the deployed API to 0/1 on 2026-07-28, on a rebuild that changed
+    # nothing else (muffin filed langchain-ai/langchain-mcp-adapters#589).
+    # 0.3.2 fixed it upstream by declaring `mcp>=1.24.0,<2.0.0` itself, so the
+    # authoritative cap now lives in adapters' own metadata and this floor is
+    # what guarantees it is present. The local `mcp<3` below is only a second
+    # line of defence — it does NOT by itself exclude mcp 2.x.
+    "langchain-mcp-adapters>=0.3.2",
+    # Real mcp-2 support is tracked upstream in langchain-mcp-adapters#578.
+    # When it ships, adapters drops its own `<2.0.0` cap and mcp 2.x becomes
+    # reachable through this bound — so that upgrade must be a deliberate,
+    # smoke-tested migration, not a passive resolve. Dependabot is configured to
+    # leave this bound alone (.github/dependabot.yml): it widened `<2` to `<3`
+    # unreviewed in #145, which reopened the outage class above.
     "mcp<3",
     "langgraph-cli>=0.4.31",
     "pydantic>=2.13.4",
@@ -48,7 +65,16 @@ dependencies = [
     "rich>=15.0.0",
     # Observability
     "langfuse>=4.14.0",
-    # TEMPORARY FORK PIN — drop once langchain-ai/deepagents#5131 ships.
+    # PERMANENT FORK PIN — assume this is never upstreamed.
+    # Tracked in langchain-ai/deepagents#5136 (NOT #5131, which the triage bot
+    # closed as NOT_PLANNED for being filed programmatically; #5132, the PR, was
+    # auto-closed pending assignment). As of 2026-08-08 #5136 has no maintainer
+    # response, and a langgraph maintainer independently adjudicated it in the
+    # langgraph#8538 thread: reading a subagent through tool indirection is a
+    # DOCUMENTED, INTENTIONAL limitation, and the `tools:<uuid>` checkpoints were
+    # declared "internal" when deepagents#4818 and #2629 were closed. This pin
+    # lifts an intentional limitation rather than carrying a pending bugfix, so
+    # budget for maintaining it indefinitely — re-check on each deepagents minor.
     # A `task` subagent's checkpoints are written but unreadable:
     # `get_state_history` on its namespace raises "Subgraph tools not found",
     # because namespace resolution reads `node.subgraphs` and a subagent lives
