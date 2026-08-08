@@ -22,13 +22,14 @@ async def _stream_fundamentals(ticker: str, query: str | None) -> None:
     """Build the equity fundamentals agent and stream output."""
     from langchain_core.runnables import RunnableConfig
 
-    from muffin_agent.agents.data_collection import create_equity_fundamentals_agent
-    from muffin_agent.model_config import ModelConfiguration
+    from muffin_agent.agents.data_collection import (
+        create_equity_fundamentals_data_collection_agent,
+    )
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
-    agent = await create_equity_fundamentals_agent(config)
+    agent = await create_equity_fundamentals_data_collection_agent(config)
 
     prompt = (
         f"Ticker: {ticker}. {query}"
@@ -62,13 +63,14 @@ async def _stream_price(ticker: str, query: str | None) -> None:
     """Build the equity price agent and stream output."""
     from langchain_core.runnables import RunnableConfig
 
-    from muffin_agent.agents.data_collection import create_equity_price_agent
-    from muffin_agent.model_config import ModelConfiguration
+    from muffin_agent.agents.data_collection import (
+        create_equity_price_data_collection_agent,
+    )
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
-    agent = await create_equity_price_agent(config)
+    agent = await create_equity_price_data_collection_agent(config)
 
     prompt = (
         f"Ticker: {ticker}. {query}"
@@ -105,10 +107,9 @@ async def _stream_estimates(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_equity_estimates_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_equity_estimates_data_collection_agent(config)
 
@@ -147,10 +148,9 @@ async def _stream_ownership(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_equity_ownership_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_equity_ownership_data_collection_agent(config)
 
@@ -187,10 +187,9 @@ async def _stream_news(ticker: str, query: str | None) -> None:
     from langchain_core.runnables import RunnableConfig
 
     from muffin_agent.agents.data_collection import create_news_data_collection_agent
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_news_data_collection_agent(config)
 
@@ -227,10 +226,9 @@ async def _stream_options(ticker: str, query: str | None) -> None:
     from langchain_core.runnables import RunnableConfig
 
     from muffin_agent.agents.data_collection import create_options_data_collection_agent
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_options_data_collection_agent(config)
 
@@ -269,10 +267,9 @@ async def _stream_economy_macro(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_economy_macro_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_economy_macro_data_collection_agent(config)
 
@@ -313,10 +310,9 @@ async def _stream_fixed_income(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_fixed_income_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_fixed_income_data_collection_agent(config)
 
@@ -358,10 +354,9 @@ async def _stream_discovery_screening(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_discovery_screening_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_discovery_screening_data_collection_agent(config)
 
@@ -403,10 +398,9 @@ async def _stream_etf_index(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_etf_index_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_etf_index_data_collection_agent(config)
 
@@ -445,10 +439,9 @@ async def _stream_currency_commodities(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_currency_commodities_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_currency_commodities_data_collection_agent(config)
 
@@ -490,10 +483,9 @@ async def _stream_fama_french(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_fama_french_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_fama_french_data_collection_agent(config)
 
@@ -535,10 +527,9 @@ async def _stream_regulatory_filings(ticker: str, query: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_regulatory_filings_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_regulatory_filings_data_collection_agent(config)
 
@@ -577,11 +568,10 @@ async def _stream_web_search(query: str, ticker: str | None) -> None:
     from muffin_agent.agents.data_collection import (
         create_web_search_data_collection_agent,
     )
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
     session_id = ticker or query[:40].replace(" ", "-")
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=session_id)
     agent = await create_web_search_data_collection_agent(config)
 
@@ -614,10 +604,9 @@ async def _stream_criterion(ticker: str, criterion: str, query: str | None) -> N
     from langchain_core.runnables import RunnableConfig
 
     from muffin_agent.agents import create_criterion_evaluation_agent
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_criterion_evaluation_agent(config)
 
@@ -656,10 +645,9 @@ async def _stream_evaluate(ticker: str, query: str | None) -> None:
     from langchain_core.runnables import RunnableConfig
 
     from muffin_agent.agents import create_stock_evaluation_agent
-    from muffin_agent.model_config import ModelConfiguration
     from muffin_agent.utils.observability import setup_tracing
 
-    config = ModelConfiguration.from_runnable_config(RunnableConfig(configurable={}))
+    config = RunnableConfig(configurable={})
     callbacks = setup_tracing(session_id=ticker)
     agent = await create_stock_evaluation_agent(config)
 
