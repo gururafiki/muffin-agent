@@ -314,9 +314,7 @@ def estimate_maintenance_capex(
 
     # capex/revenue ratios over the last 5 periods (most recent window)
     capex_ratios: list[float] = []
-    for capex, revenue in zip(
-        capex_series[-5:], revenue_series[-5:], strict=False
-    ):
+    for capex, revenue in zip(capex_series[-5:], revenue_series[-5:], strict=False):
         if capex is not None and revenue is not None and revenue > 0:
             capex_ratios.append(abs(capex) / revenue)
 
