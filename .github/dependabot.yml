@@ -1,11 +1,38 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
+# Dependabot configuration.
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
+#
+# Note there is no `docker` ecosystem here on purpose: this repo has no
+# Dockerfile of its own — CI generates one with `langgraph dockerfile`, so the
+# base image is chosen by langgraph-cli and tracked through that dependency.
 version: 2
 updates:
-  - package-ecosystem: "pip" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "pip"
+    directory: "/"
     schedule:
       interval: "weekly"
+    # One PR for the routine noise, individual PRs for majors (which deserve to
+    # be read). Without this the weekly batch is ~10 PRs, and reviewing them in
+    # bulk is how #145 slipped through.
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # `mcp<3` is a SAFETY bound, not a staleness artefact — see the comment on
+      # it in pyproject.toml. Dependabot widened it from `<2` to `<3` in #145,
+      # which silently reopened the 2026-07-28 outage class (every graph failing
+      # to load on `RequestContext`). Widening it must be a deliberate migration
+      # gated on langchain-mcp-adapters#578, so Dependabot does not touch it.
+      - dependency-name: "mcp"
+      # Both fork pins are direct git URLs at a fixed commit. Dependabot cannot
+      # reason about them, and the version they shadow is decided by the
+      # upstream issues in pyproject.toml, not by a release feed.
+      - dependency-name: "langgraph"
+      - dependency-name: "deepagents"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
