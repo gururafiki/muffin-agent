@@ -79,7 +79,7 @@ class MichaelBurryEvidence(BaseModel):
     max_score: float
 
 
-class MichaelBurrySignal(AnalystSignal):
+class MichaelBurrySignal(AnalystSignal[MichaelBurryEvidence]):
     agent_id: Literal["michael_burry"] = Field(default="michael_burry")
     evidence: MichaelBurryEvidence
 

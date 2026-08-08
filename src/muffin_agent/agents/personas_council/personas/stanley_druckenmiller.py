@@ -95,7 +95,7 @@ class StanleyDruckenmillerEvidence(BaseModel):
     max_score: float
 
 
-class StanleyDruckenmillerSignal(AnalystSignal):
+class StanleyDruckenmillerSignal(AnalystSignal[StanleyDruckenmillerEvidence]):
     agent_id: Literal["stanley_druckenmiller"] = Field(default="stanley_druckenmiller")
     evidence: StanleyDruckenmillerEvidence
 

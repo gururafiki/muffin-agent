@@ -86,7 +86,7 @@ class CathieWoodEvidence(BaseModel):
     max_score: float
 
 
-class CathieWoodSignal(AnalystSignal):
+class CathieWoodSignal(AnalystSignal[CathieWoodEvidence]):
     """Cathie Wood structured signal."""
 
     agent_id: Literal["cathie_wood"] = Field(default="cathie_wood")

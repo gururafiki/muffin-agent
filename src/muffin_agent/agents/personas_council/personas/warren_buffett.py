@@ -174,7 +174,7 @@ class WarrenBuffettEvidence(BaseModel):
     max_score: float
 
 
-class WarrenBuffettSignal(AnalystSignal):
+class WarrenBuffettSignal(AnalystSignal[WarrenBuffettEvidence]):
     """Narrowed signal type with a typed ``WarrenBuffettEvidence``."""
 
     agent_id: Literal["warren_buffett"] = Field(default="warren_buffett")
