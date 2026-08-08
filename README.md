@@ -526,7 +526,7 @@ Filesystem routes are composed opt-in through `MuffinAgentBuilder`:
 
 | Prefix | Backend | Lifetime | Purpose | Enabled by |
 |---|---|---|---|---|
-| (no prefix) | `OpenSandboxBackend` | thread (container recycles) | `execute_python` + ephemeral workspace. Auto-offloaded tool outputs (>20k tokens) land here. | `.with_sandbox()` |
+| (no prefix) | `OpenSandboxSandbox` | thread (container recycles) | `execute_python` + ephemeral workspace. Auto-offloaded tool outputs (>20k tokens) land here. | `.with_sandbox()` |
 | `/scratch/` | `StateBackend` | thread (checkpointed) | Short-term notes that survive sandbox recycling. | `.with_short_term_memory()` |
 | `/skills/` | `FilesystemBackend` (read-only) | static | Shipped skill files, auto-matched by built-in `SkillsMiddleware`. | `.with_skills(paths)` |
 | `/memories/` | `StoreBackend`, ns `("memories", user_id)` | cross-thread, per-user | Long-term memory (AGENTS.md). Auto-loaded into system prompt by `MemoryMiddleware` (stock deepagents middleware); LLM updates via `edit_file`. | `.with_persistent_memory()` |
@@ -623,10 +623,18 @@ The OpenSandbox server manages container lifecycle. Start it with Docker:
 docker run -d --name opensandbox \
   -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/alibaba/opensandbox/server:latest
+  opensandbox/server:latest
 ```
 
 The server starts on `http://localhost:8080`. No API key is needed for local development.
+
+> This used to name `ghcr.io/alibaba/opensandbox/server:latest`, which does not exist — it returns
+> `denied: denied`. The image is on Docker Hub, and `opensandbox/server:latest` is what
+> `muffin-deployment/stack/docker-compose.yaml` has always deployed. If you would rather not run an
+> image at all: `pip install opensandbox-server`, then `opensandbox-server init-config ~/.sandbox.toml
+> --example docker` and `opensandbox-server`. A host-native server on macOS needs
+> `OPENSANDBOX_USE_SERVER_PROXY=false`, because it cannot reach a sandbox container's bridge IP through
+> Docker Desktop's VM — only its published port.
 
 > **Local stack**: bringing up [`muffin-deployment/compose`](https://github.com/gururafiki/muffin-deployment/tree/main/compose) starts `opensandbox-server` automatically — no manual step required.
 
@@ -656,9 +664,10 @@ cp .env.example .env
 | `TEMPERATURE` | No | LLM temperature (0.0–2.0) | Default: `0.1` |
 | `LLM_SDK_RETRIES` | No | SDK-level retries for connect-time errors (network, timeouts, 5xx/429 before any response body arrives). Forwarded to `ChatOpenAI`/`ChatAnthropic`/`ChatOpenRouter` as `max_retries=` (`ChatOllama` has no such param — its retries rely on `ModelRetryMiddleware`). Mid-stream errors are retried separately by LangChain's `ModelRetryMiddleware` (hardcoded defaults in `MuffinAgentBuilder`); transient tool errors are retried by `ToolRetryMiddleware`. | Default: `6` |
 | `OPENBB_MCP_URL` | No | OpenBB MCP server URL | Default: `http://127.0.0.1:8001/mcp` |
-| `OPENSANDBOX_URL` | No | OpenSandbox server address (`host:port`) | Default: `localhost:8080` |
+| `OPENSANDBOX_URL` | No | OpenSandbox server address (`host:port`). Read by [`langchain-opensandbox`](https://github.com/gururafiki/langchain-opensandbox). | Default: `localhost:8080` |
 | `OPENSANDBOX_API_KEY` | No | OpenSandbox API key (omit if no auth) | — |
 | `OPENSANDBOX_IMAGE` | No | Docker image for sandbox containers | Default: `python:3.11-slim` |
+| `OPENSANDBOX_USE_SERVER_PROXY` | No | Route sandbox traffic through the OpenSandbox server instead of dialling container ports directly. Required wherever the agent cannot reach those ports — e.g. the Swarm overlay/bridge deployment, where the server spawns sandboxes on the host via `docker.sock`. Set `false` only on host/flat networks where direct access is reachable and faster. | Default: `true` |
 | `SEARXNG_URL` | No | SearxNG base URL | Default: `http://127.0.0.1:8888`. Auto-configured in docker-compose. |
 | `FIRECRAWL_MCP_URL` | No | Firecrawl MCP server URL | Default: `http://127.0.0.1:3000/mcp`. Auto-configured in docker-compose. |
 | `FIRECRAWL_API_KEY` | No | Firecrawl API key | Default: `local` (any value works with `USE_DB_AUTHENTICATION=false`) |

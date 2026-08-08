@@ -7,13 +7,16 @@ variables via ``Configuration.from_runnable_config``.
 Sandbox lifecycle
 -----------------
 No containers are created at import time.  ``create_stock_evaluation_agent``
-attaches a ``SandboxRegistry`` as the deepagents backend.  The registry
-provisions one ``OpenSandboxBackend`` per ``thread_id`` on the first tool call
-for that conversation and reuses it for all subsequent calls in the same thread.
-Parallel conversations are fully isolated.
+attaches ``get_backend`` (from ``langchain-opensandbox``, re-exported by
+:mod:`muffin_agent.sandbox`) as the deepagents backend.  It is a lazy factory:
+it dials nothing until the agent actually touches the sandbox, then finds or
+creates one tagged with the conversation's ``thread_id`` and reuses it for the
+rest of that thread.  Parallel conversations are fully isolated.
 
-The OpenBB MCP server must be reachable when this module is imported because
-MCP tools are fetched eagerly during graph construction.
+The OpenBB MCP server must be reachable when this module is imported: it builds
+the graph at import time, and graph construction loads MCP tools.  Discovery is
+cached per connection set (see ``agents/data_collection/utils.py``), so the cost
+is paid once per process rather than per request.
 """
 
 import asyncio

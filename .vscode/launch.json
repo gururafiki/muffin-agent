@@ -12,8 +12,7 @@
                 "127.0.0.1",
                 "--port",
                 "8123",
-                "--no-browser",
-                "--allow-blocking"
+                "--no-browser"
             ],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",

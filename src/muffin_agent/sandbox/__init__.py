@@ -1,53 +1,56 @@
-"""OpenSandbox integration for muffin agents.
+"""Sandbox integration for muffin agents.
 
-Provides three integration points:
+The OpenSandbox backend, the thread-scoped sandbox factory and the generic
+``execute_python`` tool live in
+`langchain-opensandbox <https://github.com/gururafiki/langchain-opensandbox>`_
+— they are not finance-specific and were extracted so the community can use
+them. This package re-exports them so muffin's own import sites stay stable,
+and adds the two bridge tools that ARE muffin's, because they route through
+``AccessControlledStore`` and its namespace permissions.
 
-1. **get_backend** — ``BackendFactory`` function that discovers or creates
-   a sandbox by ``thread_id`` metadata via the OpenSandbox API. Works with
-   both ``ToolRuntime`` and ``Runtime`` contexts (``thread_id`` comes from
-   ``langgraph.config.get_config()``). Pass as ``backend=get_backend`` to
-   ``create_deep_agent``.
+What comes from the package:
 
-2. **get_sandbox** / **aget_sandbox** — Sync and async functions that find
-   or create a sandbox for the current thread. Used internally by
-   ``execute_python`` and available for direct use when a raw sandbox
-   instance is needed.
+1. **get_backend** — a ``BackendFactory`` that discovers or creates a sandbox
+   by ``thread_id`` metadata. Works with both ``ToolRuntime`` and ``Runtime``
+   contexts (``thread_id`` comes from ``langgraph.config.get_config()``). Pass
+   as ``backend=get_backend`` to ``create_deep_agent``, or call
+   ``MuffinAgentBuilder.with_sandbox()``.
 
-3. **execute_python** — LangChain async tool that discovers the sandbox for
-   the current thread and executes Python code in it. Used for ad-hoc
-   calculations not covered by the financial tools in :mod:`muffin_agent.tools`.
+2. **get_sandbox** / **aget_sandbox** — sync and async functions returning the
+   raw sandbox for the current thread, for callers that need the client itself.
 
-4. **write_store_data_to_sandbox** / **read_sandbox_file_to_store** — Bridge
-   tools that transfer data between the LangGraph store and the sandbox
-   filesystem.  Namespace access is governed by ``StoreConfiguration``.
+3. **execute_python** — LangChain async tool running Python in that sandbox.
+   Used for ad-hoc calculations not covered by the deterministic financial
+   tools in :mod:`muffin_agent.tools`.
 
-Usage::
+What is muffin's, defined in :mod:`muffin_agent.sandbox.tools`:
 
-    from muffin_agent.sandbox import get_backend, execute_python
+4. **write_store_data_to_sandbox** / **read_sandbox_file_to_store** — bridge
+   tools moving data between the LangGraph store and the sandbox filesystem.
+   Namespace access is governed by ``StoreConfiguration``.
 
-    # Deep agent with sandbox
-    agent = create_deep_agent(
-        model=llm,
-        backend=get_backend,
-        ...
-    )
+Settings are unchanged: ``OPENSANDBOX_URL``, ``OPENSANDBOX_API_KEY``,
+``OPENSANDBOX_IMAGE`` and ``OPENSANDBOX_USE_SERVER_PROXY``, environment first,
+then the run's ``configurable``.
 
 Limitations:
-    - If the sandbox dies mid-conversation (e.g. 1-hour timeout, container
-      crash), a new container is created transparently on the next call.
-      Any in-sandbox state (installed packages, written files) is lost.
+    If the sandbox dies mid-conversation (e.g. 1-hour timeout, container
+    crash), a new container is created transparently on the next call.
+    Any in-sandbox state (installed packages, written files) is lost.
 """
 
-from .backend import OpenSandboxBackend
-from .factory import aget_sandbox, get_backend, get_sandbox
+from langchain_opensandbox import OpenSandboxSandbox, OpenSandboxSettings
+from langchain_opensandbox.factory import aget_sandbox, get_backend, get_sandbox
+from langchain_opensandbox.tools import execute_python
+
 from .tools import (
-    execute_python,
     read_sandbox_file_to_store,
     write_store_data_to_sandbox,
 )
 
 __all__ = [
-    "OpenSandboxBackend",
+    "OpenSandboxSandbox",
+    "OpenSandboxSettings",
     "aget_sandbox",
     "execute_python",
     "get_backend",
