@@ -48,6 +48,17 @@ jobs:
       - name: Ruff lint
         run: ruff check src/ tests/
       - name: Unit tests
+        # 37 unit tests build a graph, and building one constructs the chat
+        # model, which raises `ValueError: OpenAI API key not configured` when
+        # the key is absent. They need the key to EXIST, not to be valid — no
+        # request is ever made. Locally this is invisible because
+        # `BaseConfiguration` calls `load_dotenv()` and a developer has a .env,
+        # which is exactly why this only surfaced in CI.
+        #
+        # Ideally compiling a graph would not require credentials at all; until
+        # that is worth changing (roadmap), a dummy value is the honest fix.
+        env:
+          OPENAI_API_KEY: dummy-key-not-used-no-request-is-made
         run: pytest -m unit --no-cov
 
   imports:
