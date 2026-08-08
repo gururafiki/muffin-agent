@@ -460,15 +460,23 @@ Ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).  Guide: [
   16 dead CLI commands and a latent `TypeError` in `stanley_druckenmiller`.
 - [x] **Dependabot: protect deliberate safety bounds.** It widened `mcp<2` to `<3` unreviewed (#145),
   reopening the 2026-07-28 GraphLoadError outage class. Floor raised to
-  `langchain-mcp-adapters>=0.3.2` so the upstream cap is guaranteed, and `mcp` is now in `ignore`.
+  `langchain-mcp-adapters>=0.3.2` so the upstream cap is inherited and guaranteed.
+- [x] **Dropped the direct `mcp` bound entirely.** `mcp<3` was a no-op — adapters' own
+  `mcp>=1.24.0,<2.0.0` is strictly stronger — and it *permitted* mcp 2.0.0, the exact version that
+  caused the outage, so it could never block what its comment claimed. A bound that cannot block the
+  thing it names reads like protection without being it. Verified after removal: resolving in the
+  runtime base image with `-c /api/constraints.txt` still gives **mcp 1.29.0** and every graph imports.
 - [ ] **Compiling a graph should not require credentials.** 37 unit tests fail unless
   `OPENAI_API_KEY` merely *exists* — they build a graph, which constructs the chat model. No request
   is ever made. CI passes a dummy value as a stopgap; it is invisible locally because
   `BaseConfiguration` calls `load_dotenv()`. Fix by deferring model construction, or by letting the
   provider branches build a placeholder when no key is present.
-- [ ] **Lift `mcp<3` deliberately when langchain-mcp-adapters#578 ships.** That upstream issue is real
-  mcp-2 support; when it lands, adapters drops its own `<2.0.0` cap and mcp 2.x becomes reachable
-  through our bound. Do it as a smoke-tested migration, not a passive resolve.
+- [ ] **Validate MCP tool calling by hand when langchain-mcp-adapters#578 ships.** That upstream issue
+  is real mcp-2 support. When it lands, adapters relaxes its `<2.0.0` cap and **mcp 2.x will arrive
+  through a routine Dependabot bump of adapters** — muffin no longer carries a bound that would stop
+  it, by choice. CI's resolve+import smoke test gates the import-time break that caused the original
+  outage, but it imports four modules and does not exercise MCP tool calling, which is where a subtler
+  mcp-2 regression would show. Exercise a real OpenBB/Firecrawl tool path on that PR before merging.
 - [ ] **Re-check the deepagents fork pin on each minor.** Treated as permanent — deepagents#5136 has
   no maintainer response and a langgraph maintainer independently confirmed the underlying behaviour
   is documented and intentional. Track langgraph#8538 for the langgraph pin instead of the closed #8471.

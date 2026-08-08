@@ -17,12 +17,13 @@ updates:
       minor-and-patch:
         update-types: ["minor", "patch"]
     ignore:
-      # `mcp<3` is a SAFETY bound, not a staleness artefact — see the comment on
-      # it in pyproject.toml. Dependabot widened it from `<2` to `<3` in #145,
-      # which silently reopened the 2026-07-28 outage class (every graph failing
-      # to load on `RequestContext`). Widening it must be a deliberate migration
-      # gated on langchain-mcp-adapters#578, so Dependabot does not touch it.
-      - dependency-name: "mcp"
+      # There is deliberately no `mcp` entry here. muffin no longer declares a
+      # direct `mcp` bound at all — the cap is inherited from
+      # langchain-mcp-adapters, whose floor in pyproject.toml is what keeps mcp
+      # on 1.x. Dependabot only proposes changes to bounds that exist, so there
+      # is nothing here to widen. (It widened the old, useless `mcp<3` from `<2`
+      # in #145; the fix was to delete the bound, not to guard it.)
+      #
       # Both fork pins are direct git URLs at a fixed commit. Dependabot cannot
       # reason about them, and the version they shadow is decided by the
       # upstream issues in pyproject.toml, not by a release feed.
