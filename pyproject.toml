@@ -32,7 +32,7 @@ dependencies = [
     # Ollama Cloud / local Ollama via the native /api/chat API (reliable tool
     # calling; the OpenAI-compat /v1 path is not) — see model_config.py.
     "langchain-ollama>=1.1.0",
-    "python-dotenv>=1.0",
+    "python-dotenv>=1.2.2",
     "langgraph-sdk>=0.4.2",
     # auth.py JWT verification (Supabase HS256; Cloudflare Access additionally
     # needs the crypto extra installed in the deployment image)
