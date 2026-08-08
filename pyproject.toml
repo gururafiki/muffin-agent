@@ -103,7 +103,7 @@ dependencies = [
     # bound. `opensandbox` itself arrives transitively through it.
     # `opensandbox-code-interpreter` was dropped in the same pass — it had been
     # declared since the original sandbox work and imported nowhere.
-    "langchain-opensandbox @ git+https://github.com/gururafiki/langchain-opensandbox@ccabc4570314fca12066820d4d3b49a95b5a4ee5",
+    "langchain-opensandbox @ git+https://github.com/gururafiki/langchain-opensandbox@39a3c92b6f344de22d239a893a083084f22569fc",
     # Technical-indicator computation (trading_decision Market analyst)
     "stockstats>=0.6.8",
     "pandas>=3.0.5",
