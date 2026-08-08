@@ -99,11 +99,12 @@ dependencies = [
     # 2026-08-08 — none of it was finance-specific, and OpenSandbox was the one
     # mainstream sandbox provider with no LangChain partner package. muffin
     # keeps only the store bridge tools (they need `AccessControlledStore`).
-    # Pinned to a COMMIT until 0.1.0 is on PyPI; then this becomes a version
-    # bound. `opensandbox` itself arrives transitively through it.
-    # `opensandbox-code-interpreter` was dropped in the same pass — it had been
-    # declared since the original sandbox work and imported nowhere.
-    "langchain-opensandbox @ git+https://github.com/gururafiki/langchain-opensandbox@2761c6c6d92fed22dcd1fd30a1f37b6cf92f4447",
+    # `opensandbox` itself arrives transitively through it.
+    # FLOOR IS LOAD-BEARING: 0.1.0 is the first release that makes sandbox
+    # find-or-create atomic per thread_id. Below it, parallel tool calls on a
+    # thread with no sandbox yet each create their OWN container — three
+    # `write_file` calls all report success and the next `ls` shows one file.
+    "langchain-opensandbox>=0.1.0",
     # Technical-indicator computation (trading_decision Market analyst)
     "stockstats>=0.6.8",
     "pandas>=3.0.5",
