@@ -7,7 +7,7 @@ performance, market cap, spreads) via OpenBB MCP tools.
 from langchain_core.runnables import RunnableConfig
 
 from ...model_config import ModelConfiguration
-from ...sandbox.tools import execute_python
+from ...sandbox import execute_python
 from ...utils.agent_builder import MuffinAgentBuilder
 from .utils import get_tools
 

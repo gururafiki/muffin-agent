@@ -1,4 +1,7 @@
-"""Unit tests for sandbox tools."""
+"""Unit tests for the store ↔ sandbox bridge tools.
+
+``execute_python`` lives in ``langchain-opensandbox`` and is tested there.
+"""
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -48,97 +51,6 @@ def _make_sandbox(
     )
 
     return sandbox
-
-
-def _make_runtime(store=None):
-    """Return a mock ToolRuntime."""
-    runtime = MagicMock()
-    runtime.config = {"configurable": {}}
-    runtime.store = store
-    return runtime
-
-
-async def _invoke(code):
-    """Call execute_python's underlying coroutine directly."""
-    from muffin_agent.sandbox.tools import execute_python
-
-    runtime = _make_runtime()
-    return await execute_python.coroutine(code, runtime)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestExecutePythonTool:
-    def test_is_named_execute_python(self):
-        from muffin_agent.sandbox.tools import execute_python
-
-        assert execute_python.name == "execute_python"
-
-    @pytest.mark.asyncio
-    async def test_successful_execution_returns_output(self):
-        sandbox = _make_sandbox(exec_output="hello world\n", exec_exit_code=0)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            result = await _invoke("print('hello world')")
-
-        assert result == "hello world\n"
-        sandbox.__aexit__.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_write_failure_returns_error_message(self):
-        sandbox = _make_sandbox(write_raises=True)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            result = await _invoke("print(1)")
-
-        assert "Failed to write" in result
-        sandbox.commands.run.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_nonzero_exit_code_returns_error_with_output(self):
-        err_output = "NameError: name 'x' is not defined\n"
-        sandbox = _make_sandbox(exec_output=err_output, exec_exit_code=1)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            result = await _invoke("print(x)")
-
-        assert "Execution failed" in result
-        assert "exit 1" in result
-        assert "NameError" in result
-
-    @pytest.mark.asyncio
-    async def test_no_output_returns_placeholder(self):
-        sandbox = _make_sandbox(exec_output="", exec_exit_code=0)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            result = await _invoke("x = 1 + 1")
-
-        assert result == "(no output)"
-
-    @pytest.mark.asyncio
-    async def test_cleanup_removes_temp_file(self):
-        sandbox = _make_sandbox(exec_output="ok\n", exec_exit_code=0)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)):
-            await _invoke("print('ok')")
-
-        assert sandbox.commands.run.call_count == 2
-        cleanup_cmd = sandbox.commands.run.call_args_list[1].args[0]
-        assert cleanup_cmd.startswith("rm -f /tmp/muffin_exec_")
-
-    @pytest.mark.asyncio
-    async def test_sandbox_discovered_via_aget_sandbox(self):
-        sandbox = _make_sandbox(exec_output="found\n", exec_exit_code=0)
-
-        with patch(_PATCH_AGET, AsyncMock(return_value=sandbox)) as mock_aget:
-            result = await _invoke("print('found')")
-
-        mock_aget.assert_called_once()
-        assert result == "found\n"
 
 
 # ---------------------------------------------------------------------------

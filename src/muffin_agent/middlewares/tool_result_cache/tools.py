@@ -16,11 +16,11 @@ import pkgutil
 
 from langchain_core.tools import BaseTool, tool
 from langchain_mcp_adapters.sessions import create_session
+from langchain_opensandbox.factory import aget_sandbox
 from langgraph.prebuilt import ToolRuntime
 from mcp.types import PaginatedRequestParams
 
 from ...mcp_config import McpConfiguration
-from ...sandbox.factory import aget_sandbox
 from .config import ToolResultCacheConfiguration
 
 # ── Cache discovery ──────────────────────────────────────────────────────────

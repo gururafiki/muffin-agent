@@ -10,8 +10,9 @@ Two boundaries are faked together:
    raises ``ConnectError``. We swap it for an in-memory ``StateBackend`` (no
    network; execution unsupported, so the unused ``execute`` tool is simply
    filtered out).
-2. **``execute_python``** (``aget_sandbox``). Our own ``execute_python`` tool
-   drives a sandbox as an async context manager: ``files.write_file`` then
+2. **``execute_python``** (``aget_sandbox``). The ``execute_python`` tool from
+   ``langchain-opensandbox`` drives a sandbox as an async context manager:
+   ``files.write_file`` then
    ``commands.run`` (result exposes ``.logs.stdout`` / ``.logs.stderr`` of objects
    with ``.text``, plus ``.id`` / ``.error``) and ``commands.get_command_status``.
    The fake reproduces just that surface and returns a canned stdout.
@@ -79,8 +80,20 @@ def _in_memory_backend(_runtime: object):  # noqa: ANN202
 # agent factory might resolve so this helper works regardless of agent type.
 _GET_BACKEND_TARGETS = (
     "muffin_agent.utils.agent_builder.get_backend",  # MuffinAgentBuilder.with_sandbox
-    "muffin_agent.sandbox.factory.get_backend",  # canonical source
-    "muffin_agent.sandbox.get_backend",  # package re-export
+    "langchain_opensandbox.factory.get_backend",  # canonical source
+    "muffin_agent.sandbox.get_backend",  # muffin re-export
+)
+
+# Same for aget_sandbox. Missing one of these is a REAL dial-out to OpenSandbox
+# from a test that believes it is mocked: `execute_python` resolves its own
+# binding in langchain_opensandbox, and `write_cached_tool_output_to_backend`
+# resolves a third in the cache middleware.
+_AGET_SANDBOX_TARGETS = (
+    "langchain_opensandbox.factory.aget_sandbox",  # canonical source
+    "langchain_opensandbox.tools.aget_sandbox",  # execute_python
+    "muffin_agent.sandbox.tools.aget_sandbox",  # store bridge tools
+    "muffin_agent.sandbox.aget_sandbox",  # muffin re-export
+    "muffin_agent.middlewares.tool_result_cache.tools.aget_sandbox",
 )
 
 
@@ -98,12 +111,12 @@ def patch_sandbox(
         return sandbox
 
     with ExitStack() as stack:
-        for target in _GET_BACKEND_TARGETS:
+        for target, replacement in (
+            *((t, _in_memory_backend) for t in _GET_BACKEND_TARGETS),
+            *((t, _aget_sandbox) for t in _AGET_SANDBOX_TARGETS),
+        ):
             try:
-                stack.enter_context(patch(target, new=_in_memory_backend))
+                stack.enter_context(patch(target, new=replacement))
             except (AttributeError, ModuleNotFoundError):
                 pass  # binding not present in this import graph — skip
-        stack.enter_context(
-            patch("muffin_agent.sandbox.tools.aget_sandbox", new=_aget_sandbox)
-        )
         yield sandbox

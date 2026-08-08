@@ -94,9 +94,16 @@ dependencies = [
     "deepagents @ git+https://github.com/gururafiki/deepagents@f3a5d79574e18c57c31187a1c2cbbbefe097fd93#subdirectory=libs/deepagents",
     # Checkpointing (CLI persistence)
     "langgraph-checkpoint-sqlite>=3.1",
-    # Sandbox
-    "opensandbox>=0.1.15",
-    "opensandbox-code-interpreter>=0.1.2",
+    # Sandbox. The OpenSandbox backend, the thread-scoped sandbox factory and
+    # the generic `execute_python` tool were extracted to their own package on
+    # 2026-08-08 — none of it was finance-specific, and OpenSandbox was the one
+    # mainstream sandbox provider with no LangChain partner package. muffin
+    # keeps only the store bridge tools (they need `AccessControlledStore`).
+    # Pinned to a COMMIT until 0.1.0 is on PyPI; then this becomes a version
+    # bound. `opensandbox` itself arrives transitively through it.
+    # `opensandbox-code-interpreter` was dropped in the same pass — it had been
+    # declared since the original sandbox work and imported nowhere.
+    "langchain-opensandbox @ git+https://github.com/gururafiki/langchain-opensandbox@ccabc4570314fca12066820d4d3b49a95b5a4ee5",
     # Technical-indicator computation (trading_decision Market analyst)
     "stockstats>=0.6.8",
     "pandas>=3.0.5",

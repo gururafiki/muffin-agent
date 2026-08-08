@@ -21,7 +21,7 @@ from typing_extensions import TypedDict
 
 from ....model_config import ModelConfiguration
 from ....prompts import render_template
-from ....sandbox.tools import execute_python
+from ....sandbox import execute_python
 from ....utils.agent_builder import MuffinAgentBuilder
 from ...data_collection.utils import get_tools
 from ..schemas import AnalystSignal
