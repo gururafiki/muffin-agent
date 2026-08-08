@@ -36,8 +36,8 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -71,7 +71,7 @@ jobs:
     # stop a bad dependency bound from reaching `main`.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Smoke-test resolution + imports in the runtime base image
         # Resolve and import against the SAME base image the runtime uses,
         # including its constraints file — an outage here came from deps that
