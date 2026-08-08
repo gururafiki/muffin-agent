@@ -68,7 +68,7 @@ dependencies = [
     # Prompt templating
     "jinja2>=3.1.6",
     # CLI
-    "typer>=0.27.0",
+    "typer>=0.27.1",
     "rich>=15.0.0",
     # Observability
     "langfuse>=4.14.0",
