@@ -61,6 +61,9 @@ class StreamPrinter:
         style = "red" if msg.status == "error" else "magenta"
         label = f"Tool: {msg.name}" if msg.name else "Tool"
 
+        # Either branch is a valid rich renderable; declare the union up front so
+        # the plain-text fallback is not read as a bad assignment to a Syntax.
+        body: Syntax | str
         try:
             parsed = json.loads(content)
             formatted = json.dumps(parsed, indent=2)

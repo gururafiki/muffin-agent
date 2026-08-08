@@ -134,7 +134,12 @@ class AnalystSignal(BaseModel, Generic[EvidenceT]):
     """1–3 sentence persona-voiced explanation citing the specific
     sub-scores or evidence that drove the rating."""
 
-    evidence: EvidenceT = Field(default_factory=dict)
+    # The default only applies to the unparameterised `AnalystSignal`, where
+    # `EvidenceT` resolves to `dict[str, Any]` and `{}` is exactly right. mypy
+    # checks the default against the unsolved type variable instead, so it sees
+    # `dict[Never, Never]` vs `EvidenceT`. Every parameterised subclass supplies a
+    # real evidence model and never reaches this.
+    evidence: EvidenceT = Field(default_factory=dict)  # type: ignore[assignment]
     """Persona-specific facts (sub-scores, computed values, flags).
     Narrowed to a typed Pydantic sub-model by parameterising the base
     (e.g. ``WarrenBuffettSignal(AnalystSignal[WarrenBuffettEvidence])``);

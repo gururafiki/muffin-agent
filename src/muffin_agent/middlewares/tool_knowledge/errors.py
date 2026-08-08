@@ -13,6 +13,7 @@ Pure logic, no IO.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 # Substrings that mark a *permanent* failure for the given (tool, args)
@@ -47,7 +48,12 @@ def is_permanent_error(error_msg: str) -> bool:
     return any(hint in lower for hint in _PERMANENT_ERROR_HINTS)
 
 
-def duplicate_key(tool_call: dict[str, Any]) -> str:
-    """Build the cache key used by the duplicate-block facet."""
+def duplicate_key(tool_call: Mapping[str, Any]) -> str:
+    """Build the cache key used by the duplicate-block facet.
+
+    Mapping, not dict: the caller passes a langchain ``ToolCall``, which is a
+    TypedDict and so is not assignable to the invariant ``dict[str, Any]``. This
+    only reads two keys.
+    """
     args_json = json.dumps(tool_call.get("args", {}), sort_keys=True, default=str)
     return f"{tool_call['name']}:{args_json}"

@@ -17,11 +17,10 @@ name: Quality
 # never arrive. The whole job is ~2 minutes; running it on docs-only PRs is far
 # cheaper than that failure mode.
 #
-# `mypy src/` and `ruff format --check` are NOT here yet: the tree currently has
-# 50 mypy errors and 7 unformatted files, so adding them would land a gate that
-# is red on arrival. They are added to the `checks` job by the typing-cleanup PR
-# that fixes them. Keep the job id stable when doing so — the ruleset's required
-# status check refers to it by name.
+# `mypy src/` gates merges as of the typing-cleanup PR, which took the tree from
+# 50 errors to 0. Keep it that way: mypy is the only check here that has found a
+# real production defect rather than a style violation — 16 dead CLI commands and
+# a latent TypeError in a persona scorer.
 on:
   pull_request:
   push:
@@ -47,6 +46,10 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Ruff lint
         run: ruff check src/ tests/
+      - name: Ruff format
+        run: ruff format --check src/ tests/
+      - name: Mypy
+        run: mypy src/
       - name: Unit tests
         # 37 unit tests build a graph, and building one constructs the chat
         # model, which raises `ValueError: OpenAI API key not configured` when

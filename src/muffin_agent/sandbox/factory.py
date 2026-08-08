@@ -7,7 +7,9 @@ Works with both ``ToolRuntime`` (tools) and ``Runtime`` (middleware).
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import cast
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_config
 from langgraph.prebuilt import ToolRuntime
 from langgraph.runtime import Runtime
@@ -34,7 +36,13 @@ class SandboxFactory:
         cfg = getattr(self._runtime, "config", None)
         if not isinstance(cfg, dict):
             cfg = get_config()
-        return OpenSandboxConfiguration.from_runnable_config(cfg)
+        # `RunnableConfig` is a TypedDict, so the `isinstance(cfg, dict)` guard
+        # narrows to `RunnableConfig | dict[Any, Any]` rather than to
+        # `RunnableConfig`. Both branches are a runnable config at runtime — the
+        # attribute comes from a langgraph Runtime, and `get_config()` returns one.
+        return OpenSandboxConfiguration.from_runnable_config(
+            cast("RunnableConfig", cfg)
+        )
 
     def _get_thread_id(self) -> str:
         """Extract thread_id from runtime config or langgraph context."""

@@ -24,20 +24,28 @@ filtering, or any other categorisation scheme.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable, Mapping
+from typing import TYPE_CHECKING, Any, cast
 
 from deepagents.middleware._utils import append_to_system_message
 from deepagents.middleware.skills import SkillMetadata
 from langchain.agents import AgentState
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.tools import BaseTool
+from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
     from langchain.agents.middleware.types import ModelRequest, ModelResponse
 
+# `AgentMiddleware` is itself `Generic[StateT, ContextT, ResponseT]` (all three
+# with defaults), so inheriting `AgentMiddleware[StateT]` is what makes
+# `SkillFilterMiddleware[TickerClassification]` a legal subscript. Before this it
+# was only subscriptable at runtime, via the `__class_getitem__` below, and mypy
+# rejected both call sites with "not generic and not indexable".
+StateT = TypeVar("StateT", bound=AgentState, default=AgentState)
 
-class SkillFilterMiddleware(AgentMiddleware):
+
+class SkillFilterMiddleware(AgentMiddleware[StateT]):
     """Schema-driven skill filtering middleware.
 
     Parameterised with an ``AgentState`` subclass whose extra fields (beyond
@@ -109,8 +117,14 @@ class SkillFilterMiddleware(AgentMiddleware):
 
     # ── Classification helpers ──────────────────────────────────────────
 
-    def _get_classification(self, state: dict[str, Any]) -> dict[str, str]:
-        """Extract classification values from flat state keys."""
+    def _get_classification(self, state: Mapping[str, Any]) -> dict[str, str]:
+        """Extract classification values from flat state keys.
+
+        Takes a ``Mapping`` rather than a concrete state type so both callers
+        fit: ``abefore_agent`` receives the graph's ``StateT`` and
+        ``awrap_model_call`` receives ``request.state``. Both are TypedDict
+        state objects, and this only ever reads keys.
+        """
         return {k: state[k] for k in self._category_keys if state.get(k)}
 
     # ── Skill filtering ─────────────────────────────────────────────────
@@ -167,12 +181,14 @@ class SkillFilterMiddleware(AgentMiddleware):
 
     async def abefore_agent(
         self,
-        state: dict[str, Any],
+        state: StateT,
         runtime: Any,
     ) -> dict[str, Any] | None:
         """Filter skills_metadata by classification from flat state keys."""
         classification = self._get_classification(state)
-        skills = state.get("skills_metadata")
+        # `skills_metadata` is written by deepagents' own SkillsMiddleware, so it
+        # is not declared on our StateT and reads back as `object`.
+        skills = cast("list[SkillMetadata] | None", state.get("skills_metadata"))
         if not classification or not skills:
             return None
         return {"skills_metadata": self._filter_skills(skills, classification)}

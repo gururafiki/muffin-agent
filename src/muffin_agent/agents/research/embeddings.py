@@ -109,7 +109,14 @@ async def compute_evidence_relevance(
 
     embedder = OpenAIEmbeddings(
         model=embedding_model,
-        base_url=embedding_base_url,
+        # `base_url` is a Pydantic ALIAS for the `openai_api_base` field, and
+        # `OpenAIEmbeddings` sets `populate_by_name=True`, so it is valid at
+        # runtime and is LangChain's documented kwarg. mypy resolves this
+        # third-party model's generated `__init__` by field name and does not see
+        # the alias. Verified against the installed class: `openai_api_base`
+        # exists with `alias="base_url"` and `populate_by_name` is True.
+        # (`api_key` below needs no ignore — mypy accepts that one.)
+        base_url=embedding_base_url,  # type: ignore[call-arg]
         api_key=SecretStr(embedding_api_key) if embedding_api_key else None,
     )
 
