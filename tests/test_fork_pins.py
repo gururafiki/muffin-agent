@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 import pytest
+from deepagents.middleware.filesystem import _file_data_delta_reducer
 from langchain_core.messages import AIMessage
 from langgraph.channels.delta import DeltaChannel
 from langgraph.checkpoint.memory import InMemorySaver
@@ -28,15 +29,26 @@ from typing_extensions import TypedDict
 
 class _SubState(TypedDict, total=False):
     messages: Annotated[list, DeltaChannel(_messages_delta_reducer)]
+    # Mirrors deepagents' `FilesystemState.files`, which is ALSO a DeltaChannel
+    # (verified on the pinned 0.6.12: `dict[str, FileData]` annotated with
+    # `DeltaChannel(_file_data_delta_reducer)`). See the `files` test below.
+    files: Annotated[dict, DeltaChannel(_file_data_delta_reducer)]
 
 
 class _ParentState(TypedDict, total=False):
     messages: Annotated[list, DeltaChannel(_messages_delta_reducer)]
+    files: Annotated[dict, DeltaChannel(_file_data_delta_reducer)]
 
 
 def _subgraph() -> Any:
     graph = StateGraph(_SubState)
-    graph.add_node("work", lambda _state: {"messages": [AIMessage("sub worked")]})
+    graph.add_node(
+        "work",
+        lambda _state: {
+            "messages": [AIMessage("sub worked")],
+            "files": {"/scratch/note.txt": {"content": "sub wrote this"}},
+        },
+    )
     graph.add_edge(START, "work")
     graph.add_edge("work", END)
     return graph.compile()
@@ -76,6 +88,17 @@ def test_langgraph_hydrates_a_nested_subgraphs_delta_channel() -> None:
         "a nested subgraph's DeltaChannel hydrated EMPTY — the langgraph fork pin "
         "is missing or was dropped before #8470 shipped. muffin-ui has no "
         "fallback, so every nested agent's transcript is now blank in the UI."
+    )
+
+    # Reviewing langgraph#8538, a maintainer reported that in stored deepagents
+    # data `files` reads back `{}` while `messages` in the SAME read is complete —
+    # i.e. the bug is per-channel, and asserting only on `messages` would not have
+    # caught it. `files` is a DeltaChannel here too, so pin it explicitly.
+    assert (values.get("files") or {}) != {}, (
+        "a nested subgraph's `files` DeltaChannel hydrated EMPTY while `messages` "
+        "did not. This is the per-channel half of #8470 that langgraph#8538 "
+        "reported against deepagents: a subagent's filesystem contents silently "
+        "vanish from a namespace read while its transcript looks healthy."
     )
 
 

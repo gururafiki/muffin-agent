@@ -447,6 +447,28 @@ Ported from [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund).  Guide: [
 - [ ] **Validate collector code-execution + tool-result-cache need.** Run real councils and evaluate the quality/correctness of collector arithmetic (gross_margin / BVPS derivations, series ordering). Decide whether the `execute_python` tool now on the persona + fundamentals/growth/valuation collectors is justified (vs. moving those derivations into the deterministic compute nodes), and whether to add the tool-result-cache workflow via `.with_sandbox()` (cache tools + `tool_result_cache.jinja` partial + offload backend) so collectors can discover sibling-cached data and process large/offloaded outputs in code — matching the `equity_price` collector pattern.
 - [ ] Council debate mode using `multi_agent` conference framework (sequential deliberation alternative to parallel vote)
 - [ ] Consider using [skills](https://docs.langchain.com/oss/python/deepagents/skills) per each persona with python scripts to compute necessary scores instead of having scoring functions as utils manually invoked from nodes.
-## Multi-repo restructure (Done — 2026-06)
 
-Split into focused repos under the umbrella [`muffin`](https://github.com/gururafiki/muffin) (git submodules): `muffin-agent` (this repo — agent + image CI), [`muffin-deployment`](https://github.com/gururafiki/muffin-deployment) (Terraform + Ansible + Swarm stack + service configs + deploy CI), and per-service image repos `openbb-mcp-docker`, `agent-chat-ui-docker`, `nuq-postgres-docker` (each builds its own arm64 GHCR image). The local `docker-compose`, `extras/*` Dockerfiles, and service configs moved out of this repo into `muffin-deployment` / the `*-docker` repos. Deployment is a single `terraform apply` (runs Ansible via the `ansible/ansible` provider + `cloud.terraform` dynamic inventory — no `generate_inventory.sh`). Live: https://muffin.rafiki.guru.
+## Multi-repo restructure (Done — 2026-06)
+- [x] Split into focused repos under the umbrella [`muffin`](https://github.com/gururafiki/muffin) (git submodules): `muffin-agent` (this repo — agent + image CI), [`muffin-deployment`](https://github.com/gururafiki/muffin-deployment) (Terraform + Ansible + Swarm stack + service configs + deploy CI), and per-service image repos `openbb-mcp-docker`, `agent-chat-ui-docker`, `nuq-postgres-docker` (each builds its own arm64 GHCR image). The local `docker-compose`, `extras/*` Dockerfiles, and service configs moved out of this repo into `muffin-deployment` / the `*-docker` repos. Deployment is a single `terraform apply` (runs Ansible via the `ansible/ansible` provider + `cloud.terraform` dynamic inventory — no `generate_inventory.sh`). Live: https://muffin.rafiki.guru.
+
+## Repo hygiene / CI (2026-08-08)
+
+- [x] **`quality.yml` merge gate** — ruff, ruff format, mypy, `pytest -m unit`, and the resolve+import
+  smoke test on `pull_request`. Before this the only PR check was CodeQL, which reports `NEUTRAL` on a
+  dependency-only diff, so nothing actually gated `main`.
+- [x] **`mypy src/` from 50 errors to 0** and enforced in CI (`[tool.mypy]` had never existed). Found
+  16 dead CLI commands and a latent `TypeError` in `stanley_druckenmiller`.
+- [x] **Dependabot: protect deliberate safety bounds.** It widened `mcp<2` to `<3` unreviewed (#145),
+  reopening the 2026-07-28 GraphLoadError outage class. Floor raised to
+  `langchain-mcp-adapters>=0.3.2` so the upstream cap is guaranteed, and `mcp` is now in `ignore`.
+- [ ] **Compiling a graph should not require credentials.** 37 unit tests fail unless
+  `OPENAI_API_KEY` merely *exists* — they build a graph, which constructs the chat model. No request
+  is ever made. CI passes a dummy value as a stopgap; it is invisible locally because
+  `BaseConfiguration` calls `load_dotenv()`. Fix by deferring model construction, or by letting the
+  provider branches build a placeholder when no key is present.
+- [ ] **Lift `mcp<3` deliberately when langchain-mcp-adapters#578 ships.** That upstream issue is real
+  mcp-2 support; when it lands, adapters drops its own `<2.0.0` cap and mcp 2.x becomes reachable
+  through our bound. Do it as a smoke-tested migration, not a passive resolve.
+- [ ] **Re-check the deepagents fork pin on each minor.** Treated as permanent — deepagents#5136 has
+  no maintainer response and a langgraph maintainer independently confirmed the underlying behaviour
+  is documented and intentional. Track langgraph#8538 for the langgraph pin instead of the closed #8471.
