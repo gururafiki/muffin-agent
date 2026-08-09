@@ -215,10 +215,6 @@ Caller passes existing finance MCP tools (or data-collection subagents wrapped a
 
 Same shape — wrap the source as a `BaseTool`, register via `extra_tools` + `extra_sources`.
 
-## Why no `with_subagent_refinement()`?
-
-The refinement protocol (`CollectionFindings`, `prior_call_id`, `/scratch/subagent_runs/`) is designed for orchestrators that re-issue partial gap-filling calls. Research's contract is the **complete** `ResearchOutput`, not a partial finding. Follow-ups are handled by re-invocation with a new query + the SQLite checkpointer's thread history.
-
 ## Migration path: deep agent → sub-graph
 
 The researcher is currently a single `create_deep_agent` call (~30 LOC). The migration trigger:

@@ -82,7 +82,7 @@ from langchain.agents.middleware import (
 )
 from langchain.agents.middleware.summarization import ContextSize
 from langchain.agents.middleware.types import AgentMiddleware
-from langchain.agents.structured_output import AutoStrategy, ResponseFormat
+from langchain.agents.structured_output import ResponseFormat
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage
 from langchain_core.tools import BaseTool, ToolException
@@ -91,10 +91,7 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
 
 from ..middlewares import (
-    CollectionFindings,
     DataCollectionGuardMiddleware,
-    SubagentRefinementMiddleware,
-    SubagentRefinementParentMiddleware,
     ToolKnowledgeMiddleware,
     ToolResultCacheMiddleware,
 )
@@ -369,7 +366,6 @@ class MuffinAgentBuilder:
         self._model_call_limit: ModelCallLimitMiddleware | None = None
         self._tool_call_limits: list[ToolCallLimitMiddleware] = []
         self._knowledge_summariser: BaseChatModel | None = None
-        self._subagent_refinement: bool = False
         self._data_collection_attempts: int = 0
         self._permissions: list[FilesystemPermission] = []
         self._response_format: ResponseFormat[Any] | type | dict[str, Any] | None = None
@@ -529,31 +525,6 @@ class MuffinAgentBuilder:
         Raises at build time if followed by :meth:`build_react_agent`.
         """
         self._subagents.extend(subagents)
-        return self
-
-    def with_subagent_refinement(self) -> Self:
-        """Enable the structured-findings + scratch-cache refinement protocol.
-
-        Role is decided at build time from whether subagents are wired:
-
-        * **Child** (no subagents wired) — registers
-          :class:`SubagentRefinementMiddleware`, which forces a
-          :class:`CollectionFindings` response (via ``response_format``),
-          reads prior findings from
-          ``/scratch/subagent_runs/<call_id>.json`` when the task
-          description carries ``prior_call_id=<id>``, persists this run's
-          findings on completion, and amends the system prompt with both
-          the static refinement rules and (if present) the per-call
-          prior-findings block.
-        * **Parent** (subagents wired) — registers
-          :class:`SubagentRefinementParentMiddleware`, which only amends
-          the system prompt with the orchestrator's gap-handling rules
-          so it knows how to read ``CollectionFindings.gaps`` and
-          re-issue refinement calls with ``prior_call_id=<id>``.
-
-        Idempotent — calling twice has no extra effect.
-        """
-        self._subagent_refinement = True
         return self
 
     def with_tool(
@@ -877,7 +848,7 @@ class MuffinAgentBuilder:
             subagents=self._subagents or None,
             skills=self._skills.paths or None,
             permissions=self._permissions or None,
-            response_format=self._effective_response_format(),
+            response_format=self._response_format,
             context_schema=self._context_schema,
             state_schema=self._state_schema,
             checkpointer=self._checkpointer,
@@ -918,29 +889,13 @@ class MuffinAgentBuilder:
             middleware=self._assemble_middleware(
                 is_deep=False, backend_factory=backend_factory
             ),
-            response_format=self._effective_response_format(),
+            response_format=self._response_format,
             context_schema=self._context_schema,
             state_schema=self._state_schema,
             checkpointer=self._checkpointer,
             store=self._store,
             name=self._name,
         )
-
-    def _effective_response_format(
-        self,
-    ) -> ResponseFormat[Any] | type | dict[str, Any] | None:
-        """Return ``response_format`` honouring the refinement contract.
-
-        On a child subagent (no subagents wired) with refinement enabled,
-        default to ``AutoStrategy(CollectionFindings)`` so the runtime
-        validates the structured response. Caller-set ``response_format``
-        always wins.
-        """
-        if self._response_format is not None:
-            return self._response_format
-        if self._subagent_refinement and not self._subagents:
-            return AutoStrategy(schema=CollectionFindings)
-        return None
 
     def _response_schema_name(self) -> str | None:
         """Return the structured response schema's class name, if any.
@@ -949,7 +904,7 @@ class MuffinAgentBuilder:
         is the schema class name; ``_StructuredOutputRetryMiddleware`` needs that
         name to tell a malformed structured-output call from a real tool call.
         """
-        response_format = self._effective_response_format()
+        response_format = self._response_format
         if response_format is None:
             return None
         # A raw schema class first (``getattr(cls, "schema")`` would hit
@@ -1024,18 +979,10 @@ class MuffinAgentBuilder:
             :meth:`with_persistent_memory` was called.  Deep agents get
             the same middleware implicitly via
             ``create_deep_agent(memory=...)``.
-        12. *(conditional)* Subagent-refinement middleware when
-            :meth:`with_subagent_refinement` was called.  Picks the
-            class based on role:
-            - :class:`SubagentRefinementParentMiddleware` when subagents
-              are wired (only amends the system prompt with rules).
-            - :class:`SubagentRefinementMiddleware` otherwise (full child
-              behaviour: reads/writes ``/scratch/subagent_runs/<call_id>.json``
-              and injects prior findings into the system prompt).
-        13. Optional skill-filter middleware registered via
+        12. Optional skill-filter middleware registered via
             :meth:`with_skills`.
-        14. Caller-supplied middleware (via :meth:`with_middleware`).
-        15. *(conditional)* :class:`_StructuredOutputRetryMiddleware` when a
+        13. Caller-supplied middleware (via :meth:`with_middleware`).
+        14. *(conditional)* :class:`_StructuredOutputRetryMiddleware` when a
             response format is configured.  Registered LAST so its
             ``after_agent`` hook runs FIRST (reverse registration order):
             when the loop ends without ``structured_response`` it jumps
@@ -1095,22 +1042,6 @@ class MuffinAgentBuilder:
                     sources=list(self._backend.memory_sources),
                 )
             )
-        if self._subagent_refinement:
-            if self._subagents:
-                # Parent role — only amends the system prompt with rules.
-                stack.append(SubagentRefinementParentMiddleware())
-            else:
-                # Child role — needs the backend to read/write
-                # /scratch/subagent_runs/<call_id>.json. Deep agents
-                # resolve the backend via create_deep_agent's own
-                # factory; ReAct agents use the local backend_factory.
-                refinement_factory = backend_factory or self._backend.factory()
-                if refinement_factory is not None:
-                    stack.append(
-                        SubagentRefinementMiddleware(
-                            backend_factory=refinement_factory,
-                        )
-                    )
         # NOTE: no observability middleware here, deliberately. A run's
         # execution record — topology, transcripts, tool calls, at any depth —
         # is already in LangGraph's checkpoints and is read from there. Writing
