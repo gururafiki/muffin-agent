@@ -89,7 +89,7 @@ dependencies = [
     # muffin-ui can show which sub-agents a stage called and what each returned,
     # but never what they did.
     # Branched from the 0.6.12 TAG, not main: main has moved on (it drops
-    # `BackendFactory`, which subagent_refinement imports) and pinning it would
+    # `BackendFactory`, which `utils/agent_builder.py` imports) and pinning it would
     # drag in unrelated breaking changes. Pinned to a COMMIT for reproducibility.
     "deepagents @ git+https://github.com/gururafiki/deepagents@f3a5d79574e18c57c31187a1c2cbbbefe097fd93#subdirectory=libs/deepagents",
     # Checkpointing (CLI persistence)
