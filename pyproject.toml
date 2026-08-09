@@ -71,7 +71,7 @@ dependencies = [
     "typer>=0.27.1",
     "rich>=15.0.0",
     # Observability
-    "langfuse>=4.14.0",
+    "langfuse>=4.14.3",
     # PERMANENT FORK PIN — assume this is never upstreamed.
     # Tracked in langchain-ai/deepagents#5136 (NOT #5131, which the triage bot
     # closed as NOT_PLANNED for being filed programmatically; #5132, the PR, was
