@@ -93,7 +93,7 @@ dependencies = [
     # drag in unrelated breaking changes. Pinned to a COMMIT for reproducibility.
     "deepagents @ git+https://github.com/gururafiki/deepagents@f3a5d79574e18c57c31187a1c2cbbbefe097fd93#subdirectory=libs/deepagents",
     # Checkpointing (CLI persistence)
-    "langgraph-checkpoint-sqlite>=3.1",
+    "langgraph-checkpoint-sqlite>=3.1.1",
     # Sandbox. The OpenSandbox backend, the thread-scoped sandbox factory and
     # the generic `execute_python` tool were extracted to their own package on
     # 2026-08-08 — none of it was finance-specific, and OpenSandbox was the one
